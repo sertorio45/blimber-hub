@@ -1,32 +1,42 @@
 <script setup lang="ts">
 import type { Lead, SalesStage } from '~/types/crm'
 import { DateFormatter, getLocalTimeZone, today } from '@internationalized/date'
-import { useFetch } from '#app'
-
 import { Icon } from '#components'
-import { computed, ref, watch, defineAsyncComponent } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { toast } from 'vue-sonner'
 
-const Draggable = defineAsyncComponent(() => import('vuedraggable'))
-
+import FunnelCreateDialog from '~/components/crm/config/FunnelCreateDialog.vue'
+import type {
+  FunnelCreatedPayload,
+  FunnelUpdatedPayload,
+} from '~/components/crm/config/FunnelCreateDialog.vue'
+import CrmPageHeader from '~/components/crm/shared/CrmPageHeader.vue'
 import { columns } from '~/components/crm/leads/columns'
 import LeadEditForm from '~/components/crm/leads/LeadEditForm.vue'
 import LeadStepperForm from '~/components/crm/leads/LeadStepperForm.vue'
+import MoveLeadsFunnelDialog from '~/components/crm/leads/MoveLeadsFunnelDialog.vue'
 import MetaCapiSyncDialog from '~/components/crm/meta/MetaCapiSyncDialog.vue'
 import MultiActionBar from '~/components/shared/MultiActionBar.vue'
+import { crmBadgeClass } from '~/utils/crm/badges'
 import Badge from '~/components/ui/badge/Badge.vue'
 import Button from '~/components/ui/button/Button.vue'
 import Card from '~/components/ui/card/Card.vue'
 import CardContent from '~/components/ui/card/CardContent.vue'
 import CardHeader from '~/components/ui/card/CardHeader.vue'
 import CardTitle from '~/components/ui/card/CardTitle.vue'
+import Checkbox from '~/components/ui/checkbox/Checkbox.vue'
 import Dialog from '~/components/ui/dialog/Dialog.vue'
-import DialogContent from '~/components/ui/dialog/DialogContent.vue'
 import DialogDescription from '~/components/ui/dialog/DialogDescription.vue'
 import DialogFooter from '~/components/ui/dialog/DialogFooter.vue'
 import DialogHeader from '~/components/ui/dialog/DialogHeader.vue'
 import DialogScrollContent from '~/components/ui/dialog/DialogScrollContent.vue'
 import DialogTitle from '~/components/ui/dialog/DialogTitle.vue'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '~/components/ui/dropdown-menu'
 import Input from '~/components/ui/input/Input.vue'
 import Label from '~/components/ui/label/Label.vue'
 import Progress from '~/components/ui/progress/Progress.vue'
@@ -42,7 +52,6 @@ import DataTableViewOptions from '~/components/ui/table/DataTableViewOptions.vue
 import DataTable from '~/components/ui/table/DataTable.vue'
 import DataTablePagination from '~/components/ui/table/DataTablePagination.vue'
 import DataTableToolbar from '~/components/ui/table/DataTableToolbar.vue'
-import Textarea from '~/components/ui/textarea/Textarea.vue'
 import Tooltip from '~/components/ui/tooltip/Tooltip.vue'
 import { useCrmLeadWhatsapp } from '~/composables/crm/useCrmLeadWhatsapp'
 import {
@@ -52,6 +61,10 @@ import {
 import { deleteWithConfirm } from '~/composables/useConfirmDelete'
 import { useTenantTeam } from '~/composables/crm/useTenantTeam'
 import { useTenantPage } from '~/composables/useTenantPage'
+import {
+  getStatusFromStageName,
+  isStageWonOrLost,
+} from '~/utils/crm/sales-stage'
 
 // SEO Meta
 useSeoMeta({
@@ -94,9 +107,8 @@ const isEditLeadDialogOpen = ref(false)
 const isSheetOpen = ref(false)
 const selectedItems = ref<LeadExt[]>([])
 const isAddFunnelDialogOpen = ref(false)
-const newFunnel = ref({ name: '', description: '' })
-const isOrganizeStagesDialogOpen = ref(false)
-const stagesOrder = ref<SalesStage[]>([])
+const isEditFunnelDialogOpen = ref(false)
+const isMoveLeadsDialogOpen = ref(false)
 const initialLoading = ref(true)
 const isSyncingTenant = ref(false)
 const lastLoadedTenantId = ref<string | null>(null)
@@ -316,13 +328,13 @@ function getMetaCapiLabel(status?: string | null) {
 
 function getMetaCapiBadgeClass(status?: string | null) {
   if (status === 'sent')
-    return 'border-emerald-200 bg-emerald-50 text-emerald-700'
+    return crmBadgeClass.metaSent
   if (status === 'failed')
-    return 'border-red-200 bg-red-50 text-red-700'
+    return crmBadgeClass.metaFailed
   if (status === 'skipped')
-    return 'border-border bg-muted text-muted-foreground'
+    return crmBadgeClass.metaSkipped
   if (status === 'pending' || status === 'processing')
-    return 'border-amber-200 bg-amber-50 text-amber-800'
+    return crmBadgeClass.metaPending
   return ''
 }
 
@@ -479,34 +491,6 @@ function handleDragOver(event: DragEvent) {
   if (event.dataTransfer) {
     event.dataTransfer.dropEffect = 'move'
   }
-}
-
-function isStageWonOrLost(stageName: string): 'won' | 'lost' | null {
-  const name = (stageName || '').toLowerCase()
-  if (['won', 'ganho'].some(k => name.includes(k)))
-    return 'won'
-  if (['lost', 'perdido'].some(k => name.includes(k)))
-    return 'lost'
-  return null
-}
-
-function getStatusFromStageName(stageName: string): Lead['status'] | null {
-  const name = (stageName || '').toLowerCase()
-  if (name.includes('novo') || name.includes('new'))
-    return 'new'
-  if (name.includes('contat') || name.includes('contact'))
-    return 'contacted'
-  if (name.includes('qualific') || name.includes('qualif'))
-    return 'qualified'
-  if (name.includes('propost') || name.includes('proposal'))
-    return 'proposal'
-  if (name.includes('negocia') || name.includes('negoti'))
-    return 'negotiation'
-  if (name.includes('ganh') || name.includes('won'))
-    return 'won'
-  if (name.includes('perdid') || name.includes('lost'))
-    return 'lost'
-  return null
 }
 
 async function handleDrop(event: DragEvent, newStageId: string) {
@@ -691,6 +675,84 @@ async function handleMultiDelete() {
   }
 }
 
+const selectedLeadIds = computed(() => new Set(selectedItems.value.map(lead => lead.id)))
+
+function isLeadSelected(leadId: string) {
+  return selectedLeadIds.value.has(leadId)
+}
+
+function clearLeadSelection() {
+  selectedItems.value = []
+}
+
+function toggleLeadSelection(lead: LeadExt, checked?: boolean | 'indeterminate') {
+  const exists = selectedLeadIds.value.has(lead.id)
+  const shouldSelect = typeof checked === 'boolean' ? checked : !exists
+  if (shouldSelect && !exists)
+    selectedItems.value = [...selectedItems.value, lead]
+  else if (!shouldSelect && exists)
+    selectedItems.value = selectedItems.value.filter(item => item.id !== lead.id)
+}
+
+function areAllInStageSelected(stageId: string) {
+  const stageLeads = leadsByStage.value[stageId] || []
+  if (!stageLeads.length)
+    return false
+  return stageLeads.every(lead => selectedLeadIds.value.has(lead.id))
+}
+
+function toggleSelectAllInStage(stageId: string) {
+  const stageLeads = leadsByStage.value[stageId] || []
+  if (!stageLeads.length)
+    return
+
+  if (areAllInStageSelected(stageId)) {
+    const stageIds = new Set(stageLeads.map(lead => lead.id))
+    selectedItems.value = selectedItems.value.filter(lead => !stageIds.has(lead.id))
+    return
+  }
+
+  const existingIds = selectedLeadIds.value
+  const toAdd = stageLeads.filter(lead => !existingIds.has(lead.id))
+  selectedItems.value = [...selectedItems.value, ...toAdd]
+}
+
+function openMoveLeadsDialog() {
+  if (!selectedItems.value.length) {
+    toast.error('Selecione ao menos um lead.')
+    return
+  }
+  isMoveLeadsDialogOpen.value = true
+}
+
+function openMoveAllLeadsDialog() {
+  if (!leads.value.length) {
+    toast.error('Não há leads neste funil para mover.')
+    return
+  }
+  selectedItems.value = [...leads.value]
+  isMoveLeadsDialogOpen.value = true
+}
+
+function openMoveStageLeadsDialog(stageId: string) {
+  const stageLeads = leadsByStage.value[stageId] || []
+  if (!stageLeads.length) {
+    toast.error('Não há leads neste estágio para mover.')
+    return
+  }
+  selectedItems.value = [...stageLeads]
+  isMoveLeadsDialogOpen.value = true
+}
+
+async function handleLeadsMoved(payload: { funnelId: string, salesStageId: string, moved: number }) {
+  selectedItems.value = []
+  if (payload.funnelId && payload.funnelId !== selectedFunnel.value) {
+    selectedFunnel.value = payload.funnelId
+    return
+  }
+  await reloadFunnelData()
+}
+
 function updateSelectedItems(indices: number[]) {
   selectedItems.value = indices
     .map(index => leads.value[index])
@@ -712,10 +774,16 @@ function handleAddLeadToStage(stage: SalesStage) {
 }
 
 // Handler para quando um lead é criado com sucesso
-function handleLeadCreated(_newLead: any) {
+function handleLeadCreated(newLead: any) {
   isAddLeadDialogOpen.value = false
   defaultLeadFunnelId.value = null
   defaultLeadStageId.value = null
+
+  const createdFunnelId = newLead?.funnel_id as string | undefined
+  if (createdFunnelId && createdFunnelId !== selectedFunnel.value) {
+    selectedFunnel.value = createdFunnelId
+    return
+  }
   fetchLeads()
 }
 
@@ -730,14 +798,16 @@ function handleEditLead() {
 }
 
 // Handler para quando um lead é editado com sucesso
-function handleLeadUpdated(_updatedLead: any) {
-  // Fechar o dialog
+function handleLeadUpdated(updatedLead: any) {
   isEditLeadDialogOpen.value = false
 
-  // Refresh dos leads para mostrar as mudanças
-  fetchLeads()
+  const updatedFunnelId = (updatedLead?.funnel_id || updatedLead?.body?.funnel_id) as string | undefined
+  if (updatedFunnelId && updatedFunnelId !== selectedFunnel.value) {
+    selectedFunnel.value = updatedFunnelId
+    return
+  }
 
-  // Lead editado com sucesso - sem log para evitar violação de linter
+  fetchLeads()
 }
 
 // Handlers para DataTable global
@@ -785,7 +855,9 @@ async function fetchStages() {
   const data = await $fetch<SalesStage[]>('/api/crm/sales_stage', {
     query: { funnel_id: selectedFunnel.value, tenant_id: tenantId.value },
   })
-  stages.value = Array.isArray(data) ? data : []
+  stages.value = Array.isArray(data)
+    ? [...data].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+    : []
 }
 
 async function fetchLeads() {
@@ -864,78 +936,67 @@ async function fetchLeadSources() {
 whenTenantReady(loadInitialData)
 
 watch(selectedFunnel, () => {
+  clearLeadSelection()
   if (isSyncingTenant.value)
     return
   void reloadFunnelData()
 })
 
+watch(viewMode, () => {
+  clearLeadSelection()
+})
+
 watch(leadDateRangeKey, () => {
+  clearLeadSelection()
   fetchLeads()
 })
 
-async function handleCreateFunnel() {
-  if (!newFunnel.value.name)
-    return
-  const { data, error } = await useFetch('/api/crm/funnel', {
-    method: 'POST',
-    body: {
-      name: newFunnel.value.name,
-      description: newFunnel.value.description,
-      tenant_id: tenantId.value,
-    },
-  })
-  if (!error && data.value?.body) {
-    const funnel = data.value.body as unknown as Funnel
-    funnels.value.push(funnel)
-    selectedFunnel.value = funnel.id
-    isAddFunnelDialogOpen.value = false
-    newFunnel.value = { name: '', description: '' }
-    toast.success('Funil criado com sucesso!')
-  }
+async function handleFunnelCreated(payload: FunnelCreatedPayload) {
+  const funnel = payload.funnel
+  if (!funnels.value.some(item => item.id === funnel.id))
+    funnels.value = [...funnels.value, { id: funnel.id, name: funnel.name }]
+
+  selectedFunnel.value = funnel.id
+  stages.value = Array.isArray(payload.stages)
+    ? [...payload.stages].sort((a, b) => (a.order || 0) - (b.order || 0)) as SalesStage[]
+    : []
+  leads.value = []
+  toast.success(`Funil "${funnel.name}" criado e carregado.`)
+  await reloadFunnelData()
 }
 
-function openOrganizeStagesDialog() {
-  stagesOrder.value = [...stages.value].sort((a, b) => a.order - b.order)
-  isOrganizeStagesDialogOpen.value = true
+function openEditFunnelDialog() {
+  if (!selectedFunnel.value) {
+    toast.error('Selecione um funil para editar.')
+    return
+  }
+  isEditFunnelDialogOpen.value = true
 }
 
-async function saveStagesOrder() {
-  const tenant = tenantId.value
-  if (!tenant)
-    return
-  const tenantUuid = typeof tenant === 'object' && tenant !== null && 'id' in tenant ? (tenant as { id: string }).id : tenant
-  try {
-    for (let i = 0; i < stagesOrder.value.length; i++) {
-      const stage = stagesOrder.value[i]
-      await $fetch(`/api/crm/sales_stage/${stage.id}`, {
-        method: 'PUT',
-        body: { id: stage.id, order: i + 1, tenant_id: tenantUuid },
-      })
-    }
-    isOrganizeStagesDialogOpen.value = false
-    await fetchStages()
-    toast.success('Ordem dos estágios salva.')
+async function handleFunnelUpdated(payload: FunnelUpdatedPayload) {
+  const funnel = payload.funnel
+  funnels.value = funnels.value.map(item =>
+    item.id === funnel.id ? { id: funnel.id, name: funnel.name } : item,
+  )
+
+  if (selectedFunnel.value === funnel.id) {
+    stages.value = Array.isArray(payload.stages)
+      ? [...payload.stages].sort((a, b) => (a.order || 0) - (b.order || 0)) as SalesStage[]
+      : stages.value
   }
-  catch (e: any) {
-    const msg = e?.data?.message || e?.message || 'Erro ao salvar a ordem. Tente novamente.'
-    toast.error(msg)
-  }
+
+  toast.success(`Funil "${funnel.name}" atualizado.`)
+  await reloadFunnelData()
 }
 </script>
 
 <template>
   <div class="w-full flex flex-col items-stretch gap-6">
-    <!-- Header -->
-    <div class="mb-6 flex items-center justify-between">
-      <div>
-        <h1 class="text-2xl font-bold">
-          Funil
-        </h1>
-        <p class="text-muted-foreground">
-          Gerencie seu funil de vendas e leads
-        </p>
-      </div>
-      <div class="flex gap-2">
+    <CrmPageHeader
+      title="Funil de vendas"
+      description="Gerencie seu funil de vendas e leads"
+    >
+      <template #actions>
         <Button
           variant="outline"
           :title="metaCapiPendingCount > 0
@@ -960,8 +1021,8 @@ async function saveStagesOrder() {
           <Icon name="lucide:plus" class="mr-2 h-4 w-4" />
           Novo Lead
         </Button>
-      </div>
-    </div>
+      </template>
+    </CrmPageHeader>
 
     <!-- Barra de pesquisa unificada -->
     <div class="mb-4 flex items-center justify-between gap-2">
@@ -1177,40 +1238,86 @@ async function saveStagesOrder() {
       </Card>
     </div>
 
-    <!-- Visualização Kanban -->
-    <div v-if="viewMode === 'kanban'" class="flex flex-col gap-4">
-      <div class="mb-2 flex items-center gap-2">
-        <div class="flex items-center gap-2">
-          <Select v-model="selectedFunnel">
-            <SelectTrigger class="w-64">
-              <SelectValue placeholder="Selecione o funil..." />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem v-for="funnel in funnels" :key="funnel.id" :value="funnel.id">
-                {{ funnel.name }}
-              </SelectItem>
-            </SelectContent>
-          </Select>
-          <div class="ml-2 flex gap-1">
-            <Tooltip content="Criar novo funil">
+    <!-- Seletor de funil (Kanban e Lista) -->
+    <div class="mb-2 flex items-center gap-2">
+      <div class="flex items-center gap-2">
+        <Select v-model="selectedFunnel">
+          <SelectTrigger class="w-64">
+            <SelectValue placeholder="Selecione o funil..." />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem v-for="funnel in funnels" :key="funnel.id" :value="funnel.id">
+              {{ funnel.name }}
+            </SelectItem>
+          </SelectContent>
+        </Select>
+        <div class="ml-2 flex gap-1">
+          <Tooltip content="Criar novo funil">
+            <Button
+              variant="outline"
+              size="icon"
+              aria-label="Criar novo funil"
+              @click="isAddFunnelDialogOpen = true"
+            >
+              <Icon name="lucide:plus" class="h-5 w-5" />
+            </Button>
+          </Tooltip>
+          <Tooltip content="Editar funil selecionado">
+            <Button
+              variant="outline"
+              size="icon"
+              aria-label="Editar funil selecionado"
+              :disabled="!selectedFunnel"
+              @click="openEditFunnelDialog"
+            >
+              <Icon name="lucide:pencil" class="h-5 w-5" />
+            </Button>
+          </Tooltip>
+          <DropdownMenu>
+            <DropdownMenuTrigger as-child>
               <Button
                 variant="outline"
-                size="icon"
-                aria-label="Criar novo funil"
-                @click="isAddFunnelDialogOpen = true"
+                class="h-10 gap-2"
+                aria-label="Mover leads"
+                :disabled="!selectedFunnel"
               >
-                <Icon name="lucide:plus" class="h-5 w-5" />
+                <Icon name="lucide:git-branch" class="h-4 w-4" />
+                <span class="hidden sm:inline">Mover leads</span>
+                <Icon name="lucide:chevron-down" class="h-3.5 w-3.5 opacity-60" />
               </Button>
-            </Tooltip>
-            <Tooltip content="Organizar estágios do funil">
-              <Button variant="outline" size="icon" aria-label="Organizar estágios" @click="openOrganizeStagesDialog">
-                <Icon name="lucide:list" class="h-5 w-5" />
-              </Button>
-            </Tooltip>
-          </div>
-          <span class="ml-2 hidden text-xs text-muted-foreground md:inline">Selecione, crie ou organize seus funis</span>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" class="w-56">
+              <DropdownMenuItem
+                :disabled="!selectedItems.length"
+                @click="openMoveLeadsDialog"
+              >
+                <Icon name="lucide:check-square" class="mr-2 h-4 w-4" />
+                Mover selecionados
+                <span
+                  v-if="selectedItems.length"
+                  class="ml-auto text-xs text-muted-foreground"
+                >
+                  {{ selectedItems.length }}
+                </span>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                :disabled="!leads.length"
+                @click="openMoveAllLeadsDialog"
+              >
+                <Icon name="lucide:git-branch" class="mr-2 h-4 w-4" />
+                Mover todos deste funil
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
+        <span class="ml-2 hidden text-xs text-muted-foreground md:inline">
+          Edite o funil (etapas e ordem) ou mova leads entre funis
+        </span>
       </div>
+    </div>
+
+    <!-- Visualização Kanban -->
+    <div v-if="viewMode === 'kanban'" class="flex flex-col gap-4">
       <div
         class="scrollbar-thin scrollbar-thumb-gray-400 dark:scrollbar-thumb-gray-600 hover:scrollbar-thumb-gray-500 dark:hover:scrollbar-thumb-gray-400 flex gap-3 overflow-x-auto pb-4"
       >
@@ -1224,13 +1331,13 @@ async function saveStagesOrder() {
           <!-- Stage Header -->
           <CardHeader class="px-2 pb-1">
             <div class="mb-1 flex items-center justify-between">
-              <div class="flex items-center gap-1">
-                <div class="h-3 w-3 rounded-full" :style="{ backgroundColor: stage.color }" />
-                <CardTitle class="text-sm">
+              <div class="flex min-w-0 items-center gap-1">
+                <div class="h-3 w-3 shrink-0 rounded-full" :style="{ backgroundColor: stage.color }" />
+                <CardTitle class="truncate text-sm">
                   {{ stage.name }}
                 </CardTitle>
               </div>
-              <div class="flex items-center gap-1">
+              <div class="flex shrink-0 items-center gap-0.5">
                 <Badge variant="secondary" class="text-xs">
                   {{ stageStats[String(stage.id)]?.count || 0 }}
                 </Badge>
@@ -1238,10 +1345,39 @@ async function saveStagesOrder() {
                   variant="ghost"
                   size="icon"
                   class="h-5 w-5 p-0"
+                  aria-label="Adicionar lead neste estágio"
                   @click="handleAddLeadToStage(stage)"
                 >
                   <Icon name="lucide:plus" class="h-3 w-3" />
                 </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger as-child>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      class="h-5 w-5 p-0"
+                      aria-label="Ações do estágio"
+                    >
+                      <Icon name="lucide:more-vertical" class="h-3 w-3" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" class="w-56">
+                    <DropdownMenuItem
+                      :disabled="!(leadsByStage[String(stage.id)]?.length)"
+                      @click="toggleSelectAllInStage(String(stage.id))"
+                    >
+                      <Icon name="lucide:check-square" class="mr-2 h-4 w-4" />
+                      {{ areAllInStageSelected(String(stage.id)) ? 'Desmarcar coluna' : 'Selecionar todos da coluna' }}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      :disabled="!(leadsByStage[String(stage.id)]?.length)"
+                      @click="openMoveStageLeadsDialog(String(stage.id))"
+                    >
+                      <Icon name="lucide:git-branch" class="mr-2 h-4 w-4" />
+                      Mover coluna para funil
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             </div>
             <div class="flex flex-col gap-1">
@@ -1258,10 +1394,13 @@ async function saveStagesOrder() {
           >
             <div class="space-y-2">
               <div
-                v-for="(lead, leadIndex) in leadsByStage[String(stage.id)]"
+                v-for="lead in leadsByStage[String(stage.id)]"
                 :key="lead.id"
                 class="cursor-grab border border-l-4 rounded-lg bg-background p-3 transition-shadow hover:shadow-md"
-                :class="getPriorityColor(lead.priority)"
+                :class="[
+                  getPriorityColor(lead.priority),
+                  isLeadSelected(lead.id) ? 'ring-2 ring-primary/40' : '',
+                ]"
                 draggable="true"
                 @click="handleLeadClick(lead)"
                 @dragstart="handleDragStart($event, lead.id, lead.sales_stage_id)"
@@ -1271,13 +1410,25 @@ async function saveStagesOrder() {
                 <!-- Lead Card Content -->
                 <div class="space-y-2">
                   <div class="flex items-start justify-between gap-2">
-                    <div class="min-w-0">
-                      <h4 class="truncate text-sm font-semibold leading-tight">
-                        {{ lead.name }}
-                      </h4>
-                      <p class="truncate text-xs text-muted-foreground">
-                        {{ lead.company || 'Sem empresa' }}
-                      </p>
+                    <div class="flex min-w-0 items-start gap-2">
+                      <Checkbox
+                        :id="`kanban-lead-${lead.id}`"
+                        :checked="isLeadSelected(lead.id)"
+                        :aria-label="`Selecionar lead ${lead.name}`"
+                        class="mt-0.5"
+                        @click.stop
+                        @mousedown.stop
+                        @pointerdown.stop
+                        @update:checked="(checked: boolean | 'indeterminate') => toggleLeadSelection(lead, checked)"
+                      />
+                      <div class="min-w-0">
+                        <h4 class="truncate text-sm font-semibold leading-tight">
+                          {{ lead.name }}
+                        </h4>
+                        <p class="truncate text-xs text-muted-foreground">
+                          {{ lead.company || 'Sem empresa' }}
+                        </p>
+                      </div>
                     </div>
                     <Tooltip content="Editar lead">
                       <Button
@@ -1297,11 +1448,11 @@ async function saveStagesOrder() {
                     </p>
                     <Badge
                       variant="outline"
-                      class="h-5 py-0 text-xs"
+                      class="h-5 py-0 text-xs font-medium"
                       :class="{
-                        'bg-red-50 text-red-700 border-red-200': lead.priority === 'high',
-                        'bg-yellow-50 text-yellow-700 border-yellow-200': lead.priority === 'medium',
-                        'bg-gray-50 text-gray-700 border-gray-200': lead.priority === 'low',
+                        [crmBadgeClass.priorityHigh]: lead.priority === 'high',
+                        [crmBadgeClass.priorityMedium]: lead.priority === 'medium',
+                        [crmBadgeClass.priorityLow]: lead.priority === 'low',
                       }"
                     >
                       {{ getPriorityLabel(lead.priority) }}
@@ -1389,13 +1540,34 @@ async function saveStagesOrder() {
             <DataTablePagination :table="table" />
           </template>
         </DataTable>
-
-      <MultiActionBar
-        v-if="selectedItems.length > 0"
-        :count="selectedItems.length"
-        :on-delete="handleMultiDelete"
-      />
     </template>
+
+    <MultiActionBar
+      v-if="selectedItems.length > 0"
+      :count="selectedItems.length"
+      :on-delete="handleMultiDelete"
+    >
+      <template #actions>
+        <Button
+          variant="secondary"
+          size="sm"
+          class="bg-primary-foreground/15 text-primary-foreground hover:bg-primary-foreground/25"
+          @click="openMoveLeadsDialog"
+        >
+          <Icon name="lucide:git-branch" class="mr-2 h-4 w-4" />
+          Mover para funil
+        </Button>
+        <Button
+          v-if="viewMode === 'kanban'"
+          variant="secondary"
+          size="sm"
+          class="bg-primary-foreground/15 text-primary-foreground hover:bg-primary-foreground/25"
+          @click="clearLeadSelection"
+        >
+          Limpar seleção
+        </Button>
+      </template>
+    </MultiActionBar>
     </template>
 
     <!-- Sheet para filtros -->
@@ -1676,54 +1848,30 @@ async function saveStagesOrder() {
     </Dialog>
 
     <!-- Dialog para criar funil -->
-    <Dialog v-model:open="isAddFunnelDialogOpen">
-      <DialogContent class="max-w-md">
-        <DialogHeader>
-          <DialogTitle>Novo Funil</DialogTitle>
-          <DialogDescription>Criar um novo funil de vendas</DialogDescription>
-        </DialogHeader>
-        <div class="space-y-4">
-          <Input v-model="newFunnel.name" placeholder="Nome do funil" />
-          <Textarea v-model="newFunnel.description" placeholder="Descrição (opcional)" />
-        </div>
-        <DialogFooter>
-          <Button variant="outline" @click="isAddFunnelDialogOpen = false">
-            Cancelar
-          </Button>
-          <Button @click="handleCreateFunnel">
-            Criar
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <FunnelCreateDialog
+      v-model:open="isAddFunnelDialogOpen"
+      :tenant-id="tenantId"
+      mode="create"
+      @created="handleFunnelCreated"
+    />
 
-    <!-- Dialog para organizar stages -->
-    <Dialog v-model:open="isOrganizeStagesDialogOpen">
-      <DialogContent class="max-w-lg">
-        <DialogHeader>
-          <DialogTitle>Organizar Estágios</DialogTitle>
-          <DialogDescription>Arraste e solte para reordenar os estágios</DialogDescription>
-        </DialogHeader>
-        <Draggable v-model="stagesOrder" item-key="id" class="space-y-2">
-          <template #item="{ element, index }">
-            <div class="flex items-center gap-2 border rounded bg-muted p-2">
-              <span class="font-medium">{{ element.name }}</span>
-              <span class="ml-auto text-xs text-muted-foreground">Ordem: {{ index + 1 }}</span>
-            </div>
-          </template>
-        </Draggable>
-        <DialogFooter>
-          <Button variant="outline" @click="isOrganizeStagesDialogOpen = false">
-            Cancelar
-          </Button>
-          <Button @click="saveStagesOrder">
-            Salvar ordem
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <!-- Dialog para editar funil selecionado -->
+    <FunnelCreateDialog
+      v-model:open="isEditFunnelDialogOpen"
+      :tenant-id="tenantId"
+      mode="edit"
+      :funnel-id="selectedFunnel"
+      @updated="handleFunnelUpdated"
+    />
 
     <MetaCapiSyncDialog v-model:open="metaSyncDialogOpen" @synced="onMetaSyncDone" />
+
+    <MoveLeadsFunnelDialog
+      v-model:open="isMoveLeadsDialogOpen"
+      :lead-ids="selectedItems.map(item => item.id)"
+      :default-funnel-id="selectedFunnel"
+      @moved="handleLeadsMoved"
+    />
   </div>
 </template>
 

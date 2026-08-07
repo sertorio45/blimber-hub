@@ -13,9 +13,15 @@ import {
 import { Stepper, StepperDescription, StepperItem, StepperSeparator, StepperTitle, StepperTrigger } from '@/components/ui/stepper'
 import CompanyAddressFields from '~/components/crm/company/CompanyAddressFields.vue'
 import CompanyNameAutofillInput from '~/components/crm/leads/CompanyNameAutofillInput.vue'
+import LeadFunnelStageFields from '~/components/crm/leads/LeadFunnelStageFields.vue'
 import LeadNameAutofillInput from '~/components/crm/leads/LeadNameAutofillInput.vue'
 import LeadValuesFields from '~/components/crm/leads/LeadValuesFields.vue'
 import Button from '~/components/ui/button/Button.vue'
+import { toast } from 'vue-sonner'
+import {
+  firstStageIdForFunnel,
+  resolveLeadStatusOnStageMove,
+} from '~/utils/crm/sales-stage'
 import Card from '~/components/ui/card/Card.vue'
 import CardContent from '~/components/ui/card/CardContent.vue'
 import CardHeader from '~/components/ui/card/CardHeader.vue'
@@ -145,12 +151,13 @@ const totalSteps = steps.length
 const leadForm = ref({
   name: '',
   source: '',
-  status: '',
   priority: 'medium', // Valor padrão
   valuesInputs: [''] as string[],
   closedValue: '',
   notes: '',
 })
+const selectedFunnelId = ref<string | null>(null)
+const selectedSalesStageId = ref<string | null>(null)
 const contactForm = ref({
   name: '',
   email: '',
@@ -229,7 +236,7 @@ function prevStep() {
 
 function validateStep() {
   if (step.value === 0) {
-    return !!leadForm.value.name
+    return !!leadForm.value.name && !!selectedFunnelId.value && !!selectedSalesStageId.value
   }
 
   if (step.value === 1) {
@@ -271,28 +278,46 @@ function getSourceEnumValue(sourceId: string | null): 'website' | 'referral' | '
   return 'other'
 }
 
-// Função para buscar o pipeline ativo (fallback quando não vem por prop)
-function getActiveFunnelId(): string | null {
+function resolveDefaultFunnelId(): string | null {
   if (props.defaultFunnelId || props.defaultPipelineId)
     return props.defaultFunnelId || props.defaultPipelineId || null
   if (!activePipelines.value || activePipelines.value.length === 0)
     return null
   const activeFunnel = activePipelines.value.find(p => p.is_active === true)
-  return activeFunnel ? activeFunnel.id : null
+  return activeFunnel?.id ?? activePipelines.value[0]?.id ?? null
 }
 
-function getFirstStageIdForFunnel(funnelId: string | null): string | null {
-  if (!funnelId || !salesStages.value?.length)
-    return null
-  const funnelStages = salesStages.value
-    .filter((s: any) => s.funnel_id === funnelId)
-    .sort((a: any, b: any) => (a.order ?? 0) - (b.order ?? 0))
-  return funnelStages[0]?.id ?? null
+function applyFunnelStageDefaults() {
+  const funnelId = resolveDefaultFunnelId()
+  selectedFunnelId.value = funnelId
+
+  if (props.defaultSalesStageId) {
+    const stageBelongsToFunnel = (salesStages.value || []).some(
+      (stage: { id: string, funnel_id?: string }) =>
+        stage.id === props.defaultSalesStageId && (!funnelId || stage.funnel_id === funnelId),
+    )
+    if (stageBelongsToFunnel) {
+      selectedSalesStageId.value = props.defaultSalesStageId
+      return
+    }
+  }
+
+  selectedSalesStageId.value = firstStageIdForFunnel(salesStages.value || [], funnelId)
 }
+
+watch(
+  [() => props.defaultFunnelId, () => props.defaultPipelineId, () => props.defaultSalesStageId, activePipelines, salesStages],
+  () => {
+    if (!selectedFunnelId.value || props.defaultFunnelId || props.defaultPipelineId || props.defaultSalesStageId)
+      applyFunnelStageDefaults()
+  },
+  { immediate: true },
+)
 
 async function submitLead() {
   if (!tenantId.value) {
     console.error('Tenant not found')
+    toast.error('Tenant não identificado.')
     return
   }
 
@@ -303,8 +328,19 @@ async function submitLead() {
       throw new Error('Preencha todos os campos obrigatórios')
     }
 
-    const funnelId = getActiveFunnelId()
-    const salesStageId = props.defaultSalesStageId ?? getFirstStageIdForFunnel(funnelId)
+    const funnelId = selectedFunnelId.value || resolveDefaultFunnelId()
+    const salesStageId = selectedSalesStageId.value
+      ?? firstStageIdForFunnel(salesStages.value || [], funnelId)
+
+    if (!funnelId) {
+      throw new Error('Selecione um funil')
+    }
+    if (!salesStageId) {
+      throw new Error('Selecione um estágio de vendas')
+    }
+
+    const stage = (salesStages.value || []).find((s: { id: string }) => s.id === salesStageId)
+    const stageStatus = resolveLeadStatusOnStageMove(stage?.name || '', 'new')
 
     const proposalValues = parseLeadValuesInputs(leadForm.value.valuesInputs)
     const closedAmount = parseLeadValueInput(leadForm.value.closedValue)
@@ -312,14 +348,15 @@ async function submitLead() {
       ? closedAmount
       : (proposalValues.length ? Math.max(...proposalValues) : 0)
 
-    // 1. Cria o Lead (sales_stage_id = estágio "Novo" ou o estágio clicado no Kanban)
+    // 1. Cria o Lead (funnel + estágio escolhidos no formulário)
     const leadData = {
       name: leadForm.value.name,
       source: getSourceEnumValue(leadForm.value.source),
       source_id: leadForm.value.source || null,
       sales_stage_id: salesStageId,
       funnel_id: funnelId,
-      status: 'new' as any,
+      status: stageStatus.status as any,
+      closed_at: stageStatus.closed_at,
       priority: (leadForm.value.priority as any) || 'medium',
       value: scalarValue,
       values: proposalValues,
@@ -409,14 +446,10 @@ async function submitLead() {
       throw new Error('Falha ao criar contato: nenhum dado retornado')
     }
 
-    // 4. Não criar meeting por enquanto para evitar erros de tipo
-    // O meeting pode ser adicionado depois com os tipos corretos
-
     // Resetar formulário
     leadForm.value = {
       name: '',
       source: '',
-      status: '',
       priority: 'medium',
       valuesInputs: [''],
       closedValue: '',
@@ -433,6 +466,8 @@ async function submitLead() {
       name: '',
       website: '',
       address: '',
+      address_number: '',
+      address_complement: '',
       cep: '',
       city: '',
       country: '',
@@ -448,19 +483,22 @@ async function submitLead() {
     }
 
     step.value = 0
+    applyFunnelStageDefaults()
+
+    toast.success('Lead criado com sucesso!')
 
     // Emitir evento para o componente pai (inclui dados do contato para exibição imediata)
     emit('lead-created', {
       ...lead,
       email: contact.email,
       phone: contact.phone,
+      funnel_id: funnelId,
+      sales_stage_id: salesStageId,
     })
-
-    // Lead criado com sucesso - sem log para evitar violação de linter
   }
   catch (err: any) {
     console.error('Erro ao criar lead:', err)
-    console.error(`Falha ao criar lead: ${err.message}`)
+    toast.error(err?.message || 'Falha ao criar lead')
   }
   finally {
     loading.value = false
@@ -636,19 +674,12 @@ async function submitLead() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div class="space-y-2">
-                  <Label for="lead-status">Status</Label>
-                  <Select v-model="leadForm.status">
-                    <SelectTrigger id="lead-status">
-                      <SelectValue placeholder="Selecione o status" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem v-for="stage in salesStages" :key="stage.id" :value="stage.id">
-                        {{ stage.name }}
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+                <LeadFunnelStageFields
+                  v-model:funnel-id="selectedFunnelId"
+                  v-model:sales-stage-id="selectedSalesStageId"
+                  required
+                  id-prefix="create-lead"
+                />
                 <div class="md:col-span-2">
                   <LeadValuesFields
                     v-model="leadForm.valuesInputs"

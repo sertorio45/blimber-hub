@@ -29,13 +29,6 @@ const links = computed(() => [
     to: '/marketing/brand-guide',
     enabled: canBrandGuide.value,
   },
-  {
-    title: 'Equipe',
-    description: 'Usuários, convites e papéis da empresa.',
-    icon: 'lucide:users-round',
-    to: '/settings/team',
-    enabled: true,
-  },
 ].filter(item => item.enabled))
 </script>
 
@@ -46,7 +39,7 @@ const links = computed(() => [
         Configurações
       </h1>
       <p class="mt-1 text-muted-foreground">
-        Contas sociais, marca e equipe — fora do caminho operacional principal.
+        Contas sociais e marca — fora do caminho operacional principal.
       </p>
     </div>
 

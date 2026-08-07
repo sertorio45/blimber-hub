@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import DataTableRowActions from '@/components/ui/table/DataTableRowActions.vue'
 import { TENANT_TEAM_ROLE_LABELS } from '~/types/tenant-team'
+import { crmBadgeClass, renderActiveStatusBadge } from '~/utils/crm/badges'
 
 export const columns: ColumnDef<TenantTeamMember>[] = [
   {
@@ -62,11 +63,9 @@ export const columns: ColumnDef<TenantTeamMember>[] = [
       const onResendInvite = (table.options.meta as any)?.onResendInvite
 
       return h('div', { class: 'flex flex-col items-start gap-0.5' }, [
-        h(
-          Badge,
-          { variant: isPending ? 'outline' : 'secondary' },
-          () => (isPending ? 'Convite pendente' : 'Ativo'),
-        ),
+        isPending
+          ? h(Badge, { variant: 'outline', class: `font-medium text-xs ${crmBadgeClass.metaPending}` }, () => 'Convite pendente')
+          : renderActiveStatusBadge(true),
         member.lastSignInAt
           ? h(
               'span',

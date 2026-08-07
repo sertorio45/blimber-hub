@@ -7,14 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import DataTableRowActions from '@/components/ui/table/DataTableRowActions.vue'
 import { MEETING_STATUS_LABELS, MEETING_TYPE_LABELS } from '~/constants/meetings'
-
-function statusVariant(status: Meeting['status']) {
-  if (status === 'completed')
-    return 'secondary'
-  if (status === 'cancelled' || status === 'no-show')
-    return 'outline'
-  return 'default'
-}
+import { crmBadgeClass, meetingStatusBadgeClass } from '~/utils/crm/badges'
 
 export const columns: ColumnDef<Meeting>[] = [
   {
@@ -46,21 +39,21 @@ export const columns: ColumnDef<Meeting>[] = [
   {
     accessorKey: 'company_name',
     header: ({ column }) => h(DataTableColumnHeader, { column, title: 'Empresa' }),
-    cell: ({ row }) => row.getValue('company_name') || '—',
+    cell: ({ row }) => h('span', { class: 'text-sm text-muted-foreground' }, (row.getValue('company_name') as string) || '—'),
     enableSorting: true,
     enableHiding: true,
   },
   {
     accessorKey: 'contact_name',
     header: ({ column }) => h(DataTableColumnHeader, { column, title: 'Contato' }),
-    cell: ({ row }) => row.getValue('contact_name') || '—',
+    cell: ({ row }) => h('span', { class: 'text-sm text-muted-foreground' }, (row.getValue('contact_name') as string) || '—'),
     enableSorting: true,
     enableHiding: true,
   },
   {
     accessorKey: 'lead_name',
     header: ({ column }) => h(DataTableColumnHeader, { column, title: 'Lead' }),
-    cell: ({ row }) => row.getValue('lead_name') || '—',
+    cell: ({ row }) => h('span', { class: 'text-sm text-muted-foreground' }, (row.getValue('lead_name') as string) || '—'),
     enableSorting: true,
     enableHiding: true,
   },
@@ -69,7 +62,11 @@ export const columns: ColumnDef<Meeting>[] = [
     header: ({ column }) => h(DataTableColumnHeader, { column, title: 'Tipo' }),
     cell: ({ row }) => {
       const type = row.getValue('type') as Meeting['type']
-      return h(Badge, { variant: 'outline' }, () => MEETING_TYPE_LABELS[type] || type)
+      return h(
+        Badge,
+        { variant: 'outline', class: `font-medium text-xs ${crmBadgeClass.type}` },
+        () => MEETING_TYPE_LABELS[type] || type,
+      )
     },
     enableSorting: true,
     enableHiding: true,
@@ -79,7 +76,14 @@ export const columns: ColumnDef<Meeting>[] = [
     header: ({ column }) => h(DataTableColumnHeader, { column, title: 'Status' }),
     cell: ({ row }) => {
       const status = row.getValue('status') as Meeting['status']
-      return h(Badge, { variant: statusVariant(status) }, () => MEETING_STATUS_LABELS[status] || status)
+      return h(
+        Badge,
+        {
+          variant: 'outline',
+          class: `font-medium text-xs ${meetingStatusBadgeClass(status)}`,
+        },
+        () => MEETING_STATUS_LABELS[status] || status,
+      )
     },
     enableSorting: true,
     enableHiding: true,
@@ -89,10 +93,10 @@ export const columns: ColumnDef<Meeting>[] = [
     header: ({ column }) => h(DataTableColumnHeader, { column, title: 'Início' }),
     cell: ({ row }) => {
       const raw = row.getValue('start_time') as string
-      return new Date(raw).toLocaleString('pt-BR', {
+      return h('span', { class: 'text-sm tabular-nums' }, new Date(raw).toLocaleString('pt-BR', {
         dateStyle: 'short',
         timeStyle: 'short',
-      })
+      }))
     },
     enableSorting: true,
     enableHiding: true,
@@ -102,10 +106,10 @@ export const columns: ColumnDef<Meeting>[] = [
     header: ({ column }) => h(DataTableColumnHeader, { column, title: 'Fim' }),
     cell: ({ row }) => {
       const raw = row.getValue('end_time') as string
-      return new Date(raw).toLocaleString('pt-BR', {
+      return h('span', { class: 'text-sm tabular-nums text-muted-foreground' }, new Date(raw).toLocaleString('pt-BR', {
         dateStyle: 'short',
         timeStyle: 'short',
-      })
+      }))
     },
     enableSorting: true,
     enableHiding: true,

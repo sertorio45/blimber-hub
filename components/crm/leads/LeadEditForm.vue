@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/select'
 import CompanyAddressFields from '~/components/crm/company/CompanyAddressFields.vue'
 import CompanyNameAutofillInput from '~/components/crm/leads/CompanyNameAutofillInput.vue'
+import LeadFunnelStageFields from '~/components/crm/leads/LeadFunnelStageFields.vue'
 // Removendo import de tabs temporariamente
 // import {
 //   Tabs,
@@ -39,6 +40,7 @@ import {
 } from '~/composables/crm/useCrmLeadValue'
 import { useCrmLeadWhatsapp } from '~/composables/crm/useCrmLeadWhatsapp'
 import { useTenant } from '~/composables/useTenant'
+import { toast } from 'vue-sonner'
 
 // Props
 interface Props {
@@ -71,23 +73,11 @@ const { data: leadSources, pending: leadSourcesPending } = await useLazyFetch<an
   server: false,
 })
 
-const { data: salesStages, pending: salesStagesPending } = await useLazyFetch<any[]>('/api/crm/sales_stage', {
-  query: computed(() => ({
-    tenant_id: tenantId.value,
-    active_only: 'true',
-  })),
-  watch: [tenantId],
-  default: () => [],
-  server: false,
-})
-
 // Computed para estado geral de loading
-const isLoadingAnyData = computed(() =>
-  leadSourcesPending.value || salesStagesPending.value,
-)
+const isLoadingAnyData = computed(() => leadSourcesPending.value)
 
 // Watch para gerenciar estado de loading geral
-watch([leadSourcesPending, salesStagesPending], () => {
+watch(leadSourcesPending, () => {
   isLoadingData.value = isLoadingAnyData.value
 }, { immediate: true })
 
@@ -120,7 +110,8 @@ const meetingTypeOptions = [
 const leadForm = ref({
   name: '',
   source: '',
-  sales_stage_id: '',
+  funnel_id: '' as string | null,
+  sales_stage_id: '' as string | null,
   status: 'new',
   priority: 'medium',
   valuesInputs: [''] as string[],
@@ -387,6 +378,7 @@ watch([() => props.lead, leadSources], () => {
     leadForm.value = {
       name: props.lead.name || '',
       source: findLeadSourceId(props.lead.source_id || props.lead.source) || '',
+      funnel_id: props.lead.funnel_id || null,
       sales_stage_id: props.lead.sales_stage_id || '',
       status: props.lead.status || 'new',
       priority: props.lead.priority || 'medium',
@@ -475,7 +467,7 @@ function getSourceEnumValue(sourceId: string | null): 'website' | 'referral' | '
 
 // Função para validar formulário
 function validateForm() {
-  return !!leadForm.value.name
+  return !!leadForm.value.name && !!leadForm.value.funnel_id && !!leadForm.value.sales_stage_id
 }
 
 // Função para atualizar lead e entidades relacionadas
@@ -498,6 +490,7 @@ async function updateLead() {
       name: leadForm.value.name,
       source: getSourceEnumValue(leadForm.value.source),
       source_id: leadForm.value.source || null,
+      funnel_id: leadForm.value.funnel_id || null,
       sales_stage_id: leadForm.value.sales_stage_id || null,
       status: leadForm.value.status,
       priority: leadForm.value.priority,
@@ -506,6 +499,13 @@ async function updateLead() {
       notes: leadForm.value.notes || null,
       assigned_to: leadForm.value.assigned_to,
       tenant_id: tenantId.value,
+    }
+
+    if (!leadUpdateData.funnel_id) {
+      throw new Error('Selecione um funil')
+    }
+    if (!leadUpdateData.sales_stage_id) {
+      throw new Error('Selecione um estágio de vendas')
     }
 
     const leadResponse = await $fetch('/api/crm/lead', {
@@ -634,10 +634,17 @@ async function updateLead() {
     }
 
     // Emitir evento para o componente pai
+    toast.success('Lead atualizado com sucesso!')
     emit('lead-updated', updatedLead)
   }
   catch (err: any) {
     console.error('Erro ao atualizar lead:', err)
+    toast.error(
+      err?.data?.statusMessage
+      || err?.statusMessage
+      || err?.message
+      || 'Falha ao atualizar lead',
+    )
   }
   finally {
     loading.value = false
@@ -741,19 +748,12 @@ function cancel() {
             </Select>
           </div>
 
-          <div class="space-y-2">
-            <Label for="lead-stage">Estágio de vendas</Label>
-            <Select v-model="leadForm.sales_stage_id">
-              <SelectTrigger id="lead-stage">
-                <SelectValue placeholder="Selecione o estágio" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem v-for="stage in salesStages" :key="stage.id" :value="stage.id">
-                  {{ stage.name }}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+          <LeadFunnelStageFields
+            v-model:funnel-id="leadForm.funnel_id"
+            v-model:sales-stage-id="leadForm.sales_stage_id"
+            required
+            id-prefix="edit-lead"
+          />
 
           <div class="space-y-2">
             <Label for="lead-assigned">Responsável</Label>

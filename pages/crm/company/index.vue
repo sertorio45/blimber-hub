@@ -5,6 +5,7 @@ import { ref, watch } from 'vue'
 import DataTableViewOptions from '~/components/ui/table/DataTableViewOptions.vue'
 import { columns } from '~/components/crm/company/columns'
 import CompanyForm from '~/components/crm/company/CompanyForm.vue'
+import CrmPageHeader from '~/components/crm/shared/CrmPageHeader.vue'
 import MultiActionBar from '~/components/shared/MultiActionBar.vue'
 import Button from '~/components/ui/button/Button.vue'
 import Card from '~/components/ui/card/Card.vue'
@@ -147,17 +148,11 @@ async function handleMultiDelete() {
 
 <template>
   <div class="w-full flex flex-col items-stretch gap-4">
-    <!-- Header -->
-    <div class="mb-6 flex items-center justify-between">
-      <div>
-        <h1 class="text-2xl font-bold">
-          Empresas
-        </h1>
-        <p class="text-muted-foreground">
-          Gerencie empresas e prospects
-        </p>
-      </div>
-      <div class="flex gap-2">
+    <CrmPageHeader
+      title="Empresas"
+      description="Gerencie empresas e prospects"
+    >
+      <template #actions>
         <Button variant="outline">
           <Icon name="lucide:download" class="mr-2 h-4 w-4" />
           Exportar
@@ -166,8 +161,8 @@ async function handleMultiDelete() {
           <Icon name="lucide:plus" class="mr-2 h-4 w-4" />
           Nova Empresa
         </Button>
-      </div>
-    </div>
+      </template>
+    </CrmPageHeader>
 
     <!-- DataTable with Skeleton -->
     <div v-if="isLoading" class="space-y-4">

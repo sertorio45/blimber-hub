@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 
 import { salesStageColumns } from '~/components/crm/config/salesStageColumns'
 import SalesStageForm from '~/components/crm/config/SalesStageForm.vue'
+import CrmPageHeader from '~/components/crm/shared/CrmPageHeader.vue'
 import MultiActionBar from '~/components/shared/MultiActionBar.vue'
 import Button from '~/components/ui/button/Button.vue'
 import Card from '~/components/ui/card/Card.vue'
@@ -249,21 +250,18 @@ watch(tenantId, (val) => {
 </script>
 
 <template>
-  <div>
-    <div class="mb-6 flex items-center justify-between">
-      <div>
-        <h1 class="text-2xl font-bold tracking-tight">
-          Estágios de Vendas
-        </h1>
-        <p class="text-muted-foreground">
-          Gerencie todos os estágios de vendas do seu funil CRM.
-        </p>
-      </div>
-      <Button class="bg-primary hover:bg-primary/90" @click="handleCreate">
-        <Icon name="lucide:plus-circle" class="mr-2 h-4 w-4" />
-        Novo Estágio
-      </Button>
-    </div>
+  <div class="w-full flex flex-col items-stretch gap-4">
+    <CrmPageHeader
+      title="Estágios de vendas"
+      description="Gerencie todos os estágios de vendas do seu funil CRM."
+    >
+      <template #actions>
+        <Button @click="handleCreate">
+          <Icon name="lucide:plus" class="mr-2 h-4 w-4" />
+          Novo estágio
+        </Button>
+      </template>
+    </CrmPageHeader>
     <div v-if="showSkeleton" class="space-y-4">
       <Card class="border shadow-sm">
         <CardContent class="p-4">

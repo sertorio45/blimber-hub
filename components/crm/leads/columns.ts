@@ -1,28 +1,29 @@
 import type { ColumnDef } from '@tanstack/vue-table'
 import type { LeadSource } from '~/types/crm'
 
-import { h, resolveComponent } from 'vue'
+import { h } from 'vue'
 import DataTableColumnHeader from '@/components/tasks/components/DataTableColumnHeader.vue'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
 
 import DataTableRowActions from '@/components/ui/table/DataTableRowActions.vue'
 import { formatLeadValueRange } from '~/composables/crm/useCrmLeadValue'
+import { crmBadgeClass, renderDefaultFlagBadge, renderPriorityBadge } from '~/utils/crm/badges'
 
 const statusOptions = [
   { value: 'new', label: 'Novo', color: 'border-transparent bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300' },
-  { value: 'contacted', label: 'Contatado', color: 'border-transparent bg-purple-100 text-purple-800 dark:bg-purple-900/40 dark:text-purple-300' },
+  { value: 'contacted', label: 'Contatado', color: 'border-transparent bg-violet-100 text-violet-800 dark:bg-violet-900/40 dark:text-violet-300' },
   { value: 'qualified', label: 'Qualificado', color: 'border-transparent bg-cyan-100 text-cyan-800 dark:bg-cyan-900/40 dark:text-cyan-300' },
-  { value: 'proposal', label: 'Proposta', color: 'border-transparent bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300' },
+  { value: 'proposal', label: 'Proposta', color: 'border-transparent bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300' },
   { value: 'negotiation', label: 'Negociação', color: 'border-transparent bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300' },
-  { value: 'won', label: 'Ganho', color: 'border-transparent bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300' },
-  { value: 'lost', label: 'Perdido', color: 'border-transparent bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300' },
+  { value: 'won', label: 'Ganho', color: crmBadgeClass.active },
+  { value: 'lost', label: 'Perdido', color: crmBadgeClass.inactive },
 ]
 
 const priorityOptions = [
-  { value: 'low', label: 'Baixa', color: 'border-transparent bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300' },
-  { value: 'medium', label: 'Média', color: 'border-transparent bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-300' },
-  { value: 'high', label: 'Alta', color: 'border-transparent bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300' },
+  { value: 'low', label: 'Baixa', color: crmBadgeClass.priorityLow },
+  { value: 'medium', label: 'Média', color: crmBadgeClass.priorityMedium },
+  { value: 'high', label: 'Alta', color: crmBadgeClass.priorityHigh },
 ]
 
 const sourceOptions = [
@@ -130,20 +131,7 @@ export const columns: ColumnDef<any>[] = [
   {
     accessorKey: 'priority',
     header: ({ column }) => h(DataTableColumnHeader, { column, title: 'Prioridade' }),
-    cell: ({ row }) => {
-      const priority = priorityOptions.find(p => p.value === row.getValue('priority'))
-      if (!priority)
-        return null
-
-      return h(
-        Badge,
-        {
-          variant: 'outline',
-          class: priority.color,
-        },
-        () => priority.label,
-      )
-    },
+    cell: ({ row }) => renderPriorityBadge(String(row.getValue('priority') || '')),
     filterFn: (row, id, value) => {
       return value.includes(row.getValue(id))
     },
@@ -238,28 +226,7 @@ export const sourceColumns: ColumnDef<LeadSource>[] = [
   {
     accessorKey: 'is_default',
     header: ({ column }) => h(DataTableColumnHeader, { column, title: 'Padrão' }),
-    cell: ({ row }) => {
-      const isDefault = row.original.is_default
-      return h('div', { class: 'flex items-center' }, [
-        h(
-          'span',
-          {
-            class: `inline-flex items-center border rounded-full px-2.5 py-1 text-xs font-medium ${
-              isDefault
-                ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
-                : 'bg-muted text-muted-foreground'
-            }`,
-          },
-          [
-            h(resolveComponent('Icon'), {
-              name: isDefault ? 'lucide:check-circle' : 'lucide:circle',
-              class: 'mr-1 h-3.5 w-3.5',
-            }),
-            isDefault ? 'Padrão' : 'Personalizado',
-          ],
-        ),
-      ])
-    },
+    cell: ({ row }) => renderDefaultFlagBadge(Boolean(row.original.is_default)),
     enableSorting: false,
     enableHiding: false,
   },
