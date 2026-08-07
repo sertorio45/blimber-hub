@@ -1,9 +1,10 @@
 import type { ColumnDef } from '@tanstack/vue-table'
-import { h, resolveComponent } from 'vue'
+import { h } from 'vue'
 
 import DataTableColumnHeader from '@/components/tasks/components/DataTableColumnHeader.vue'
 import { Checkbox } from '@/components/ui/checkbox'
 import DataTableRowActions from '@/components/ui/table/DataTableRowActions.vue'
+import { renderDefaultFlagBadge } from '~/utils/crm/badges'
 
 export const sourceColumns: ColumnDef<any>[] = [
   {
@@ -27,41 +28,23 @@ export const sourceColumns: ColumnDef<any>[] = [
   },
   {
     accessorKey: 'name',
-    header: ({ column }) => h(DataTableColumnHeader, { column, title: 'Nome da origem' }),
-    cell: ({ row }) => h('span', { class: 'font-medium text-muted-foreground' }, row.getValue('name')),
+    header: ({ column }) => h(DataTableColumnHeader, { column, title: 'Nome' }),
+    cell: ({ row }) => h('span', { class: 'font-medium' }, row.getValue('name')),
   },
   {
     accessorKey: 'description',
     header: ({ column }) => h(DataTableColumnHeader, { column, title: 'Descrição' }),
-    cell: ({ row }) => h('span', { class: 'truncate text-xs text-muted-foreground' }, row.getValue('description')),
+    cell: ({ row }) => h(
+      'span',
+      { class: 'max-w-[280px] truncate text-sm text-muted-foreground' },
+      (row.getValue('description') as string) || '—',
+    ),
   },
   {
     accessorKey: 'is_default',
     header: ({ column }) => h(DataTableColumnHeader, { column, title: 'Padrão' }),
-    cell: ({ row }) => {
-      const isDefault = row.original.is_default
-      return h('div', { class: 'flex items-center' }, [
-        h(
-          'span',
-          {
-            class: `inline-flex items-center border rounded-full px-2.5 py-1 text-xs font-medium ${
-              isDefault
-                ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
-                : 'bg-muted text-muted-foreground'
-            }`,
-          },
-          [
-            h(resolveComponent('Icon'), {
-              name: isDefault ? 'lucide:check-circle' : 'lucide:circle',
-              class: 'mr-1 h-3.5 w-3.5',
-            }),
-            isDefault ? 'Padrão' : 'Personalizado',
-          ],
-        ),
-      ])
-    },
+    cell: ({ row }) => renderDefaultFlagBadge(Boolean(row.original.is_default)),
     enableSorting: false,
-    enableHiding: false,
   },
   {
     id: 'actions',

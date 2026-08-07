@@ -1,11 +1,16 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+import FunnelCreateDialog from '~/components/crm/config/FunnelCreateDialog.vue'
+import type { FunnelCreatedPayload } from '~/components/crm/config/FunnelCreateDialog.vue'
 import { funnelColumns } from '~/components/crm/config/funnelColumns'
+import CrmPageHeader from '~/components/crm/shared/CrmPageHeader.vue'
 import MultiActionBar from '~/components/shared/MultiActionBar.vue'
 import Button from '~/components/ui/button/Button.vue'
 import Card from '~/components/ui/card/Card.vue'
 import CardContent from '~/components/ui/card/CardContent.vue'
+import Checkbox from '~/components/ui/checkbox/Checkbox.vue'
+import Label from '~/components/ui/label/Label.vue'
 import Skeleton from '~/components/ui/skeleton/Skeleton.vue'
 import DataTable from '~/components/ui/table/DataTable.vue'
 import DataTablePagination from '~/components/ui/table/DataTablePagination.vue'
@@ -15,6 +20,7 @@ import { isTenantScopedRole } from '~/constants/roles'
 import { deleteWithConfirm } from '~/composables/useConfirmDelete'
 import { useTenantPage } from '~/composables/useTenantPage'
 import { useTenantRoleFilter } from '~/composables/useTenantRoleFilter'
+import { toast } from 'vue-sonner'
 
 definePageMeta({
   middleware: ['auth'],
@@ -22,13 +28,12 @@ definePageMeta({
 
 const { tenantId, currentRole, whenTenantReady } = useTenantPage()
 const selectedItems = ref<any[]>([])
-const showDialog = ref(false)
-const showActiveOnly = ref(true) // Novo estado para filtrar apenas ativos
+const showCreateDialog = ref(false)
+const showActiveOnly = ref(true)
 const router = useRouter()
 
 const {
   data: funnelsRaw,
-  pending,
   refresh: refreshFunnels,
   showSkeleton,
 } = await useCachedAsyncData<any[]>(
@@ -57,10 +62,8 @@ const filteredFunnels = computed(() => {
     result = [...defaults, ...funnelsByTenant.value.filter((i: any) => !ids.has(i.id))]
   }
 
-  // Filtrar apenas funis que possuem 'name'
   result = result.filter((item: any) => typeof item.name === 'string')
 
-  // Aplicar filtro de is_active se showActiveOnly for true
   if (showActiveOnly.value) {
     result = result.filter((item: any) => item.is_active === true)
   }
@@ -134,6 +137,13 @@ async function handleMultiDelete() {
   }
 }
 
+async function handleFunnelCreated(payload: FunnelCreatedPayload) {
+  await refreshFunnels()
+  toast.success(`Funil "${payload.funnel.name}" criado com sucesso.`)
+  if (payload.funnel.id)
+    await router.push(`/crm/config/funnel/${payload.funnel.id}/edit`)
+}
+
 whenTenantReady(() => {
   refreshFunnels()
 })
@@ -141,28 +151,24 @@ whenTenantReady(() => {
 watch(tenantId, (val) => {
   if (val)
     refreshFunnels()
-  showDialog.value = false
+  showCreateDialog.value = false
 })
 </script>
 
 <template>
-  <div>
-    <div class="mb-6 flex items-center justify-between">
-      <div>
-        <h1 class="text-2xl font-bold tracking-tight">
-          Funis
-        </h1>
-        <p class="text-muted-foreground">
-          Gerencie todos os funis do seu CRM.
-        </p>
-      </div>
-      <NuxtLink to="/crm/config/funnel/new">
-        <Button class="bg-primary hover:bg-primary/90">
-          <Icon name="lucide:plus-circle" class="mr-2 h-4 w-4" />
-          Novo Funil
+  <div class="w-full flex flex-col items-stretch gap-4">
+    <CrmPageHeader
+      title="Funis"
+      description="Gerencie todos os funis do seu CRM."
+    >
+      <template #actions>
+        <Button @click="showCreateDialog = true">
+          <Icon name="lucide:plus" class="mr-2 h-4 w-4" />
+          Novo funil
         </Button>
-      </NuxtLink>
-    </div>
+      </template>
+    </CrmPageHeader>
+
     <div v-if="showSkeleton" class="space-y-4">
       <Card class="border shadow-sm">
         <CardContent class="p-4">
@@ -184,23 +190,22 @@ watch(tenantId, (val) => {
       >
         <template #toolbar="{ table }">
           <DataTableToolbar :table="table" filter-column="name" placeholder="Filtrar funis...">
+            <template #filters>
+              <div class="flex items-center gap-2">
+                <Checkbox
+                  id="active-only"
+                  :checked="showActiveOnly"
+                  @update:checked="(checked: boolean) => (showActiveOnly = checked)"
+                />
+                <Label for="active-only" class="text-sm text-muted-foreground font-medium">
+                  Mostrar apenas ativos
+                </Label>
+              </div>
+            </template>
             <template #options>
               <DataTableViewOptions :table="table" />
             </template>
           </DataTableToolbar>
-          <div class="flex items-center space-x-2">
-            <div class="flex items-center space-x-2">
-              <input
-                id="active-only"
-                v-model="showActiveOnly"
-                type="checkbox"
-                class="h-4 w-4 border-gray-300 rounded text-primary focus:ring-primary"
-              >
-              <label for="active-only" class="text-sm text-muted-foreground font-medium">
-                Mostrar apenas ativos
-              </label>
-            </div>
-          </div>
         </template>
         <template #pagination="{ table }">
           <DataTablePagination :table="table" />
@@ -212,5 +217,11 @@ watch(tenantId, (val) => {
         :on-delete="handleMultiDelete"
       />
     </template>
+
+    <FunnelCreateDialog
+      v-model:open="showCreateDialog"
+      :tenant-id="tenantId"
+      @created="handleFunnelCreated"
+    />
   </div>
 </template>

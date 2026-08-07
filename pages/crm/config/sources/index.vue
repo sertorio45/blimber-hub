@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 
 import { sourceColumns } from '~/components/crm/config/columns'
 import SourceForm from '~/components/crm/config/SourceForm.vue'
+import CrmPageHeader from '~/components/crm/shared/CrmPageHeader.vue'
 import MultiActionBar from '~/components/shared/MultiActionBar.vue'
 import Button from '~/components/ui/button/Button.vue'
 import Card from '~/components/ui/card/Card.vue'
@@ -185,21 +186,18 @@ watch(tenantId, (val) => {
 </script>
 
 <template>
-  <div>
-    <div class="mb-6 flex items-center justify-between">
-      <div>
-        <h1 class="text-2xl font-bold tracking-tight">
-          Origens
-        </h1>
-        <p class="text-muted-foreground">
-          Gerencie todas as origens de leads do seu CRM.
-        </p>
-      </div>
-      <Button class="bg-primary hover:bg-primary/90" @click="handleCreate">
-        <Icon name="lucide:plus-circle" class="mr-2 h-4 w-4" />
-        Nova Origem
-      </Button>
-    </div>
+  <div class="w-full flex flex-col items-stretch gap-4">
+    <CrmPageHeader
+      title="Origens"
+      description="Gerencie todas as origens de leads do seu CRM."
+    >
+      <template #actions>
+        <Button @click="handleCreate">
+          <Icon name="lucide:plus" class="mr-2 h-4 w-4" />
+          Nova origem
+        </Button>
+      </template>
+    </CrmPageHeader>
     <div v-if="showSkeleton" class="space-y-4">
       <Card class="border shadow-sm">
         <CardContent class="p-4">

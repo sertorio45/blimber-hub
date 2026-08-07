@@ -5,6 +5,7 @@ import { h, resolveComponent } from 'vue'
 import DataTableColumnHeader from '@/components/tasks/components/DataTableColumnHeader.vue'
 import { Checkbox } from '@/components/ui/checkbox'
 import Button from '@/components/ui/button/Button.vue'
+import { renderActiveStatusBadge } from '~/utils/crm/badges'
 
 export const columns: ColumnDef<Product>[] = [
   {
@@ -100,14 +101,7 @@ export const columns: ColumnDef<Product>[] = [
   {
     accessorKey: 'active',
     header: ({ column }) => h(DataTableColumnHeader, { column, title: 'Status' }),
-    cell: ({ row }) => {
-      const active = row.getValue('active') as boolean
-      return h('span', {
-        class: active
-          ? 'inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-800 dark:bg-green-900/40 dark:text-green-300'
-          : 'inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground',
-      }, active ? 'Ativo' : 'Inativo')
-    },
+    cell: ({ row }) => renderActiveStatusBadge(Boolean(row.getValue('active'))),
     enableSorting: true,
     enableHiding: true,
   },

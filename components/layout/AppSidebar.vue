@@ -9,7 +9,7 @@ import { useMarketingAudience } from '~/composables/marketing/useMarketingAudien
 import { useModule } from '~/composables/useModule'
 import { useWorkspace } from '~/composables/useWorkspace'
 import { isClientPortalMarketingLink } from '~/constants/marketing-audience'
-import { navMenu, navMenuAdmin, navMenuGlobal, navMenuOrganization, navMenuTenant } from '~/constants/menus'
+import { navMenu, navMenuAdmin, navMenuGlobal, navMenuOrganization } from '~/constants/menus'
 import { isTenantScopedRole } from '~/constants/roles'
 import { holdsCapability } from '~/constants/workspace'
 import { canEnterWorkspaceRoute, matchesNavAudience } from '~/utils/workspace-guard'
@@ -44,11 +44,6 @@ const capabilities = computed(() => new Set<string>(workspaceContext.value?.capa
 
 /** Platform console — only global staff. */
 const showPlatformSection = computed(() => isPlatformStaff.value || hasRole(['admin', 'funcionario']))
-
-/** Client company team — never for platform staff (they use Agência / Plataforma). */
-const showTenantTeamSection = computed(() =>
-  !showPlatformSection.value && hasRole(['cliente']),
-)
 
 const scopeHeading = computed(() =>
   organizationType.value === 'agency' ? 'Workspace' : 'Organização',
@@ -227,8 +222,7 @@ const showFlatModuleMenu = computed(() => flatModuleLinks.value.length > 0)
 
 const showSecondaryNav = computed(() =>
   organizationMenuItems.value.length > 0
-  || platformMenuItems.value.length > 0
-  || showTenantTeamSection.value,
+  || platformMenuItems.value.length > 0,
 )
 
 const globalSettingsLinks = computed((): NavLink[] => {
@@ -348,15 +342,6 @@ onMounted(() => {
             :key="`platform-${index}`"
             :item="item"
           />
-
-          <template v-if="showTenantTeamSection">
-            <component
-              :is="resolveNavItemComponent(item)"
-              v-for="(item, index) in navMenuTenant[0].items"
-              :key="`tenant-${index}`"
-              :item="item"
-            />
-          </template>
         </SidebarGroup>
       </template>
     </SidebarContent>
