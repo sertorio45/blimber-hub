@@ -1,6 +1,12 @@
 import { serverSupabaseServiceRole } from '#supabase/server'
 import { createError, defineEventHandler, readBody } from 'h3'
 
+const DEFAULT_STAGE_TEMPLATES = [
+  { key: 'new', name: 'Novo', color: '#3b82f6', description: 'Estágio inicial', is_default: true },
+  { key: 'won', name: 'Ganho', color: '#22c55e', description: 'Negócio fechado', is_default: true },
+  { key: 'lost', name: 'Perdido', color: '#ef4444', description: 'Negócio perdido', is_default: true },
+] as const
+
 export default defineEventHandler(async (event) => {
   try {
     const client = await serverSupabaseServiceRole(event)
@@ -21,7 +27,7 @@ export default defineEventHandler(async (event) => {
     const pipelineToInsert = {
       name: body.name,
       description: body.description,
-      is_default: false, // Custom sources are never default
+      is_default: false,
       is_active: body.is_active ?? true,
       priority: body.priority ?? 0,
       tenant_id: tenantId,
@@ -38,28 +44,71 @@ export default defineEventHandler(async (event) => {
       .single()
 
     if (error) {
-      throw createError({ statusCode: 500, message: error.message || 'Falha ao criar lead source' })
+      throw createError({ statusCode: 500, message: error.message || 'Falha ao criar funil' })
     }
 
-    // Inserir stages padrão
-    const defaultStages = [
-      { name: 'New', order: 1, color: '#38bdf8', description: 'Initial stage', tenant_id: tenantId, funnel_id: data.id, is_default: true },
-      { name: 'Won', order: 99, color: '#22c55e', description: 'Deal won', tenant_id: tenantId, funnel_id: data.id, is_default: true },
-      { name: 'Lost', order: 100, color: '#ef4444', description: 'Deal lost', tenant_id: tenantId, funnel_id: data.id, is_default: true },
-    ]
+    // Prefer explicit stages order from client; otherwise Novo → customs → Ganho → Perdido.
+    type IncomingStage = {
+      name?: string
+      color?: string
+      description?: string
+      order?: number
+      is_default?: boolean
+      key?: string
+    }
 
-    // Stages customizados do body
-    const customStages = Array.isArray(body.customStages) ? body.customStages.map((stage, idx) => ({
-      name: stage.name,
-      order: idx + 2, // entre os defaults
-      color: stage.color,
-      description: stage.description || '',
-      tenant_id: tenantId,
-      funnel_id: data.id,
-      is_default: false,
-    })) : []
+    let allStages: Array<{
+      name: string
+      order: number
+      color: string
+      description: string
+      tenant_id: string
+      funnel_id: string
+      is_default: boolean
+    }>
 
-    const allStages = [...defaultStages, ...customStages]
+    if (Array.isArray(body.stages) && body.stages.length > 0) {
+      allStages = (body.stages as IncomingStage[])
+        .filter(stage => stage?.name?.trim())
+        .map((stage, idx) => ({
+          name: stage.name!.trim(),
+          order: typeof stage.order === 'number' ? stage.order : idx + 1,
+          color: stage.color || '#8b5cf6',
+          description: stage.description || '',
+          tenant_id: tenantId,
+          funnel_id: data.id,
+          is_default: Boolean(stage.is_default),
+        }))
+    }
+    else {
+      const customStages = Array.isArray(body.customStages)
+        ? (body.customStages as IncomingStage[])
+            .filter(stage => stage?.name?.trim())
+            .map(stage => ({
+              name: stage.name!.trim(),
+              color: stage.color || '#8b5cf6',
+              description: stage.description || '',
+              is_default: false as const,
+            }))
+        : []
+
+      const assembled = [
+        DEFAULT_STAGE_TEMPLATES[0],
+        ...customStages,
+        DEFAULT_STAGE_TEMPLATES[1],
+        DEFAULT_STAGE_TEMPLATES[2],
+      ]
+
+      allStages = assembled.map((stage, idx) => ({
+        name: stage.name,
+        order: idx + 1,
+        color: stage.color,
+        description: stage.description,
+        tenant_id: tenantId,
+        funnel_id: data.id,
+        is_default: 'is_default' in stage ? Boolean(stage.is_default) : false,
+      }))
+    }
 
     const { data: stages, error: stageError } = await client
       .from('crm_sales_stage')
@@ -70,7 +119,8 @@ export default defineEventHandler(async (event) => {
       throw createError({ statusCode: 500, message: stageError.message || 'Falha ao criar stages' })
     }
 
-    return { statusCode: 201, body: { funnel: data, stages } }
+    const sorted = [...(stages || [])].sort((a, b) => (a.order || 0) - (b.order || 0))
+    return { statusCode: 201, body: { funnel: data, stages: sorted } }
   }
   catch (error: any) {
     throw createError({ statusCode: error.statusCode || 500, message: error.message || 'Erro interno do servidor' })

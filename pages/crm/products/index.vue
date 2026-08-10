@@ -3,6 +3,7 @@ import type { Product, ProductCategory } from '~/types/crm'
 
 import { columns } from '~/components/crm/products/columns'
 import ProductForm from '~/components/crm/products/ProductForm.vue'
+import CrmPageHeader from '~/components/crm/shared/CrmPageHeader.vue'
 import MultiActionBar from '~/components/shared/MultiActionBar.vue'
 import Button from '~/components/ui/button/Button.vue'
 import Card from '~/components/ui/card/Card.vue'
@@ -217,16 +218,11 @@ async function handleMultiDelete() {
 
 <template>
   <div class="flex w-full flex-col items-stretch gap-4">
-    <div class="mb-6 flex items-center justify-between">
-      <div>
-        <h1 class="text-2xl font-bold">
-          Produtos & Serviços
-        </h1>
-        <p class="text-muted-foreground">
-          Gerencie produtos e serviços do seu CRM
-        </p>
-      </div>
-      <div class="flex gap-2">
+    <CrmPageHeader
+      title="Produtos & Serviços"
+      description="Gerencie produtos e serviços do seu CRM"
+    >
+      <template #actions>
         <Button variant="outline">
           <Icon name="lucide:download" class="mr-2 h-4 w-4" />
           Exportar
@@ -235,8 +231,8 @@ async function handleMultiDelete() {
           <Icon name="lucide:plus" class="mr-2 h-4 w-4" />
           Novo Produto
         </Button>
-      </div>
-    </div>
+      </template>
+    </CrmPageHeader>
 
     <!-- Stats -->
     <div class="grid gap-4 md:grid-cols-2 lg:grid-cols-4">

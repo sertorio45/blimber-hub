@@ -126,12 +126,6 @@ export const navMenu: NavMenu[] = [
                 capability: 'marketing.social.brand_guide.read',
                 audience: 'agency',
               },
-              {
-                title: 'Equipe',
-                icon: 'i-lucide-users-round',
-                link: '/settings/team',
-                roles: ['admin', 'funcionario', 'cliente'],
-              },
             ],
           },
         ],
@@ -664,24 +658,10 @@ export const navMenuOrganization: NavMenu[] = [
   },
 ]
 
-/** Tenant user management: for client owners managing their own company team. */
-export const navMenuTenant: NavMenu[] = [
-  {
-    heading: 'Minha empresa',
-    items: [
-      {
-        title: 'Usuários da empresa',
-        icon: 'i-lucide-users',
-        link: '/settings/team',
-        roles: ['cliente'],
-      },
-    ],
-  },
-]
-
 /**
  * Cross-module settings — always visible below the active module menu.
  * Integrations and team live here so CRM-only tenants do not need Marketing.
+ * Tenant user management (/settings/team) has a single entry: Configurações > Usuários.
  */
 export const navMenuGlobal: NavMenu[] = [
   {

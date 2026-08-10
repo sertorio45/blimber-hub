@@ -3,157 +3,30 @@ import { serverSupabaseServiceRole } from '#supabase/server'
 import { createError, defineEventHandler, getQuery } from 'h3'
 
 import {
+  normalizeAnalyticsTemplateId,
+  normalizeGoogleAdsTemplateId,
+  normalizeMetaTemplateId,
+} from '~/constants/marketing-report-templates'
+import {
   buildMarketingOverviewCacheKey,
   decryptSecret,
   getCachedMarketingData,
   resolveMarketingTenantContext,
   setCachedMarketingData,
 } from '~/server/utils/marketing'
+import {
+  campaignMatchesMetaTemplate,
+  fetchAnalyticsReportData,
+  fetchGoogleAdsReportData,
+  fuzzyGroupsForMetaTemplate,
+  resultActionPriorityForMetaTemplate,
+} from '~/server/utils/marketing-reports'
+import type { MetaReportTemplateId } from '~/types/marketing-reports'
 
-const MARKETING_OVERVIEW_CALC_VERSION = 'calc_v3'
+const MARKETING_OVERVIEW_CALC_VERSION = 'calc_v4'
 
-async function getGoogleAccessToken(config: Record<string, any>) {
-  const accessToken = decryptSecret(config.access_token_enc)
-  if (accessToken)
-    return accessToken
-
-  const refreshToken = decryptSecret(config.refresh_token_enc)
-  const clientId = decryptSecret(config.client_id_enc)
-  const clientSecret = decryptSecret(config.client_secret_enc)
-  if (!refreshToken || !clientId || !clientSecret)
-    return null
-
-  const tokenResponse = await $fetch<any>('https://oauth2.googleapis.com/token', {
-    method: 'POST',
-    body: new URLSearchParams({
-      grant_type: 'refresh_token',
-      client_id: clientId,
-      client_secret: clientSecret,
-      refresh_token: refreshToken,
-    }),
-  })
-  return tokenResponse?.access_token || null
-}
-
-function utcYmd(d: Date) {
-  return d.toISOString().slice(0, 10)
-}
-
-function buildGoogleDateWhere(datePreset: string, dateStart: string, dateEnd: string) {
-  if (datePreset === 'custom' && dateStart && dateEnd)
-    return `segments.date BETWEEN '${dateStart}' AND '${dateEnd}'`
-  if (datePreset === 'today')
-    return `segments.date = '${utcYmd(new Date())}'`
-  if (datePreset === 'yesterday') {
-    const d = new Date()
-    d.setUTCDate(d.getUTCDate() - 1)
-    return `segments.date = '${utcYmd(d)}'`
-  }
-  const map: Record<string, string> = {
-    last_7d: 'LAST_7_DAYS',
-    last_14d: 'LAST_14_DAYS',
-    last_30d: 'LAST_30_DAYS',
-    last_90d: 'LAST_90_DAYS',
-  }
-  const dr = map[datePreset] || 'LAST_30_DAYS'
-  return `segments.date DURING ${dr}`
-}
-
-async function fetchGoogleData(
-  config: Record<string, any>,
-  dateOpts: { datePreset: string, dateStart: string, dateEnd: string },
-) {
-  const customerId = config.customer_id
-  const developerToken = decryptSecret(config.developer_token_enc)
-  const loginCustomerId = config.login_customer_id
-  const accessToken = await getGoogleAccessToken(config)
-
-  if (!customerId || !developerToken || !accessToken) {
-    return { campaigns: [], metrics: { impressions: 0, clicks: 0, cost: 0, conversions: 0 } }
-  }
-
-  const headers: Record<string, string> = {
-    Authorization: `Bearer ${accessToken}`,
-    'developer-token': developerToken,
-  }
-  if (loginCustomerId)
-    headers['login-customer-id'] = loginCustomerId
-
-  const dateWhere = buildGoogleDateWhere(dateOpts.datePreset, dateOpts.dateStart, dateOpts.dateEnd)
-  const query = `
-    SELECT
-      campaign.id,
-      campaign.name,
-      campaign.status,
-      campaign.advertising_channel_type,
-      metrics.impressions,
-      metrics.clicks,
-      metrics.cost_micros,
-      metrics.conversions
-    FROM campaign
-    WHERE ${dateWhere}
-  `
-
-  const response = await $fetch<any[]>(
-    `https://googleads.googleapis.com/v19/customers/${customerId}/googleAds:searchStream`,
-    {
-      method: 'POST',
-      headers,
-      body: { query },
-    },
-  ).catch(() => [])
-
-  const rows = Array.isArray(response)
-    ? response.flatMap(chunk => chunk.results || [])
-    : []
-
-  const campaigns = rows.map((row: any) => ({
-    id: row.campaign?.id,
-    name: row.campaign?.name,
-    status: row.campaign?.status,
-    channel: row.campaign?.advertisingChannelType || row.campaign?.advertising_channel_type,
-    impressions: Number(row.metrics?.impressions || 0),
-    clicks: Number(row.metrics?.clicks || 0),
-    cost: Number(row.metrics?.costMicros || row.metrics?.cost_micros || 0) / 1000000,
-    conversions: Number(row.metrics?.conversions || 0),
-  }))
-
-  const metrics = campaigns.reduce(
-    (acc: any, c: any) => {
-      acc.impressions += c.impressions
-      acc.clicks += c.clicks
-      acc.cost += c.cost
-      acc.conversions += c.conversions
-      return acc
-    },
-    { impressions: 0, clicks: 0, cost: 0, conversions: 0 },
-  )
-
-  return { campaigns, metrics }
-}
-
-const RESULT_ACTION_PRIORITY = [
-  // Messaging / WhatsApp first for message campaigns
-  'onsite_conversion.messaging_conversation_started_7d',
-  'onsite_conversion.messaging_conversation_started_1d',
-  'onsite_conversion.messaging_first_reply',
-  'onsite_conversion.messaging_user_depth_7d',
-  'onsite_conversion.whatsapp_conversation_started_7d',
-  'onsite_conversion.whatsapp_first_message',
-  'messaging_conversation_started_7d',
-  'messaging_conversation_started',
-  'messaging_first_reply',
-  'whatsapp_conversation_started_7d',
-  'whatsapp_first_message',
-  'lead',
-  'onsite_conversion.lead',
-  'offsite_conversion.fb_pixel_lead',
-  'purchase',
-  'onsite_conversion.purchase',
-  'offsite_conversion.fb_pixel_purchase',
-  'complete_registration',
-  'submit_application',
-]
+/** Default (overview) priority — template-specific lists override at runtime */
+const RESULT_ACTION_PRIORITY = resultActionPriorityForMetaTemplate('overview')
 
 function collectActionTotals(actions: any[] | undefined) {
   const totals = new Map<string, number>()
@@ -174,26 +47,21 @@ function mergeActionTotals(target: Map<string, number>, source: Map<string, numb
     target.set(k, (target.get(k) || 0) + v)
 }
 
-function pickPrimaryResultActionType(actions: any[] | undefined): string | null {
+function pickPrimaryResultActionType(
+  actions: any[] | undefined,
+  templateId: MetaReportTemplateId = 'overview',
+): string | null {
   const totals = collectActionTotals(actions)
   if (!totals.size)
     return null
 
-  // 1) exact priority
-  for (const key of RESULT_ACTION_PRIORITY) {
+  const priority = resultActionPriorityForMetaTemplate(templateId)
+  for (const key of priority) {
     if ((totals.get(key) || 0) > 0)
       return key
   }
 
-  // 2) fuzzy families (messaging/WhatsApp before lead/purchase — per-campaign rows)
-  const fuzzyGroups = [
-    'messaging',
-    'whatsapp',
-    'lead',
-    'purchase',
-    'complete_registration',
-    'submit_application',
-  ]
+  const fuzzyGroups = fuzzyGroupsForMetaTemplate(templateId)
   for (const group of fuzzyGroups) {
     let best: { type: string, value: number } | null = null
     for (const [type, value] of totals) {
@@ -204,27 +72,32 @@ function pickPrimaryResultActionType(actions: any[] | undefined): string | null 
       return best.type
   }
 
+  // Overview only: fall back to default global priority
+  if (templateId === 'overview') {
+    for (const key of RESULT_ACTION_PRIORITY) {
+      if ((totals.get(key) || 0) > 0)
+        return key
+    }
+  }
+
   return null
 }
 
-function pickPrimaryResultActionTypeFromRows(rows: any[]): string | null {
+function pickPrimaryResultActionTypeFromRows(
+  rows: any[],
+  templateId: MetaReportTemplateId = 'overview',
+): string | null {
   const totals = new Map<string, number>()
   for (const row of rows)
     mergeActionTotals(totals, collectActionTotals(row?.actions))
   if (!totals.size)
     return null
-  for (const key of RESULT_ACTION_PRIORITY) {
+  const priority = resultActionPriorityForMetaTemplate(templateId)
+  for (const key of priority) {
     if ((totals.get(key) || 0) > 0)
       return key
   }
-  const fuzzyGroups = [
-    'messaging',
-    'whatsapp',
-    'lead',
-    'purchase',
-    'complete_registration',
-    'submit_application',
-  ]
+  const fuzzyGroups = fuzzyGroupsForMetaTemplate(templateId)
   for (const group of fuzzyGroups) {
     let best: { type: string, value: number } | null = null
     for (const [type, value] of totals) {
@@ -528,6 +401,31 @@ async function fetchAdImageUrlsByHashes(
   return map
 }
 
+function reaggregateMetaMetrics(campaigns: Array<Record<string, any>>) {
+  const impressions = campaigns.reduce((s, c) => s + Number(c.impressions || 0), 0)
+  const clicks = campaigns.reduce((s, c) => s + Number(c.clicks || 0), 0)
+  const spend = campaigns.reduce((s, c) => s + Number(c.spend || 0), 0)
+  const reach = campaigns.reduce((s, c) => s + Number(c.reach || 0), 0)
+  const results = campaigns.reduce((s, c) => s + Number(c.results || 0), 0)
+  const roasValues = campaigns.map(c => c.roas).filter((v): v is number => typeof v === 'number' && v > 0)
+  const roas
+    = spend > 0 && roasValues.length
+      ? campaigns.reduce((s, c) => s + (Number(c.roas || 0) * Number(c.spend || 0)), 0) / spend
+      : (roasValues[0] ?? null)
+  return {
+    impressions,
+    clicks,
+    spend,
+    reach,
+    ctr: impressions > 0 ? (clicks / impressions) * 100 : 0,
+    cpc: clicks > 0 ? spend / clicks : 0,
+    cpm: impressions > 0 ? (spend / impressions) * 1000 : 0,
+    results,
+    roas: roas != null && !Number.isNaN(roas) ? roas : null,
+    cost_per_result: results > 0 ? spend / results : 0,
+  }
+}
+
 async function fetchMetaData(
   config: Record<string, any>,
   opts: {
@@ -536,8 +434,16 @@ async function fetchMetaData(
     dateEnd: string
     adsActiveOnly: boolean
     insightsOnly: boolean
+    templateId: MetaReportTemplateId
   },
-) {
+): Promise<{
+  metrics: ReturnType<typeof emptyMetaMetrics>
+  campaigns: Record<string, any>[]
+  ads: any[]
+  series: any[]
+  template: MetaReportTemplateId
+  connected: boolean
+}> {
   const accessToken = decryptSecret(config.access_token_enc)
   const adAccountId = config.ad_account_id
 
@@ -547,6 +453,8 @@ async function fetchMetaData(
       campaigns: [] as any[],
       ads: [] as any[],
       series: [] as any[],
+      template: opts.templateId,
+      connected: false,
     }
   }
 
@@ -574,7 +482,12 @@ async function fetchMetaData(
   const dailyInsightFields
     = 'impressions,clicks,spend,reach,cpc,ctr,cpm,actions,cost_per_action_type,purchase_roas'
 
-  const [accountRes, campaignRes, dailyRes] = await Promise.all([
+  const [accountRes, campaignRes, dailyRes, campMetaRes]: [
+    any,
+    any,
+    any,
+    any,
+  ] = await Promise.all([
     $fetch<any>(`${base}/insights`, {
       query: {
         fields: accountFields,
@@ -599,62 +512,93 @@ async function fetchMetaData(
         limit: '90',
       },
     }).catch(() => ({ data: [] })),
+    // Always load objective/status for template filtering + labels
+    $fetch<any>(`${base}/campaigns`, {
+      query: {
+        fields: 'id,name,status,objective,effective_status',
+        limit: 200,
+        access_token: accessToken,
+      },
+    }).catch(() => ({ data: [] })),
   ])
 
+  const statusById = new Map<string, string>()
+  const objectiveById = new Map<string, string>()
+  for (const c of (campMetaRes?.data || [])) {
+    statusById.set(String(c.id), String(c.status || c.effective_status || ''))
+    if (c.objective)
+      objectiveById.set(String(c.id), String(c.objective))
+  }
+
   const accountRow = (accountRes?.data || [])[0] || {}
-  /** Account + daily series: best-effort blend when multiple objectives exist */
+  const templateId = opts.templateId
+
+  /** Account + daily series: prefer template-aligned result action */
   const primaryResultActionTypeForAccount
-    = pickPrimaryResultActionTypeFromRows(campaignRes?.data || [])
-      || pickPrimaryResultActionType(accountRow.actions)
+    = pickPrimaryResultActionTypeFromRows(campaignRes?.data || [], templateId)
+      || pickPrimaryResultActionType(accountRow.actions, templateId)
       || null
-  /** Each campaign row uses its own actions (critical for WhatsApp vs lead, etc.) */
-  const campaigns = (campaignRes?.data || []).map((item: any) => {
+
+  /** Each campaign row uses template-aware action picking */
+  const allCampaigns: Record<string, any>[] = (campaignRes?.data || []).map((item: any) => {
     const perCampaignAction
-      = pickPrimaryResultActionType(item.actions)
-        || pickPrimaryResultActionTypeFromRows([item])
+      = pickPrimaryResultActionType(item.actions, templateId)
+        || pickPrimaryResultActionTypeFromRows([item], templateId)
     const row = mapCampaignInsightRow(item, perCampaignAction) as Record<string, any>
-    row.status = null
+    row.status = statusById.get(String(row.id)) || null
+    row.objective = objectiveById.get(String(row.id)) || null
+    row.primary_action_type = perCampaignAction
     return row
   })
 
-  const impressions = Number(accountRow.impressions || 0)
-  const clicks = Number(accountRow.clicks || 0)
-  const spend = Number(accountRow.spend || 0)
-  const reach = Number(accountRow.reach || 0)
-  const ctr = Number(accountRow.ctr ?? (impressions > 0 ? (clicks / impressions) * 100 : 0))
-  const cpc = Number(accountRow.cpc || 0) || (clicks > 0 ? spend / clicks : 0)
-  const cpm = Number(accountRow.cpm || 0) || (impressions > 0 ? (spend / impressions) * 1000 : 0)
-  const results = parseMetaActionsResults(accountRow.actions, primaryResultActionTypeForAccount)
-  const roas = parsePurchaseRoas(accountRow.purchase_roas)
-  const costPerResult
-    = parseCostPerActionType(accountRow.cost_per_action_type, primaryResultActionTypeForAccount)
-      || (results > 0 ? spend / results : 0)
+  const campaigns: Record<string, any>[]
+    = templateId === 'overview'
+      ? allCampaigns
+      : allCampaigns.filter((c: Record<string, any>) =>
+          campaignMatchesMetaTemplate(
+            { objective: c.objective, primary_action_type: c.primary_action_type },
+            templateId,
+          ),
+        )
 
-  const metrics = {
-    impressions,
-    clicks,
-    spend,
-    reach,
-    ctr,
-    cpc,
-    cpm,
-    results,
-    roas,
-    cost_per_result: costPerResult,
-  }
+  // Soft fallback: if template filter emptied the list, keep all with template action metrics
+  const effectiveCampaigns: Record<string, any>[] = campaigns.length ? campaigns : allCampaigns
+
+  const metrics: ReturnType<typeof emptyMetaMetrics>
+    = templateId === 'overview' || !campaigns.length
+      ? (() => {
+          const impressions = Number(accountRow.impressions || 0)
+          const clicks = Number(accountRow.clicks || 0)
+          const spend = Number(accountRow.spend || 0)
+          const reach = Number(accountRow.reach || 0)
+          const ctr = Number(accountRow.ctr ?? (impressions > 0 ? (clicks / impressions) * 100 : 0))
+          const cpc = Number(accountRow.cpc || 0) || (clicks > 0 ? spend / clicks : 0)
+          const cpm = Number(accountRow.cpm || 0) || (impressions > 0 ? (spend / impressions) * 1000 : 0)
+          const results = parseMetaActionsResults(accountRow.actions, primaryResultActionTypeForAccount)
+          const roas = parsePurchaseRoas(accountRow.purchase_roas)
+          const costPerResult
+            = parseCostPerActionType(accountRow.cost_per_action_type, primaryResultActionTypeForAccount)
+              || (results > 0 ? spend / results : 0)
+          return {
+            impressions,
+            clicks,
+            spend,
+            reach,
+            ctr,
+            cpc,
+            cpm,
+            results,
+            roas,
+            cost_per_result: costPerResult,
+          }
+        })()
+      : reaggregateMetaMetrics(effectiveCampaigns)
 
   let ads: any[] = []
   if (!opts.insightsOnly) {
-    const [adsResponse, campMetaRes, adLevelInsights] = await Promise.all([
+    const [adsResponse, adLevelInsights] = await Promise.all([
       $fetch<any>(`${base}/ads`, {
         query: adsQuery,
-      }).catch(() => ({ data: [] })),
-      $fetch<any>(`${base}/campaigns`, {
-        query: {
-          fields: 'id,name,status',
-          limit: 200,
-          access_token: accessToken,
-        },
       }).catch(() => ({ data: [] })),
       $fetch<any>(`${base}/insights`, {
         query: {
@@ -666,12 +610,6 @@ async function fetchMetaData(
         },
       }).catch(() => ({ data: [] })),
     ])
-
-    const statusById = new Map<string, string>()
-    for (const c of (campMetaRes?.data || []))
-      statusById.set(String(c.id), String(c.status || ''))
-    for (const row of campaigns)
-      row.status = statusById.get(String(row.id)) || null
 
     const adMetricsById = new Map<string, {
       impressions: number
@@ -702,32 +640,47 @@ async function fetchMetaData(
       .map((h: unknown) => String(h))
     const hashToUrl = await fetchAdImageUrlsByHashes(accessToken, adAccountId, apiVersion, creativeHashes)
 
-    ads = rawAds.map((ad: any) => {
-      const m = adMetricsById.get(String(ad.id))
-      const creative = ad.creative as Record<string, unknown> | undefined
-      const image_url = resolveCreativePreviewImageUrl(creative, hashToUrl)
-      return {
-        id: ad.id,
-        name: ad.name,
-        campaign_id: ad.campaign?.id ? String(ad.campaign.id) : null,
-        campaign_name: ad.campaign?.name || null,
-        effective_status: ad.effective_status ? String(ad.effective_status) : null,
-        image_url,
-        impressions: m?.impressions ?? null,
-        clicks: m?.clicks ?? null,
-        spend: m?.spend ?? null,
-        ctr: m?.ctr ?? null,
-        cpc: m?.cpc ?? null,
-        cpm: m?.cpm ?? null,
-      }
-    })
+    const allowedCampaignIds = new Set(effectiveCampaigns.map((c: Record<string, any>) => String(c.id)))
+    ads = rawAds
+      .filter((ad: any) => {
+        if (templateId === 'overview')
+          return true
+        const cid = ad.campaign?.id != null ? String(ad.campaign.id) : ''
+        return !cid || allowedCampaignIds.has(cid)
+      })
+      .map((ad: any) => {
+        const m = adMetricsById.get(String(ad.id))
+        const creative = ad.creative as Record<string, unknown> | undefined
+        const image_url = resolveCreativePreviewImageUrl(creative, hashToUrl)
+        return {
+          id: ad.id,
+          name: ad.name,
+          campaign_id: ad.campaign?.id ? String(ad.campaign.id) : null,
+          campaign_name: ad.campaign?.name || null,
+          effective_status: ad.effective_status ? String(ad.effective_status) : null,
+          image_url,
+          impressions: m?.impressions ?? null,
+          clicks: m?.clicks ?? null,
+          spend: m?.spend ?? null,
+          ctr: m?.ctr ?? null,
+          cpc: m?.cpc ?? null,
+          cpm: m?.cpm ?? null,
+        }
+      })
   }
 
   const series = (dailyRes?.data || []).map((row: any) =>
     mapDailyInsightRow(row, primaryResultActionTypeForAccount),
   )
 
-  return { campaigns, metrics, ads, series }
+  return {
+    campaigns: effectiveCampaigns,
+    metrics,
+    ads,
+    series,
+    template: templateId,
+    connected: true,
+  }
 }
 
 function emptyMetaMetrics() {
@@ -790,7 +743,15 @@ function parseDatePresetQuery(query: Record<string, unknown>) {
 export default defineEventHandler(async (event) => {
   const query = getQuery(event)
   const source = (query.source as string) || 'all'
-  const googleTemplate = (query.google_template as string) || 'standard'
+  const googleTemplate = normalizeGoogleAdsTemplateId(
+    String(query.google_template || query.report_template || 'overview'),
+  )
+  const metaTemplate = normalizeMetaTemplateId(
+    String(query.meta_template || (source === 'meta' ? query.report_template : '') || 'overview'),
+  )
+  const analyticsTemplate = normalizeAnalyticsTemplateId(
+    String(query.analytics_template || (source === 'google_analytics' ? query.report_template : '') || 'overview'),
+  )
   const forceRefresh = query.force_refresh === 'true'
   const insightsOnly = query.insights_only !== 'false'
 
@@ -821,6 +782,7 @@ export default defineEventHandler(async (event) => {
     `${periodKey}:${insightsOnly ? 'ins1' : 'ins0'}:${MARKETING_OVERVIEW_CALC_VERSION}`,
     metaAdsActiveOnly,
     integrations || [],
+    { meta: metaTemplate, analytics: analyticsTemplate },
   )
 
   if (!forceRefresh) {
@@ -835,52 +797,86 @@ export default defineEventHandler(async (event) => {
       || integrations?.find((row: any) => row.provider === 'google')?.config
       || null
   const metaConfig = integrations?.find((row: any) => row.provider === 'meta')?.config || null
+  const analyticsConfig
+    = integrations?.find((row: any) => row.provider === 'google_analytics')?.config || null
 
   const shouldLoadGoogle = source === 'all' || source === 'google_ads'
   const shouldLoadMeta = source === 'all' || source === 'meta'
+  const shouldLoadAnalytics = source === 'all' || source === 'google_analytics'
 
   const dateOpts = { datePreset, dateStart, dateEnd }
 
-  const [googleData, metaData] = await Promise.all([
-    shouldLoadGoogle && googleConfig ? fetchGoogleData(googleConfig, dateOpts) : Promise.resolve(null),
+  const [googleData, metaData, analyticsData] = await Promise.all([
+    shouldLoadGoogle && googleConfig
+      ? fetchGoogleAdsReportData(googleConfig, dateOpts, googleTemplate)
+      : Promise.resolve(null),
     shouldLoadMeta && metaConfig
-      ? fetchMetaData(metaConfig, { ...dateOpts, adsActiveOnly: metaAdsActiveOnly, insightsOnly })
+      ? fetchMetaData(metaConfig, {
+          ...dateOpts,
+          adsActiveOnly: metaAdsActiveOnly,
+          insightsOnly,
+          templateId: metaTemplate,
+        })
+      : Promise.resolve(null),
+    shouldLoadAnalytics && analyticsConfig
+      ? fetchAnalyticsReportData(analyticsConfig, dateOpts, analyticsTemplate)
       : Promise.resolve(null),
   ])
-
-  const googleCampaigns = googleData?.campaigns || []
-  const localBusiness = googleCampaigns.filter((c: any) => String(c.channel).toLowerCase().includes('local'))
-  const websiteVisits = googleCampaigns.filter((c: any) => !String(c.channel).toLowerCase().includes('local'))
-  const selectedGoogleCampaigns
-    = googleTemplate === 'local_business'
-      ? localBusiness
-      : googleTemplate === 'website_visits'
-        ? websiteVisits
-        : googleCampaigns
 
   const payload = {
     source,
     google_template: googleTemplate,
+    meta_template: metaTemplate,
+    analytics_template: analyticsTemplate,
     period: {
       preset: datePreset,
       date_start: datePreset === 'custom' ? dateStart : null,
       date_end: datePreset === 'custom' ? dateEnd : null,
       meta_active_only: metaAdsActiveOnly,
     },
-    google: {
-      metrics: googleData?.metrics || { impressions: 0, clicks: 0, cost: 0, conversions: 0 },
-      campaigns: selectedGoogleCampaigns,
-      templates: {
-        local_business: localBusiness,
-        website_visits: websiteVisits,
-        standard: googleCampaigns,
+    google: googleData || {
+      connected: Boolean(googleConfig),
+      metrics: {
+        impressions: 0,
+        clicks: 0,
+        cost: 0,
+        conversions: 0,
+        conversions_value: 0,
+        ctr: 0,
+        cpc: 0,
+        cost_per_conversion: null,
+        roas: null,
       },
+      campaigns: [],
+      series: [],
+    },
+    analytics: analyticsData || {
+      connected: Boolean(analyticsConfig),
+      property_id: analyticsConfig?.property_id || analyticsConfig?.analytics_account_id || null,
+      metrics: {
+        sessions: 0,
+        totalUsers: 0,
+        newUsers: 0,
+        screenPageViews: 0,
+        engagedSessions: 0,
+        engagementRate: 0,
+        averageSessionDuration: 0,
+        bounceRate: 0,
+        eventCount: 0,
+        conversions: 0,
+        ecommercePurchases: 0,
+        purchaseRevenue: 0,
+      },
+      series: [],
+      breakdown: [],
     },
     meta: {
       metrics: metaData?.metrics || emptyMetaMetrics(),
       campaigns: metaData?.campaigns || [],
       ads: metaData?.ads || [],
       series: metaData?.series || [],
+      template: metaTemplate,
+      connected: metaData?.connected ?? Boolean(metaConfig),
     },
   }
 

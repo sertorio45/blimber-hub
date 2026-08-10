@@ -4,6 +4,7 @@ import type { Contact } from '~/types/crm'
 import { useSupabaseClient } from '#imports'
 import { columns } from '~/components/crm/contacts/columns'
 import ContactForm from '~/components/crm/contacts/ContactForm.vue'
+import CrmPageHeader from '~/components/crm/shared/CrmPageHeader.vue'
 import MultiActionBar from '~/components/shared/MultiActionBar.vue'
 import { Card, CardContent } from '~/components/ui/card'
 import { Skeleton } from '~/components/ui/skeleton'
@@ -138,17 +139,11 @@ function handleContactSaved() {
 
 <template>
   <div class="w-full flex flex-col items-stretch gap-4">
-    <!-- Header -->
-    <div class="mb-6 flex items-center justify-between">
-      <div>
-        <h1 class="text-2xl font-bold">
-          Contatos
-        </h1>
-        <p class="text-muted-foreground">
-          Gerencie seus contatos de negócios
-        </p>
-      </div>
-      <div class="flex gap-2">
+    <CrmPageHeader
+      title="Contatos"
+      description="Gerencie seus contatos de negócios"
+    >
+      <template #actions>
         <Button variant="outline">
           <Icon name="lucide:download" class="mr-2 h-4 w-4" />
           Exportar
@@ -157,8 +152,8 @@ function handleContactSaved() {
           <Icon name="lucide:plus" class="mr-2 h-4 w-4" />
           Novo Contato
         </Button>
-      </div>
-    </div>
+      </template>
+    </CrmPageHeader>
 
     <!-- DataTable with Skeleton -->
     <div v-if="showSkeleton" class="space-y-4">

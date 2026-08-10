@@ -16,6 +16,7 @@ defineProps<{
       <span class="text-sm font-medium">itens selecionados</span>
     </div>
     <div class="flex gap-2">
+      <slot name="actions" />
       <Button variant="destructive" size="sm" @click="onDelete">
         <Icon name="lucide:trash-2" class="mr-2 h-4 w-4" />
         Excluir selecionados

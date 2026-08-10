@@ -6,6 +6,7 @@ import Input from '@/components/ui/input/Input.vue'
 import Label from '@/components/ui/label/Label.vue'
 import Switch from '@/components/ui/switch/Switch.vue'
 import Textarea from '@/components/ui/textarea/Textarea.vue'
+import ColorPicker from '~/components/crm/config/ColorPicker.vue'
 
 const props = defineProps<{
   modelValue: any
@@ -123,6 +124,19 @@ const isDisabled = computed(() => props.modelValue.is_default === true)
         :class="isDisabled ? 'pointer-events-none opacity-50' : ''"
         @input="(e: Event) => handleInput('description', (e.target as HTMLTextAreaElement).value)"
       />
+    </div>
+    <div class="space-y-2">
+      <Label>Cor</Label>
+      <div class="flex items-center gap-3">
+        <ColorPicker
+          :model-value="local.color || '#3b82f6'"
+          :disabled="isDisabled || props.loading"
+          @update:model-value="(value: string) => handleInput('color', value)"
+        />
+        <span class="font-mono text-xs uppercase text-muted-foreground">
+          {{ local.color || '#3b82f6' }}
+        </span>
+      </div>
     </div>
     <div class="flex items-center gap-2">
       <Switch id="stage-default" :checked="!!local.is_default" disabled />

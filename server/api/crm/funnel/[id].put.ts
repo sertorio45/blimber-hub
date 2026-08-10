@@ -1,6 +1,15 @@
 import { serverSupabaseServiceRole, serverSupabaseUser } from '#supabase/server'
 import { createError, defineEventHandler, getRouterParam, readBody } from 'h3'
 
+interface StagePayload {
+  id?: string
+  name?: string
+  color?: string
+  description?: string
+  order?: number
+  is_default?: boolean
+}
+
 export default defineEventHandler(async (event) => {
   try {
     const user = await serverSupabaseUser(event)
@@ -27,13 +36,13 @@ export default defineEventHandler(async (event) => {
     // Verificar se o registro existe e pertence ao tenant
     const { data: existing, error: existError } = await client
       .from('crm_funnel')
-      .select('id, tenant_id')
+      .select('id, tenant_id, is_default')
       .eq('id', id)
       .single()
     if (existError || !existing) {
       throw createError({ statusCode: 404, message: 'Funil não encontrado' })
     }
-    if (existing.tenant_id !== tenantId) {
+    if (!existing.is_default && existing.tenant_id !== tenantId) {
       throw createError({ statusCode: 403, message: 'Acesso negado ao funil' })
     }
     // Atualizar apenas campos permitidos
@@ -53,65 +62,74 @@ export default defineEventHandler(async (event) => {
       throw createError({ statusCode: 500, message: error.message || 'Falha ao atualizar funil' })
     }
 
-    // --- Atualizar stages customizados ---
-    const customStages = Array.isArray(body.customStages) ? body.customStages : []
+    // Prefer full stages list (preserves user order including Novo/Ganho/Perdido);
+    // fall back to legacy customStages-only payload.
+    const stagesPayload: StagePayload[] = Array.isArray(body.stages)
+      ? body.stages
+      : Array.isArray(body.customStages)
+        ? body.customStages
+        : []
 
-    // Buscar todos os customStages atuais desse funil
     const { data: currentStages, error: fetchStagesError } = await client
       .from('crm_sales_stage')
-      .select('id')
+      .select('id, is_default, tenant_id')
       .eq('funnel_id', id)
-      .eq('is_default', false)
-      .eq('tenant_id', tenantId)
     if (fetchStagesError) {
       throw createError({ statusCode: 500, message: fetchStagesError.message || 'Erro ao buscar stages atuais' })
     }
 
-    const currentIds = (currentStages || []).map((s: any) => s.id)
-    const sentIds = customStages.filter((s: any) => s.id).map((s: any) => s.id)
-    // Deletar os que não vieram no payload
-    const toDelete = currentIds.filter(id => !sentIds.includes(id))
+    const currentById = new Map((currentStages || []).map(stage => [stage.id as string, stage]))
+    const sentIds = stagesPayload.filter(stage => stage.id).map(stage => String(stage.id))
+
+    // Only delete non-default custom stages omitted from the payload
+    const toDelete = (currentStages || [])
+      .filter(stage => !stage.is_default && !sentIds.includes(stage.id as string))
+      .map(stage => stage.id as string)
+
     if (toDelete.length > 0) {
       const { error: delError } = await client
         .from('crm_sales_stage')
         .delete()
         .in('id', toDelete)
-        .eq('tenant_id', tenantId)
       if (delError) {
         throw createError({ statusCode: 500, message: delError.message || 'Erro ao remover stages antigos' })
       }
     }
-    // Atualizar ou inserir os enviados
-    for (const [idx, stage] of customStages.entries()) {
-      // Validar se o stage tem nome válido
-      if (!stage.name || !stage.name.trim()) {
-        continue // Pular stages sem nome
-      }
 
-      if (stage.id) {
-        // Update
-        const updateObj: any = {
-          name: stage.name.trim(),
-          order: stage.order || idx + 2,
+    for (const [idx, stage] of stagesPayload.entries()) {
+      if (!stage.name || !stage.name.trim())
+        continue
+
+      const order = typeof stage.order === 'number' && !Number.isNaN(stage.order)
+        ? stage.order
+        : idx + 1
+
+      if (stage.id && currentById.has(stage.id)) {
+        const existingStage = currentById.get(stage.id)!
+        const updateObj: Record<string, unknown> = {
+          order,
           description: stage.description || '',
         }
-        if (stage.color) {
+        // Keep default stage names stable; allow rename only on custom stages
+        if (!existingStage.is_default)
+          updateObj.name = stage.name.trim()
+        if (stage.color)
           updateObj.color = stage.color
-        }
+        if (!existingStage.tenant_id)
+          updateObj.tenant_id = tenantId
+
         const { error: updError } = await client
           .from('crm_sales_stage')
           .update(updateObj)
           .eq('id', stage.id)
-          .eq('tenant_id', tenantId)
         if (updError) {
           throw createError({ statusCode: 500, message: updError.message || 'Erro ao atualizar stage' })
         }
       }
-      else {
-        // Insert
+      else if (!stage.id) {
         const insertObj = {
           name: stage.name.trim(),
-          order: stage.order || idx + 2,
+          order,
           description: stage.description || '',
           color: stage.color || '#cccccc',
           tenant_id: tenantId,
@@ -126,14 +144,12 @@ export default defineEventHandler(async (event) => {
         }
       }
     }
-    // Buscar todos os stages atualizados
+
     const { data: stages, error: stagesError } = await client
       .from('crm_sales_stage')
       .select('*')
       .eq('funnel_id', id)
-      .eq('tenant_id', tenantId)
-      .order('is_default', { ascending: false })
-      .order('order')
+      .order('order', { ascending: true })
     if (stagesError) {
       throw createError({ statusCode: 500, message: stagesError.message || 'Erro ao buscar stages atualizados' })
     }

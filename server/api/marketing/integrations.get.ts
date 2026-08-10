@@ -1,5 +1,6 @@
 import { defineEventHandler, getQuery } from 'h3'
 
+import { resolveGoogleAdsDeveloperToken } from '~/server/utils/google-ads'
 import { decryptSecret, maskSensitiveValue } from '~/server/utils/marketing'
 import { requireSocialContext } from '~/server/utils/social-context'
 
@@ -26,30 +27,46 @@ export default defineEventHandler(async (event) => {
     const token
       = decryptSecret(config.access_token_enc)
         || decryptSecret(config.refresh_token_enc)
-        || decryptSecret(config.developer_token_enc)
     const pageToken = decryptSecret(config.page_access_token_enc)
     const missingPublishScopes = Array.isArray(config.missing_publish_scopes)
       ? config.missing_publish_scopes
       : []
+
+    // Never expose encrypted secrets or developer credentials to the client.
+    const publicConfig: Record<string, any> = {
+      customer_id: config.customer_id,
+      analytics_account_id: config.analytics_account_id,
+      property_id: config.property_id,
+      ad_account_id: config.ad_account_id,
+      page_id: config.page_id,
+      page_name: config.page_name,
+      pixel_id: config.pixel_id,
+      instagram_business_account_id: config.instagram_business_account_id,
+      instagram_name: config.instagram_name,
+      instagram_username: config.instagram_username,
+      organization_id: config.organization_id,
+      organization_name: config.organization_name,
+      granted_scopes: config.granted_scopes,
+      missing_publish_scopes: config.missing_publish_scopes,
+      token_expires_at: config.token_expires_at,
+      capi_enabled: config.capi_enabled,
+    }
 
     return {
       id: row.id,
       provider: row.provider,
       is_active: row.is_active,
       updated_at: row.updated_at,
-      config: {
-        ...config,
-        access_token_enc: undefined,
-        refresh_token_enc: undefined,
-        developer_token_enc: undefined,
-        client_id_enc: undefined,
-        client_secret_enc: undefined,
-        page_access_token_enc: undefined,
-        capi_access_token_enc: undefined,
-      },
+      config: publicConfig,
       has_key: Boolean(token),
       has_page_token: Boolean(pageToken),
       has_capi_token: Boolean(decryptSecret(config.capi_access_token_enc)),
+      google_ads_ready: row.provider === 'google_ads'
+        ? Boolean(token && resolveGoogleAdsDeveloperToken(config) && config.customer_id)
+        : undefined,
+      google_ads_needs_account: row.provider === 'google_ads'
+        ? Boolean(token && !config.customer_id)
+        : undefined,
       capi_enabled: Boolean(config.capi_enabled),
       missing_publish_scopes: missingPublishScopes,
       can_publish: row.provider === 'meta'

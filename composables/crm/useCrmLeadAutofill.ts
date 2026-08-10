@@ -8,13 +8,15 @@ export interface CrmLeadAutofillLeadForm {
   name: string
   source: string
   status?: string
-  sales_stage_id?: string
+  funnel_id?: string | null
+  sales_stage_id?: string | null
   priority: string
   /** @deprecated prefer valuesInputs */
   value?: string
   valuesInputs?: string[]
   closedValue?: string
   notes: string
+  assigned_to?: string | null
 }
 
 export interface CrmLeadAutofillContactForm {

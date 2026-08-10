@@ -2,6 +2,8 @@
 import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import FunnelForm from '~/components/crm/config/FunnelForm.vue'
+import ColorPicker from '~/components/crm/config/ColorPicker.vue'
+import CrmPageHeader from '~/components/crm/shared/CrmPageHeader.vue'
 import Button from '~/components/ui/button/Button.vue'
 import Card from '~/components/ui/card/Card.vue'
 import CardContent from '~/components/ui/card/CardContent.vue'
@@ -152,7 +154,7 @@ async function handleFormSubmit(_data: any) {
     .map((stage, idx) => ({
       id: stage.id || undefined,
       name: stage.name.trim(),
-      order: stage.order || idx + 2,
+      order: typeof stage.order === 'number' ? stage.order : idx + 1,
       description: stage.description || '',
       color: stage.color || '#cccccc',
       tenant_id: currentTenantId,
@@ -359,31 +361,20 @@ watch(funnelId, async () => {
 </script>
 
 <template>
-  <div>
-    <div class="mb-6 flex items-center justify-between">
-      <div>
-        <h1 class="text-2xl font-bold tracking-tight">
-          Funis
-        </h1>
-        <p class="text-muted-foreground">
-          Gerencie todos os funis do seu CRM.
-        </p>
-      </div>
-      <div class="flex gap-2">
+  <div class="w-full flex flex-col items-stretch gap-4">
+    <CrmPageHeader
+      title="Editar funil"
+      description="Ajuste nome, prioridade e etapas do funil."
+    >
+      <template #actions>
         <NuxtLink to="/crm/config/funnel">
           <Button variant="outline">
             <Icon name="lucide:arrow-left" class="mr-2 h-4 w-4" />
             Voltar
           </Button>
         </NuxtLink>
-        <NuxtLink to="/crm/config/funnel/new">
-          <Button class="bg-primary hover:bg-primary/90">
-            <Icon name="lucide:plus-circle" class="mr-2 h-4 w-4" />
-            Novo Funil
-          </Button>
-        </NuxtLink>
-      </div>
-    </div>
+      </template>
+    </CrmPageHeader>
 
     <!-- Dialog de criar/editar -->
     <Dialog :open="showDialog" @update:open="showDialog = $event">
@@ -452,8 +443,8 @@ watch(funnelId, async () => {
               <div class="flex flex-col gap-2">
                 <label>Cor</label>
                 <div class="flex items-center gap-2">
-                  <input v-model="stage.color" type="color" class="h-8 w-8 cursor-pointer border rounded">
-                  <span class="text-sm text-muted-foreground">{{ stage.color }}</span>
+                  <ColorPicker v-model="stage.color" />
+                  <span class="font-mono text-xs uppercase text-muted-foreground">{{ stage.color }}</span>
                 </div>
               </div>
               <div class="flex flex-col gap-2">

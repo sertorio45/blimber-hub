@@ -47,9 +47,8 @@ export default defineEventHandler(async (event) => {
   if (active_only === 'true' && activeFunnelIds.length > 0)
     query = query.in('funnel_id', activeFunnelIds)
 
-  const { data, error } = await query
-    .order('is_default', { ascending: false })
-    .order('order')
+  // Kanban / organize UI must respect user-defined order (not is_default pinning).
+  const { data, error } = await query.order('order', { ascending: true })
 
   if (error)
     return { status: 400, message: error.message }
