@@ -10,12 +10,19 @@ const SETTINGS_INTEGRATIONS_PATH = '/settings/integrations'
 
 const { tenantId } = useTenant()
 const route = useRoute()
+type GoogleAdsAccountOption = {
+  id: string
+  name: string
+  is_manager?: boolean
+  login_customer_id?: string | null
+  has_name?: boolean
+}
+
 const oauthLoading = ref<string | null>(null)
 const accountsLoading = ref<string | null>(null)
 const actionLoading = ref<string | null>(null)
 const lastError = ref('')
-const developerToken = ref('')
-const loginCustomerId = ref('')
+const googleAdsAccountsWarning = ref('')
 const selectedGoogleAds = ref('')
 const selectedGoogleAnalytics = ref('')
 const selectedMetaAdAccount = ref('')
@@ -23,13 +30,28 @@ const selectedMetaPage = ref('')
 const selectedMetaPixel = ref('')
 const selectedMetaInstagram = ref('')
 const selectedLinkedinOrganization = ref('')
-const googleAdsAccounts = ref<Array<{ id: string, name: string }>>([])
+const googleAdsAccounts = ref<GoogleAdsAccountOption[]>([])
 const googleAnalyticsAccounts = ref<Array<{ id: string, name: string, account_id?: string }>>([])
 const metaAccounts = ref<Array<{ id: string, name: string }>>([])
 const metaPages = ref<Array<{ id: string, name: string }>>([])
 const metaPixels = ref<Array<{ id: string, name: string }>>([])
 const metaInstagramAccounts = ref<Array<{ id: string, name: string }>>([])
 const linkedinOrganizations = ref<Array<{ id: string, name: string }>>([])
+
+function formatGoogleAdsCustomerId(value?: string | null): string {
+  const id = String(value || '').replace(/-/g, '').trim()
+  if (id.length !== 10 || !/^\d+$/.test(id))
+    return id
+  return `${id.slice(0, 3)}-${id.slice(3, 6)}-${id.slice(6)}`
+}
+
+function googleAdsAccountLabel(account: GoogleAdsAccountOption): string {
+  const formattedId = formatGoogleAdsCustomerId(account.id)
+  const suffix = account.is_manager ? ' (gerente)' : ''
+  if (account.has_name && account.name)
+    return `${account.name}${suffix} · ${formattedId}`
+  return `${account.name || `Conta ${formattedId}`}${suffix}`
+}
 
 const editDialogOpen = ref(false)
 const editProvider = ref<Provider | null>(null)
@@ -86,9 +108,9 @@ function displayAccountLabel(provider: Provider): string {
   if (provider === 'google_ads') {
     const id = c.customer_id ? String(c.customer_id) : ''
     if (!id)
-      return 'Selecione a conta em editar'
+      return row.google_ads_needs_account ? 'Selecione a conta de anúncios' : 'Selecione a conta em editar'
     const acc = googleAdsAccounts.value.find(a => String(a.id) === id)
-    return acc?.name || id
+    return acc ? googleAdsAccountLabel(acc) : `Conta ${formatGoogleAdsCustomerId(id)}`
   }
   if (provider === 'google_analytics') {
     const id = String(c.property_id || c.analytics_account_id || '')
@@ -256,15 +278,26 @@ async function connectProvider(provider: Provider) {
 async function loadAccounts(provider: Provider) {
   accountsLoading.value = provider
   lastError.value = ''
+  if (provider === 'google_ads')
+    googleAdsAccountsWarning.value = ''
   try {
-    const response = await $fetch<{ data: Array<{ id: string, name: string }> }>('/api/marketing/oauth/accounts', {
+    const response = await $fetch<{ data: GoogleAdsAccountOption[], warning?: string }>('/api/marketing/oauth/accounts', {
       query: {
         provider,
         tenant_id: tenantId.value || undefined,
       },
     })
-    if (provider === 'google_ads')
-      googleAdsAccounts.value = response.data || []
+    if (provider === 'google_ads') {
+      googleAdsAccounts.value = [...(response.data || [])].sort((a, b) =>
+        (a.name || '').localeCompare(b.name || '', 'pt-BR', { sensitivity: 'base' }),
+      )
+      googleAdsAccountsWarning.value = response.warning || ''
+      if (!selectedGoogleAds.value) {
+        const preferred = googleAdsAccounts.value.find(a => !a.is_manager) || googleAdsAccounts.value[0]
+        if (preferred)
+          selectedGoogleAds.value = preferred.id
+      }
+    }
     if (provider === 'google_analytics')
       googleAnalyticsAccounts.value = response.data || []
     if (provider === 'meta')
@@ -386,21 +419,30 @@ async function onMetaPagePicked(value: string) {
 
 async function saveGoogleAdsAccount() {
   actionLoading.value = 'google_ads'
-  await $fetch('/api/marketing/integrations', {
-    method: 'POST',
-    body: {
-      tenant_id: tenantId.value || undefined,
-      provider: 'google_ads',
-      config: {
-        customer_id: selectedGoogleAds.value,
-        login_customer_id: loginCustomerId.value || undefined,
-        developer_token: developerToken.value || undefined,
+  lastError.value = ''
+  try {
+    const selected = googleAdsAccounts.value.find(a => String(a.id) === String(selectedGoogleAds.value))
+    await $fetch('/api/marketing/integrations', {
+      method: 'POST',
+      body: {
+        tenant_id: tenantId.value || undefined,
+        provider: 'google_ads',
+        config: {
+          customer_id: selectedGoogleAds.value,
+          // Auto-detected MCC when the selected client account requires it.
+          login_customer_id: selected?.login_customer_id || null,
+        },
+        is_active: true,
       },
-      is_active: true,
-    },
-  })
-  await refresh()
-  actionLoading.value = null
+    })
+    await refresh()
+  }
+  catch (error: any) {
+    lastError.value = error?.data?.statusMessage || error?.message || 'Erro ao salvar conta Google Ads'
+  }
+  finally {
+    actionLoading.value = null
+  }
 }
 
 async function saveGoogleAnalyticsAccount() {
@@ -772,19 +814,19 @@ watch(
       <DialogContent class="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle v-if="editProvider === 'google_ads'">
-            Google Ads — detalhes
+            Google Ads — escolher conta
           </DialogTitle>
           <DialogTitle v-else-if="editProvider === 'google_analytics'">
-            Google Analytics — detalhes
+            Google Analytics — escolher propriedade
           </DialogTitle>
           <DialogTitle v-else-if="editProvider === 'meta'">
-            Meta — detalhes
+            Meta — configurar publicação
           </DialogTitle>
           <DialogTitle v-else-if="editProvider === 'linkedin'">
-            LinkedIn — detalhes
+            LinkedIn — escolher organização
           </DialogTitle>
           <DialogDescription>
-            Carregue as contas, selecione a desejada e salve. Campos sensíveis não são exibidos após salvar.
+            Selecione a conta desejada e salve. Tokens e credenciais ficam apenas no servidor.
           </DialogDescription>
         </DialogHeader>
 
@@ -796,8 +838,13 @@ watch(
             @click="loadAccounts('google_ads')"
           >
             <Icon name="lucide:refresh-cw" class="mr-2 h-4 w-4" />
-            {{ accountsLoading === 'google_ads' ? 'Carregando...' : 'Carregar contas' }}
+            {{ accountsLoading === 'google_ads' ? 'Carregando...' : 'Atualizar contas' }}
           </Button>
+          <Alert v-if="googleAdsAccountsWarning" class="text-left">
+            <Icon name="lucide:info" class="h-4 w-4" />
+            <AlertTitle>Nomes parciais</AlertTitle>
+            <AlertDescription>{{ googleAdsAccountsWarning }}</AlertDescription>
+          </Alert>
           <div class="space-y-2">
             <Label>Conta de anúncios</Label>
             <Select v-model="selectedGoogleAds">
@@ -806,18 +853,13 @@ watch(
               </SelectTrigger>
               <SelectContent>
                 <SelectItem v-for="account in googleAdsAccounts" :key="account.id" :value="account.id">
-                  {{ account.name }}
+                  {{ googleAdsAccountLabel(account) }}
                 </SelectItem>
               </SelectContent>
             </Select>
-          </div>
-          <div class="space-y-2">
-            <Label>Token de desenvolvedor</Label>
-            <Input v-model="developerToken" placeholder="Token de desenvolvedor do Google Ads" autocomplete="off" />
-          </div>
-          <div class="space-y-2">
-            <Label>ID de cliente de login (opcional)</Label>
-            <Input v-model="loginCustomerId" placeholder="MCC / ID de cliente de login" autocomplete="off" />
+            <p v-if="!googleAdsAccounts.length && accountsLoading !== 'google_ads'" class="text-xs text-muted-foreground">
+              Nenhuma conta encontrada. Confirme que o Google Ads está conectado e que o usuário tem acesso a pelo menos uma conta.
+            </p>
           </div>
         </div>
 

@@ -1,19 +1,26 @@
 <script setup lang="ts">
 import type { MarketingReportSource } from '@/components/marketing/MarketingReportTemplateSidebar.vue'
+import type {
+  AnalyticsReportTemplateId,
+  GoogleAdsReportTemplateId,
+  MarketingDatePreset,
+  MetaReportTemplateId,
+} from '~/types/marketing'
 
-import type { GoogleTemplateType, MarketingDatePreset } from '~/types/marketing'
-import GoogleAnalyticsBrandIcon from '@/components/brand/GoogleAnalyticsBrandIcon.vue'
+import AnalyticsBoard from '@/components/marketing/AnalyticsBoard.vue'
+import GoogleAdsBoard from '@/components/marketing/GoogleAdsBoard.vue'
+import MarketingReportTemplatePicker from '@/components/marketing/MarketingReportTemplatePicker.vue'
 import MarketingReportTemplateSidebar from '@/components/marketing/MarketingReportTemplateSidebar.vue'
 import MetaAdsBoard from '@/components/marketing/MetaAdsBoard.vue'
-import { LineChart } from '@/components/ui/chart-line'
-
 import { DateRangePicker } from '@/components/ui/date-range-picker'
 
 const { tenantId } = useTenant()
-const source = ref<MarketingReportSource>('google_ads')
-const googleTemplate = ref<GoogleTemplateType>('standard')
+const source = ref<MarketingReportSource>('meta')
+const metaTemplate = ref<MetaReportTemplateId>('overview')
+const googleTemplate = ref<GoogleAdsReportTemplateId>('overview')
+const analyticsTemplate = ref<AnalyticsReportTemplateId>('overview')
 
-const datePreset = ref<MarketingDatePreset | string>('today')
+const datePreset = ref<MarketingDatePreset | string>('last_7d')
 const dateStart = ref('')
 const dateEnd = ref('')
 const metaActiveOnly = ref(true)
@@ -28,15 +35,44 @@ watch(datePreset, (value) => {
   }
 })
 
+watch(source, (value) => {
+  if (value === 'meta' && !metaTemplate.value)
+    metaTemplate.value = 'overview'
+  if (value === 'google_ads' && !googleTemplate.value)
+    googleTemplate.value = 'overview'
+  if (value === 'google_analytics' && !analyticsTemplate.value)
+    analyticsTemplate.value = 'overview'
+})
+
 definePageMeta({
   middleware: ['auth'],
   title: 'Relatórios de Marketing',
+})
+
+const activeTemplateId = computed({
+  get: () => {
+    if (source.value === 'meta')
+      return metaTemplate.value
+    if (source.value === 'google_ads')
+      return googleTemplate.value
+    return analyticsTemplate.value
+  },
+  set: (id: string) => {
+    if (source.value === 'meta')
+      metaTemplate.value = id as MetaReportTemplateId
+    else if (source.value === 'google_ads')
+      googleTemplate.value = id as GoogleAdsReportTemplateId
+    else
+      analyticsTemplate.value = id as AnalyticsReportTemplateId
+  },
 })
 
 function overviewQuery() {
   const query: Record<string, string | undefined> = {
     source: source.value,
     google_template: googleTemplate.value,
+    meta_template: metaTemplate.value,
+    analytics_template: analyticsTemplate.value,
     tenant_id: tenantId.value || undefined,
     date_preset: datePreset.value,
     meta_active_only: metaActiveOnly.value ? 'true' : 'false',
@@ -51,7 +87,7 @@ function overviewQuery() {
 
 const { data, pending, showSkeleton, refresh } = useMarketingFetch({
   key: () =>
-    `marketing-reports-${tenantId.value}-${source.value}-${googleTemplate.value}-${datePreset.value}-${dateStart.value}-${dateEnd.value}-${metaActiveOnly.value}`,
+    `marketing-reports-${tenantId.value}-${source.value}-${metaTemplate.value}-${googleTemplate.value}-${analyticsTemplate.value}-${datePreset.value}-${dateStart.value}-${dateEnd.value}-${metaActiveOnly.value}`,
   handler: async () => {
     const response = await $fetch<{ data: any }>('/api/marketing/overview', {
       query: overviewQuery(),
@@ -59,16 +95,18 @@ const { data, pending, showSkeleton, refresh } = useMarketingFetch({
     return response.data
   },
   default: () => null as any,
-  watch: [tenantId, source, googleTemplate, datePreset, dateStart, dateEnd, metaActiveOnly],
+  watch: [
+    tenantId,
+    source,
+    metaTemplate,
+    googleTemplate,
+    analyticsTemplate,
+    datePreset,
+    dateStart,
+    dateEnd,
+    metaActiveOnly,
+  ],
   enabled: () => Boolean(tenantId.value),
-})
-
-const googleChartData = computed(() => {
-  return (data.value?.google?.campaigns || []).slice(0, 10).map((campaign: any, index: number) => ({
-    campanha: campaign.name || `Campanha ${index + 1}`,
-    cliques: Number(campaign.clicks || 0),
-    conversões: Number(campaign.conversions || 0),
-  }))
 })
 
 const showGoogleAdsBlock = computed(() => source.value === 'google_ads')
@@ -93,7 +131,7 @@ async function refreshMarketing() {
         Relatórios de Marketing
       </h1>
       <p class="text-muted-foreground">
-        Acompanhe campanhas e resultados de Google Ads, Google Analytics e Meta.
+        Acompanhe campanhas e resultados de Google Ads, Google Analytics e Meta com modelos por tipo de campanha.
       </p>
     </div>
 
@@ -106,7 +144,7 @@ async function refreshMarketing() {
       />
 
       <div class="min-w-0 flex flex-1 flex-col gap-6">
-        <div class="flex flex-col gap-4 md:flex-row md:flex-wrap md:items-center md:justify-between">
+        <div class="flex flex-col gap-4 lg:flex-row lg:flex-wrap lg:items-start lg:justify-between">
           <div class="flex flex-wrap items-center gap-2">
             <Label class="whitespace-nowrap text-xs text-muted-foreground">
               Período
@@ -147,23 +185,11 @@ async function refreshMarketing() {
             />
           </div>
 
-          <div class="flex flex-wrap items-center gap-2">
-            <Select v-if="showGoogleAdsBlock" v-model="googleTemplate">
-              <SelectTrigger class="w-[220px]">
-                <SelectValue placeholder="Template Google" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="standard">
-                  Campanhas padrão
-                </SelectItem>
-                <SelectItem value="local_business">
-                  Template negócio local
-                </SelectItem>
-                <SelectItem value="website_visits">
-                  Template visitas no site
-                </SelectItem>
-              </SelectContent>
-            </Select>
+          <div class="flex flex-wrap items-end gap-3">
+            <MarketingReportTemplatePicker
+              v-model="activeTemplateId"
+              :platform="source"
+            />
 
             <Button variant="outline" :disabled="pending" @click="refreshMarketing">
               <Icon name="lucide:refresh-cw" class="mr-2 h-4 w-4" />
@@ -172,52 +198,29 @@ async function refreshMarketing() {
           </div>
         </div>
 
-        <div v-if="showGoogleAdsBlock" class="grid gap-4 xl:grid-cols-1">
-          <Card>
-            <CardHeader>
-              <CardTitle>Desempenho das Campanhas Google</CardTitle>
-              <CardDescription>Principais campanhas por cliques e conversões no período selecionado.</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <LineChart
-                :data="googleChartData"
-                :categories="['cliques', 'conversões']"
-                index="campanha"
-                :show-legend="true"
-              />
-            </CardContent>
-          </Card>
-        </div>
+        <GoogleAdsBoard
+          v-if="showGoogleAdsBlock"
+          :loading="pending && !data?.google"
+          :google="data?.google"
+          :period="data?.period"
+          :template-id="googleTemplate"
+        />
 
-        <div v-if="showAnalyticsBlock" class="grid gap-4 xl:grid-cols-1">
-          <Card>
-            <CardHeader>
-              <div class="flex items-start gap-3">
-                <div class="h-10 w-10 flex shrink-0 items-center justify-center">
-                  <GoogleAnalyticsBrandIcon size="lg" />
-                </div>
-                <div>
-                  <CardTitle>Google Analytics</CardTitle>
-                  <CardDescription>
-                    Relatórios de propriedade e tráfego serão exibidos aqui quando a integração estiver ativa.
-                  </CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <p class="text-sm text-muted-foreground">
-                Configure o Google Analytics em Integrações para habilitar este painel.
-              </p>
-            </CardContent>
-          </Card>
-        </div>
+        <AnalyticsBoard
+          v-if="showAnalyticsBlock"
+          :loading="pending && !data?.analytics"
+          :analytics="data?.analytics"
+          :period="data?.period"
+          :template-id="analyticsTemplate"
+        />
 
         <MetaAdsBoard
           v-if="showMetaBlock"
           v-model:ads-active-only="metaActiveOnly"
-          :loading="false"
+          :loading="pending && !data?.meta"
           :meta="data?.meta"
           :period="data?.period"
+          :template-id="metaTemplate"
         />
       </div>
     </div>

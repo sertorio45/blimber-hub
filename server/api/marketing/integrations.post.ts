@@ -2,6 +2,7 @@ import process from 'node:process'
 
 import { createError, defineEventHandler, readBody } from 'h3'
 
+import { normalizeGoogleCustomerId } from '~/server/utils/google-ads'
 import { clearMarketingCampaignCacheForTenant, decryptSecret, encryptSecret } from '~/server/utils/marketing'
 import { recordSocialAudit } from '~/server/utils/social-audit'
 import { requireSocialContext } from '~/server/utils/social-context'
@@ -57,17 +58,34 @@ export default defineEventHandler(async (event) => {
     config.refresh_token_enc = encryptSecret(incomingConfig.refresh_token)
     delete config.refresh_token
   }
-  if (incomingConfig.developer_token) {
-    config.developer_token_enc = encryptSecret(incomingConfig.developer_token)
-    delete config.developer_token
-  }
-  if (incomingConfig.client_id) {
-    config.client_id_enc = encryptSecret(incomingConfig.client_id)
-    delete config.client_id
-  }
-  if (incomingConfig.client_secret) {
-    config.client_secret_enc = encryptSecret(incomingConfig.client_secret)
-    delete config.client_secret
+  // Platform owns Google Ads developer token (GOOGLE_ADS_DEVELOPER_TOKEN).
+  // Ignore any client-supplied developer token / OAuth client secrets.
+  delete config.developer_token
+  delete config.developer_token_enc
+  delete config.client_id
+  delete config.client_secret
+  delete config.client_id_enc
+  delete config.client_secret_enc
+  // Keep legacy encrypted developer token only if still present on existing row
+  // and no env token is configured — resolution happens server-side via utils.
+  if (existingIntegration?.config?.developer_token_enc && !process.env.GOOGLE_ADS_DEVELOPER_TOKEN)
+    config.developer_token_enc = existingIntegration.config.developer_token_enc
+
+  if (provider === 'google_ads') {
+    if (incomingConfig.customer_id != null) {
+      const customerId = normalizeGoogleCustomerId(incomingConfig.customer_id)
+      if (customerId)
+        config.customer_id = customerId
+      else
+        delete config.customer_id
+    }
+    if (incomingConfig.login_customer_id != null) {
+      const loginId = normalizeGoogleCustomerId(incomingConfig.login_customer_id)
+      if (loginId)
+        config.login_customer_id = loginId
+      else
+        delete config.login_customer_id
+    }
   }
 
   if (provider === 'meta' && incomingConfig.page_id !== undefined) {

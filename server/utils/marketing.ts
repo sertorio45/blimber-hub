@@ -120,19 +120,26 @@ export function buildMarketingOverviewCacheKey(
   periodKey: string,
   metaAdsActiveOnly: boolean,
   integrationRows: Array<{ provider: string, config?: Record<string, any> | null, updated_at?: string | null }>,
+  reportTemplates?: { meta?: string, analytics?: string },
 ) {
   const meta = integrationRows.find(r => r.provider === 'meta')
   const google = integrationRows.find(r => r.provider === 'google_ads' || r.provider === 'google')
+  const analytics = integrationRows.find(r => r.provider === 'google_analytics')
   const metaEnc = meta?.config?.access_token_enc as string | undefined
   const googleEnc = google?.config?.access_token_enc as string | undefined
+  const analyticsEnc = analytics?.config?.access_token_enc as string | undefined
   const metaPart = meta
     ? `m:${meta.updated_at || ''}:${meta.config?.ad_account_id || ''}:${fingerprintToken(metaEnc)}`
     : 'm:none'
   const googlePart = google
     ? `g:${google.updated_at || ''}:${google.config?.customer_id || ''}:${fingerprintToken(googleEnc)}`
     : 'g:none'
+  const analyticsPart = analytics
+    ? `a:${analytics.updated_at || ''}:${analytics.config?.property_id || analytics.config?.analytics_account_id || ''}:${fingerprintToken(analyticsEnc)}`
+    : 'a:none'
   const ads = metaAdsActiveOnly ? 'ads1' : 'ads0'
-  return `${source}:${googleTemplate}:${periodKey}:${ads}:${metaPart}:${googlePart}`
+  const tpl = `mt:${reportTemplates?.meta || 'overview'}:at:${reportTemplates?.analytics || 'overview'}`
+  return `${source}:${googleTemplate}:${periodKey}:${ads}:${tpl}:${metaPart}:${googlePart}:${analyticsPart}`
 }
 
 export async function clearMarketingCampaignCacheForTenant(client: any, tenantId: string) {

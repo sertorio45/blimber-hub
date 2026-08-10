@@ -20,7 +20,7 @@ const model = defineModel<MarketingReportSource>({ required: true })
 <template>
   <nav
     class="flex w-full shrink-0 justify-center md:w-auto md:justify-start"
-    aria-label="Selecionar modelo de relatório"
+    aria-label="Selecionar plataforma de relatório"
   >
     <div
       class="flex flex-col items-center gap-3 rounded-[2rem] border border-border bg-card px-2.5 py-4 shadow-md"

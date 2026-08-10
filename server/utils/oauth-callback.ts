@@ -24,8 +24,27 @@ export function toOAuthProvider(value: string): OAuthProvider | null {
 }
 
 /**
+ * True for the old shared Google callback (`/auth/google/callback`) that serves
+ * both Ads and Analytics. Provider-specific paths must not use that override.
+ */
+function isSharedGoogleRedirectUri(uri: string): boolean {
+  try {
+    const path = new URL(uri).pathname.replace(/\/$/, '')
+    return path === '/auth/google/callback' || path === '/api/oauth/google/callback'
+  }
+  catch {
+    return false
+  }
+}
+
+/**
  * Canonical browser callback for Meta/Google/LinkedIn — module-agnostic so CRM
- * CAPI and Marketing can share one Redirect URI in each provider console.
+ * CAPI and Marketing can share Redirect URIs in each provider console.
+ *
+ * Google Ads and Analytics share one OAuth client but use distinct callback
+ * paths (`/api/oauth/google_ads|google_analytics/callback`) so the provider is
+ * known from the URL. A single GOOGLE_REDIRECT_URI is only honored when it is
+ * the legacy shared callback; otherwise per-provider paths win.
  */
 export function resolveOAuthCallbackUrl(
   event: H3Event,
@@ -45,9 +64,23 @@ export function resolveOAuthCallbackUrl(
       || `${baseUrl}/api/oauth/linkedin/callback`
   }
 
-  return process.env.GOOGLE_REDIRECT_URI
-    || process.env.GOOGLE_OAUTH_REDIRECT_URI
-    || `${baseUrl}/api/oauth/${provider}/callback`
+  const sharedGoogleRedirect
+    = process.env.GOOGLE_REDIRECT_URI || process.env.GOOGLE_OAUTH_REDIRECT_URI || ''
+
+  // Legacy: one Redirect URI for Ads + Analytics (provider resolved at callback).
+  if (sharedGoogleRedirect && isSharedGoogleRedirectUri(sharedGoogleRedirect))
+    return sharedGoogleRedirect
+
+  // Prefer request host so localhost/production stay in sync with the browser URL.
+  // Optional per-provider overrides when a reverse proxy rewrites the public origin.
+  if (provider === 'google_ads' && process.env.GOOGLE_ADS_REDIRECT_URI)
+    return process.env.GOOGLE_ADS_REDIRECT_URI
+  if (provider === 'google_analytics' && process.env.GOOGLE_ANALYTICS_REDIRECT_URI)
+    return process.env.GOOGLE_ANALYTICS_REDIRECT_URI
+
+  // Ignore non-shared GOOGLE_REDIRECT_URI (e.g. wrongly pointing at a single
+  // provider path) — Ads and Analytics must not collide on one URI.
+  return `${baseUrl}/api/oauth/${provider}/callback`
 }
 
 /** CRM Meta CAPI does not need social publish scopes to succeed. */

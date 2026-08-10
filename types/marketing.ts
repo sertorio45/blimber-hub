@@ -1,6 +1,15 @@
+import type {
+  AnalyticsOverviewBlock,
+  AnalyticsReportTemplateId,
+  GoogleAdsOverviewBlock,
+  GoogleAdsReportTemplateId,
+  GoogleTemplateType,
+  MetaReportTemplateId,
+} from '~/types/marketing-reports'
+
 export type MarketingProvider = 'google_ads' | 'google_analytics' | 'meta' | 'linkedin'
 
-export type GoogleTemplateType = 'local_business' | 'website_visits' | 'standard'
+export type { GoogleTemplateType, GoogleAdsReportTemplateId, MetaReportTemplateId, AnalyticsReportTemplateId }
 
 export interface MarketingIntegrationPayload {
   provider: MarketingProvider
@@ -21,7 +30,11 @@ export type MarketingDatePreset =
 export interface MarketingOverviewQuery {
   tenant_id?: string
   source?: 'all' | 'google_ads' | 'google_analytics' | 'meta'
-  google_template?: GoogleTemplateType
+  /** @deprecated Prefer google_template with GoogleAdsReportTemplateId */
+  google_template?: GoogleTemplateType | GoogleAdsReportTemplateId
+  meta_template?: MetaReportTemplateId
+  analytics_template?: AnalyticsReportTemplateId
+  report_template?: string
   force_refresh?: boolean
   insights_only?: string | boolean
   date_preset?: MarketingDatePreset | string
@@ -36,6 +49,8 @@ export interface MetaCampaignInsight {
   id: string
   name?: string
   status?: string | null
+  objective?: string | null
+  primary_action_type?: string | null
   impressions: number
   clicks: number
   spend: number
@@ -102,4 +117,8 @@ export interface MetaOverviewBlock {
   ads: MetaAdCreative[]
   /** Account-level time series (Meta `time_increment=1`) */
   series?: MetaSeriesPoint[]
+  template?: MetaReportTemplateId | string
+  connected?: boolean
 }
+
+export type { GoogleAdsOverviewBlock, AnalyticsOverviewBlock }

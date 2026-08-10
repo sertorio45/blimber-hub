@@ -2,6 +2,13 @@ import process from 'node:process'
 
 import { createError, defineEventHandler, getQuery } from 'h3'
 
+import {
+  getGoogleAccessToken,
+  listGoogleAdsAccounts,
+  resolveGoogleAdsDeveloperToken,
+  resolveGoogleAdsLoginCustomerId,
+  throwGoogleAdsConfigError,
+} from '~/server/utils/google-ads'
 import { decryptSecret } from '~/server/utils/marketing'
 import { requireSocialContext } from '~/server/utils/social-context'
 
@@ -28,8 +35,7 @@ export default defineEventHandler(async (event): Promise<any> => {
     .maybeSingle()
 
   const token = decryptSecret(integration?.config?.access_token_enc)
-  const developerToken = decryptSecret(integration?.config?.developer_token_enc)
-  if (!token) {
+  if (!token && provider !== 'google_ads') {
     return { data: [] }
   }
   const graphVersion = process.env.META_GRAPH_VERSION || 'v20.0'
@@ -136,18 +142,29 @@ export default defineEventHandler(async (event): Promise<any> => {
   }
 
   if (provider === 'google_ads') {
-    const response = await $fetch<any>('https://googleads.googleapis.com/v19/customers:listAccessibleCustomers', {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'developer-token': developerToken || '',
-      },
-    }).catch(() => ({ resourceNames: [] }))
-    const data = (response.resourceNames || []).map((name: string) => {
-      const id = name.split('/').pop() || name
-      return { id, name: `Conta Google Ads ${id}` }
-    })
-    return { data }
+    const googleConfig = integration?.config || {}
+    const accessToken = await getGoogleAccessToken(googleConfig)
+    if (!accessToken) {
+      throw createError({
+        statusCode: 401,
+        statusMessage: 'Google Ads não autenticado. Conecte a conta novamente.',
+      })
+    }
+
+    const developerToken = resolveGoogleAdsDeveloperToken(googleConfig)
+    if (!developerToken)
+      throwGoogleAdsConfigError(null)
+
+    const loginCustomerId = resolveGoogleAdsLoginCustomerId(googleConfig)
+    const { accounts, warning } = await listGoogleAdsAccounts(
+      accessToken,
+      developerToken,
+      loginCustomerId,
+    )
+    return {
+      data: accounts,
+      warning: warning || undefined,
+    }
   }
 
   if (provider === 'google_analytics') {

@@ -1,14 +1,26 @@
 <script setup lang="ts">
 import type { MarketingOverviewPeriod, MetaOverviewBlock, MetaSeriesPoint } from '~/types/marketing'
+import type { MetaReportTemplateId } from '~/types/marketing-reports'
 
 import MetaBrandIcon from '@/components/brand/MetaBrandIcon.vue'
 import MiniSparkline from '@/components/marketing/MiniSparkline.vue'
 import { Switch } from '@/components/ui/switch'
+import {
+  detailMetricsOf,
+  getReportTemplate,
+  primaryMetricsOf,
+} from '~/constants/marketing-report-templates'
+import {
+  formatReportMetricValue,
+  periodLabelPt,
+  readMetricBag,
+} from '~/composables/marketing/useMarketingReportMetrics'
 
 const props = defineProps<{
   meta?: MetaOverviewBlock | null
   period?: MarketingOverviewPeriod | null
   loading?: boolean
+  templateId?: MetaReportTemplateId | string
 }>()
 
 const adsActiveOnly = defineModel<boolean>('adsActiveOnly', { default: false })
@@ -16,22 +28,13 @@ const adsActiveOnly = defineModel<boolean>('adsActiveOnly', { default: false })
 const selectedCampaignId = ref<string | 'all'>('all')
 const activeCampaignsOnly = ref(true)
 
-const periodLabel = computed(() => {
-  const p = props.period
-  if (!p)
-    return ''
-  if (p.preset === 'custom' && p.date_start && p.date_end)
-    return `${p.date_start} → ${p.date_end}`
-  const labels: Record<string, string> = {
-    today: 'Hoje',
-    yesterday: 'Ontem',
-    last_7d: 'Últimos 7 dias',
-    last_14d: 'Últimos 14 dias',
-    last_30d: 'Últimos 30 dias',
-    last_90d: 'Últimos 90 dias',
-  }
-  return labels[p.preset] || p.preset
-})
+const template = computed(() =>
+  getReportTemplate('meta', props.templateId || 'overview'),
+)
+const primaryDefs = computed(() => primaryMetricsOf(template.value))
+const detailDefs = computed(() => detailMetricsOf(template.value))
+
+const periodLabel = computed(() => periodLabelPt(props.period))
 
 function metaStatusPt(status: string | null | undefined) {
   if (!status)
@@ -54,6 +57,29 @@ function metaStatusPt(status: string | null | undefined) {
   return map[u] || status
 }
 
+function objectivePt(objective: string | null | undefined) {
+  if (!objective)
+    return ''
+  const map: Record<string, string> = {
+    OUTCOME_AWARENESS: 'Reconhecimento',
+    OUTCOME_ENGAGEMENT: 'Engajamento',
+    OUTCOME_LEADS: 'Leads',
+    OUTCOME_SALES: 'Vendas',
+    OUTCOME_TRAFFIC: 'Tráfego',
+    OUTCOME_APP_PROMOTION: 'App',
+    BRAND_AWARENESS: 'Reconhecimento',
+    REACH: 'Alcance',
+    LINK_CLICKS: 'Cliques no link',
+    POST_ENGAGEMENT: 'Engajamento',
+    VIDEO_VIEWS: 'Visualizações',
+    LEAD_GENERATION: 'Leads',
+    CONVERSIONS: 'Conversões',
+    MESSAGES: 'Mensagens',
+    PRODUCT_CATALOG_SALES: 'Catálogo',
+  }
+  return map[objective.toUpperCase()] || objective
+}
+
 const campaigns = computed(() => props.meta?.campaigns ?? [])
 
 const campaignSelectOptions = computed(() => {
@@ -61,7 +87,6 @@ const campaignSelectOptions = computed(() => {
   if (activeCampaignsOnly.value) {
     list = list.filter((c) => {
       const status = String(c.status || '').toUpperCase()
-      // In insights-only mode status may be null; don't hide valid campaigns.
       if (!status)
         return true
       return status === 'ACTIVE'
@@ -108,45 +133,19 @@ const displayMetrics = computed(() => {
 
 const accountSeries = computed(() => props.meta?.series ?? [])
 
-function valuesFromSeries(key: keyof MetaSeriesPoint): number[] {
+function valuesFromSeries(key: keyof MetaSeriesPoint | string): number[] {
   const s = accountSeries.value
   if (s.length >= 2) {
     return s.map((p) => {
-      const v = p[key]
+      const v = (p as unknown as Record<string, unknown>)[key]
       if (typeof v === 'number')
         return v
       return v == null ? 0 : Number(v)
     })
   }
-  const m = displayMetrics.value
-  const fallback = (() => {
-    switch (key) {
-      case 'spend':
-        return m.spend
-      case 'results':
-        return m.results
-      case 'cost_per_result':
-        return m.cost_per_result
-      case 'reach':
-        return m.reach
-      case 'impressions':
-        return m.impressions
-      case 'clicks':
-        return m.clicks
-      case 'ctr':
-        return m.ctr
-      case 'cpc':
-        return m.cpc
-      case 'cpm':
-        return m.cpm
-      case 'roas':
-        return m.roas ?? 0
-      default:
-        return 0
-    }
-  })()
-  const v = Number(fallback) || 0
-  return [v * 0.88, v * 0.94, v * 0.97, v, v * 1.02]
+  const m = displayMetrics.value as Record<string, number | null>
+  const fallback = Number(m[key] ?? 0) || 0
+  return [fallback * 0.88, fallback * 0.94, fallback * 0.97, fallback, fallback * 1.02]
 }
 
 function trendHalf(values: number[]): number | null {
@@ -161,7 +160,6 @@ function trendHalf(values: number[]): number | null {
   return ((b - a) / base) * 100
 }
 
-/** Para métricas de custo, tendência negativa (queda) é favorável */
 function trendVisual(pct: number | null, invert: boolean) {
   if (pct == null || Number.isNaN(pct))
     return { icon: null as string | null, label: '' }
@@ -171,55 +169,20 @@ function trendVisual(pct: number | null, invert: boolean) {
   return { icon, label }
 }
 
-const sparkSpend = computed(() => valuesFromSeries('spend'))
-const sparkResults = computed(() => valuesFromSeries('results'))
-const sparkCostPerResult = computed(() => valuesFromSeries('cost_per_result'))
-
-const trendResultsVisual = computed(() => trendVisual(trendHalf(sparkResults.value), false))
-const trendCostVisual = computed(() => trendVisual(trendHalf(sparkCostPerResult.value), true))
-
-const metricGridItems = computed(() => [
-  { key: 'reach', label: 'Alcance', spark: 'reach' as const, muted: false },
-  { key: 'impressions', label: 'Impressões', spark: 'impressions' as const, muted: false },
-  { key: 'clicks', label: 'Cliques', spark: 'clicks' as const, muted: false },
-  { key: 'cpc', label: 'CPC', spark: 'cpc' as const, muted: true },
-  { key: 'ctr', label: 'CTR', spark: 'ctr' as const, muted: false },
-  { key: 'cpm', label: 'CPM', spark: 'cpm' as const, muted: true },
-  { key: 'roas', label: 'ROAS', spark: 'roas' as const, muted: true },
-])
-
-function formatMetricValue(key: string) {
-  const m = displayMetrics.value
-  switch (key) {
-    case 'reach':
-      return fmtInt(m.reach)
-    case 'impressions':
-      return fmtInt(m.impressions)
-    case 'clicks':
-      return fmtInt(m.clicks)
-    case 'cpc':
-      return fmtCurrency(m.cpc)
-    case 'ctr':
-      return `${fmtDec(m.ctr, 2)}%`
-    case 'cpm':
-      return fmtCurrency(m.cpm)
-    case 'roas':
-      return m.roas != null && m.roas > 0 ? `${fmtDec(m.roas, 2)}x` : '—'
-    default:
-      return '—'
-  }
+function fmt(key: string) {
+  const def = template.value.metrics.find(d => d.key === key)
+  let value = readMetricBag(displayMetrics.value as any, key)
+  if (key === 'cost_per_result' && (displayMetrics.value.results || 0) <= 0)
+    value = null
+  if (key === 'roas' && (value == null || value <= 0))
+    value = null
+  return formatReportMetricValue(value, def?.format || 'integer')
 }
 
-function fmtCurrency(n: number) {
-  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n || 0)
-}
-
-function fmtInt(n: number) {
-  return Math.round(n || 0).toLocaleString('pt-BR')
-}
-
-function fmtDec(n: number, d = 2) {
-  return (n || 0).toLocaleString('pt-BR', { minimumFractionDigits: d, maximumFractionDigits: d })
+function primaryTrend(key: string) {
+  const spark = valuesFromSeries(key)
+  const invert = key.includes('cost') || key === 'cpc' || key === 'cpm'
+  return trendVisual(trendHalf(spark), invert)
 }
 
 watch(
@@ -252,10 +215,13 @@ watch(activeCampaignsOnly, () => {
               <MetaBrandIcon size="sm" />
             </span>
             Anúncios Meta
+            <Badge v-if="template.label" variant="secondary" class="font-normal">
+              {{ template.label }}
+            </Badge>
           </CardTitle>
           <CardDescription class="mt-1">
             <span v-if="periodLabel">Desempenho · {{ periodLabel }}</span>
-            <span v-else>Visão geral do desempenho dos anúncios. Filtre por campanha para atualizar indicadores e criativos.</span>
+            <span v-else>{{ template.description }}</span>
           </CardDescription>
           <p
             v-if="selectedCampaignId !== 'all' && accountSeries.length"
@@ -285,6 +251,10 @@ watch(activeCampaignsOnly, () => {
                 >
                   {{ c.name || c.id }}
                   <span v-if="c.status" class="text-muted-foreground"> · {{ metaStatusPt(c.status) }}</span>
+                  <span
+                    v-else-if="c.objective"
+                    class="text-muted-foreground"
+                  > · {{ objectivePt(c.objective) }}</span>
                 </SelectItem>
               </SelectContent>
             </Select>
@@ -344,121 +314,66 @@ watch(activeCampaignsOnly, () => {
             <Skeleton class="h-8 w-full" />
           </div>
         </div>
-        <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          <div v-for="n in 4" :key="`meta-skeleton-creative-${n}`" class="rounded-lg border p-3">
-            <Skeleton class="mb-3 aspect-video w-full rounded-md" />
-            <Skeleton class="mb-2 h-3 w-3/4" />
-            <Skeleton class="mb-2 h-3 w-1/2" />
-            <Skeleton class="h-3 w-2/3" />
-          </div>
-        </div>
       </div>
 
       <template v-else>
-      <!-- Métricas principais -->
-      <div class="border-b px-4 py-4 sm:px-6">
-        <div class="grid gap-4 lg:grid-cols-3">
-          <div class="flex flex-col justify-between gap-3 rounded-lg border bg-card p-4">
-            <div class="flex items-start justify-between gap-2">
-              <div>
-                <p class="text-xs font-medium text-muted-foreground">
-                  Investimento
-                </p>
-                <p class="mt-1 text-2xl font-semibold tabular-nums">
-                  {{ fmtCurrency(displayMetrics.spend) }}
-                </p>
-              </div>
-              <span class="rounded-md border bg-muted/30 p-2 text-muted-foreground">
-                <Icon name="lucide:wallet" class="h-4 w-4" />
-              </span>
-            </div>
-            <MiniSparkline :values="sparkSpend" />
-          </div>
-
-          <div class="flex flex-col justify-between gap-3 rounded-lg border bg-card p-4">
-            <div class="flex items-start justify-between gap-2">
-              <div>
-                <p class="text-xs font-medium text-muted-foreground">
-                  Resultados
-                </p>
-                <p class="mt-1 text-2xl font-semibold tabular-nums">
-                  {{ fmtDec(displayMetrics.results, 0) }}
-                </p>
-                <div
-                  v-if="trendResultsVisual.icon"
-                  class="mt-1 flex items-center gap-1 text-xs text-muted-foreground"
-                >
-                  <Icon :name="trendResultsVisual.icon!" class="h-3.5 w-3.5" />
-                  {{ trendResultsVisual.label }}
+        <div class="border-b px-4 py-4 sm:px-6">
+          <div class="grid gap-4 lg:grid-cols-3">
+            <div
+              v-for="item in primaryDefs"
+              :key="item.key"
+              class="flex flex-col justify-between gap-3 rounded-lg border bg-card p-4"
+            >
+              <div class="flex items-start justify-between gap-2">
+                <div>
+                  <p class="text-xs font-medium text-muted-foreground">
+                    {{ item.label }}
+                  </p>
+                  <p class="mt-1 text-2xl font-semibold tabular-nums">
+                    {{ fmt(item.key) }}
+                  </p>
+                  <div
+                    v-if="primaryTrend(item.key).icon"
+                    class="mt-1 flex items-center gap-1 text-xs text-muted-foreground"
+                  >
+                    <Icon :name="primaryTrend(item.key).icon!" class="h-3.5 w-3.5" />
+                    {{ primaryTrend(item.key).label }}
+                  </div>
                 </div>
               </div>
-              <span class="rounded-md border bg-muted/30 p-2 text-muted-foreground">
-                <Icon name="lucide:target" class="h-4 w-4" />
-              </span>
+              <MiniSparkline
+                :tone="item.muted ? 'muted' : 'primary'"
+                :values="valuesFromSeries(item.key)"
+              />
             </div>
-            <MiniSparkline :values="sparkResults" />
           </div>
+        </div>
 
-          <div class="flex flex-col justify-between gap-3 rounded-lg border bg-card p-4">
-            <div class="flex items-start justify-between gap-2">
+        <div class="border-b px-4 py-4 sm:px-6">
+          <p class="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Detalhamento
+          </p>
+          <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div
+              v-for="item in detailDefs"
+              :key="item.key"
+              class="flex min-h-[100px] flex-col justify-between gap-2 rounded-lg border bg-card p-3"
+            >
               <div>
                 <p class="text-xs font-medium text-muted-foreground">
-                  Custo / resultado
+                  {{ item.label }}
                 </p>
-                <p class="mt-1 text-2xl font-semibold tabular-nums">
-                  {{
-                    displayMetrics.results > 0
-                      ? fmtCurrency(displayMetrics.cost_per_result)
-                      : '—'
-                  }}
+                <p class="mt-1 text-lg font-semibold tabular-nums">
+                  {{ fmt(item.key) }}
                 </p>
-                <div
-                  v-if="displayMetrics.results > 0 && trendCostVisual.icon"
-                  class="mt-1 flex items-center gap-1 text-xs text-muted-foreground"
-                >
-                  <Icon
-                    :name="trendCostVisual.icon!"
-                    class="h-3.5 w-3.5"
-                  />
-                  {{ trendCostVisual.label }}
-                </div>
               </div>
-              <span class="rounded-md border bg-muted/30 p-2 text-muted-foreground">
-                <Icon name="lucide:coins" class="h-4 w-4" />
-              </span>
+              <MiniSparkline
+                :tone="item.muted ? 'muted' : 'primary'"
+                :values="valuesFromSeries(item.key)"
+              />
             </div>
-            <MiniSparkline tone="muted" :values="sparkCostPerResult" />
           </div>
         </div>
-      </div>
-
-      <!-- Grade de métricas -->
-      <div class="border-b px-4 py-4 sm:px-6">
-        <p class="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-          Detalhamento
-        </p>
-        <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <div
-            v-for="item in metricGridItems"
-            :key="item.key"
-            class="flex min-h-[100px] flex-col justify-between gap-2 rounded-lg border bg-card p-3"
-          >
-            <div>
-              <p class="text-xs font-medium text-muted-foreground">
-                {{ item.label }}
-              </p>
-              <p class="mt-1 text-lg font-semibold tabular-nums">
-                {{ formatMetricValue(item.key) }}
-              </p>
-            </div>
-            <MiniSparkline
-              :tone="item.muted ? 'muted' : 'primary'"
-              :values="valuesFromSeries(item.spark)"
-            />
-          </div>
-        </div>
-      </div>
-
       </template>
     </CardContent>
   </Card>
