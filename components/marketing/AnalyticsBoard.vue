@@ -5,9 +5,12 @@ import type {
   AnalyticsSeriesPoint,
 } from '~/types/marketing-reports'
 import type { MarketingOverviewPeriod } from '~/types/marketing'
+import type { ReportTableColumn } from '@/components/marketing/ReportInsightTable.vue'
 
 import GoogleAnalyticsBrandIcon from '@/components/brand/GoogleAnalyticsBrandIcon.vue'
-import MiniSparkline from '@/components/marketing/MiniSparkline.vue'
+import ReportInsightTable from '@/components/marketing/ReportInsightTable.vue'
+import ReportKpiCard from '@/components/marketing/ReportKpiCard.vue'
+import ReportTrendChart from '@/components/marketing/ReportTrendChart.vue'
 import {
   detailMetricsOf,
   getReportTemplate,
@@ -34,8 +37,28 @@ const detailDefs = computed(() => detailMetricsOf(template.value))
 const periodLabel = computed(() => periodLabelPt(props.period))
 
 const metrics = computed(() => props.analytics?.metrics)
+const deltas = computed(() => props.analytics?.deltas || null)
 const series = computed(() => props.analytics?.series ?? [])
 const breakdown = computed(() => props.analytics?.breakdown ?? [])
+const pages = computed(() => props.analytics?.pages ?? [])
+const devices = computed(() => props.analytics?.devices ?? [])
+const events = computed(() => props.analytics?.events ?? [])
+
+const hasEcommerce = computed(() =>
+  (metrics.value?.purchaseRevenue || 0) > 0
+  || (metrics.value?.ecommercePurchases || 0) > 0,
+)
+
+function invertKey(key: string) {
+  return key === 'bounceRate' || key.includes('cost') || key === 'cpc'
+}
+
+function metricFormat(key: string) {
+  if (key === 'averageSessionDuration')
+    return 'duration' as const
+  const def = template.value.metrics.find(d => d.key === key)
+  return def?.format || 'integer'
+}
 
 function valuesFromSeries(key: string): number[] {
   const s = series.value
@@ -55,13 +78,75 @@ function valuesFromSeries(key: string): number[] {
     })
   }
   const v = Number((metrics.value as any)?.[key] || 0) || 0
-  return [v * 0.88, v * 0.94, v * 0.97, v, v * 1.02]
+  return v > 0 ? [v * 0.9, v * 0.95, v] : []
 }
 
-function fmt(key: string) {
-  const def = template.value.metrics.find(d => d.key === key)
-  return formatReportMetricValue(readMetricBag(metrics.value as any, key), def?.format || 'integer')
-}
+const trendData = computed(() =>
+  series.value.map(p => ({
+    date: p.date,
+    usuarios: p.totalUsers,
+    sessoes: p.sessions,
+    pageviews: p.screenPageViews,
+  })),
+)
+
+const channelColumns: ReportTableColumn[] = [
+  { key: 'dimension', label: 'Canal', format: 'raw' },
+  { key: 'sessions', label: 'Sessões', align: 'right', format: 'integer' },
+  { key: 'totalUsers', label: 'Usuários', align: 'right', format: 'integer' },
+  { key: 'engagementRate', label: 'Engajamento', align: 'right', format: 'percent' },
+  { key: 'conversions', label: 'Eventos-chave', align: 'right', format: 'decimal' },
+]
+
+const pageColumns: ReportTableColumn[] = [
+  { key: 'dimension', label: 'Página', format: 'raw' },
+  { key: 'sessions', label: 'Sessões', align: 'right', format: 'integer' },
+  { key: 'screenPageViews', label: 'Visualizações', align: 'right', format: 'integer' },
+  { key: 'totalUsers', label: 'Usuários', align: 'right', format: 'integer' },
+  { key: 'conversions', label: 'Eventos-chave', align: 'right', format: 'decimal' },
+]
+
+const deviceColumns: ReportTableColumn[] = [
+  { key: 'dimension', label: 'Dispositivo', format: 'raw' },
+  { key: 'sessions', label: 'Sessões', align: 'right', format: 'integer' },
+  { key: 'totalUsers', label: 'Usuários', align: 'right', format: 'integer' },
+  { key: 'engagementRate', label: 'Engajamento', align: 'right', format: 'percent' },
+  { key: 'conversions', label: 'Eventos-chave', align: 'right', format: 'decimal' },
+]
+
+const eventColumns: ReportTableColumn[] = [
+  { key: 'name', label: 'Evento', format: 'raw' },
+  { key: 'keyEvents', label: 'Eventos-chave', align: 'right', format: 'integer' },
+  { key: 'eventCount', label: 'Total de eventos', align: 'right', format: 'integer' },
+]
+
+const deviceShareRows = computed(() => {
+  const total = devices.value.reduce((s, d) => s + (d.sessions || 0), 0) || 1
+  return devices.value.map(d => ({
+    ...d,
+    share: ((d.sessions || 0) / total) * 100,
+  }))
+})
+
+const durationLabel = computed(() => {
+  const n = Number(metrics.value?.averageSessionDuration || 0)
+  if (!n)
+    return '—'
+  const total = Math.round(n)
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`
+})
+
+const bounceLabel = computed(() =>
+  formatReportMetricValue(metrics.value?.bounceRate, 'percent'),
+)
+
+const pageviewsPerSession = computed(() => {
+  const sessions = metrics.value?.sessions || 0
+  const views = metrics.value?.screenPageViews || 0
+  if (!sessions)
+    return '—'
+  return formatReportMetricValue(views / sessions, 'decimal')
+})
 </script>
 
 <template>
@@ -81,6 +166,7 @@ function fmt(key: string) {
           <CardDescription class="mt-1">
             <span v-if="periodLabel">Desempenho · {{ periodLabel }}</span>
             <span v-else>{{ template.description }}</span>
+            <span v-if="deltas" class="text-muted-foreground"> · vs período anterior</span>
           </CardDescription>
           <p
             v-if="analytics?.property_id"
@@ -89,10 +175,22 @@ function fmt(key: string) {
             Propriedade {{ analytics.property_id }}
           </p>
           <p
-            v-if="analytics && !analytics.connected"
+            v-if="analytics?.error"
+            class="mt-2 text-xs text-destructive"
+          >
+            {{ analytics.error }}
+          </p>
+          <p
+            v-else-if="analytics && !analytics.connected"
             class="mt-2 text-xs text-amber-700 dark:text-amber-400"
           >
-            Integração não conectada ou sem property_id. Configure o Google Analytics em Integrações.
+            Integração não conectada. Configure o Google Analytics em Integrações.
+          </p>
+          <p
+            v-else-if="analytics?.needs_property"
+            class="mt-2 text-xs text-amber-700 dark:text-amber-400"
+          >
+            Selecione a propriedade GA4 em Integrações para carregar os relatórios.
           </p>
         </div>
       </div>
@@ -104,118 +202,187 @@ function fmt(key: string) {
           <div v-for="n in 3" :key="`a-sk-${n}`" class="space-y-3 rounded-lg border p-4">
             <Skeleton class="h-3 w-24" />
             <Skeleton class="h-8 w-28" />
+            <Skeleton class="h-10 w-full" />
           </div>
         </div>
+        <Skeleton class="h-[220px] w-full rounded-lg" />
       </div>
 
       <template v-else>
-        <div class="border-b px-4 py-4 sm:px-6">
-          <div class="grid gap-4 lg:grid-cols-3">
-            <div
-              v-for="item in primaryDefs"
-              :key="item.key"
-              class="flex flex-col justify-between gap-3 rounded-lg border bg-card p-4"
-            >
-              <div>
-                <p class="text-xs font-medium text-muted-foreground">
-                  {{ item.label }}
-                </p>
-                <p class="mt-1 text-2xl font-semibold tabular-nums">
-                  {{ fmt(item.key) }}
-                </p>
-              </div>
-              <MiniSparkline
-                :tone="item.muted ? 'muted' : 'primary'"
-                :values="valuesFromSeries(item.key)"
+        <div
+          v-if="analytics?.error"
+          class="px-4 py-8 text-center text-sm text-destructive sm:px-6"
+        >
+          {{ analytics.error }}
+        </div>
+
+        <template v-else>
+          <!-- Primary KPIs -->
+          <div class="border-b px-4 py-4 sm:px-6">
+            <div class="grid gap-4 lg:grid-cols-3">
+              <ReportKpiCard
+                v-for="item in primaryDefs"
+                :key="item.key"
+                :label="item.label"
+                :value="readMetricBag(metrics as any, item.key)"
+                :format="metricFormat(item.key)"
+                :delta="deltas?.[item.key] ?? null"
+                :invert-delta="invertKey(item.key)"
+                :sparkline="valuesFromSeries(item.key)"
+                :muted="item.muted"
+                size="primary"
               />
             </div>
           </div>
-        </div>
 
-        <div class="border-b px-4 py-4 sm:px-6">
-          <p class="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Detalhamento
-          </p>
-          <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <div
-              v-for="item in detailDefs"
-              :key="item.key"
-              class="flex min-h-[100px] flex-col justify-between gap-2 rounded-lg border bg-card p-3"
-            >
+          <!-- Detail KPIs -->
+          <div class="border-b px-4 py-4 sm:px-6">
+            <p class="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Detalhamento
+            </p>
+            <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <ReportKpiCard
+                v-for="item in detailDefs"
+                :key="item.key"
+                :label="item.label"
+                :value="readMetricBag(metrics as any, item.key)"
+                :format="metricFormat(item.key)"
+                :delta="deltas?.[item.key] ?? null"
+                :invert-delta="invertKey(item.key)"
+                :sparkline="valuesFromSeries(item.key)"
+                :muted="item.muted"
+                size="detail"
+              />
+            </div>
+          </div>
+
+          <!-- Trend -->
+          <div v-if="trendData.length" class="border-b px-4 py-4 sm:px-6">
+            <div class="mb-3 flex items-end justify-between gap-2">
               <div>
-                <p class="text-xs font-medium text-muted-foreground">
-                  {{ item.label }}
+                <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Evolução diária
+                </p>
+                <p class="mt-0.5 text-sm text-muted-foreground">
+                  Usuários, sessões e pageviews no período
+                </p>
+              </div>
+            </div>
+            <ReportTrendChart
+              :data="trendData"
+              index="date"
+              :series="[
+                { key: 'usuarios', label: 'Usuários' },
+                { key: 'sessoes', label: 'Sessões' },
+                { key: 'pageviews', label: 'Pageviews' },
+              ]"
+              :height="240"
+            />
+          </div>
+
+          <!-- Secondary insight strip -->
+          <div class="border-b px-4 py-4 sm:px-6">
+            <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div class="rounded-lg border bg-muted/20 px-3 py-3">
+                <p class="text-xs text-muted-foreground">
+                  Duração média
                 </p>
                 <p class="mt-1 text-lg font-semibold tabular-nums">
-                  {{ fmt(item.key) }}
+                  {{ durationLabel }}
                 </p>
               </div>
-              <MiniSparkline
-                :tone="item.muted ? 'muted' : 'primary'"
-                :values="valuesFromSeries(item.key)"
+              <div class="rounded-lg border bg-muted/20 px-3 py-3">
+                <p class="text-xs text-muted-foreground">
+                  Taxa de rejeição
+                </p>
+                <p class="mt-1 text-lg font-semibold tabular-nums">
+                  {{ bounceLabel }}
+                </p>
+              </div>
+              <div class="rounded-lg border bg-muted/20 px-3 py-3">
+                <p class="text-xs text-muted-foreground">
+                  Páginas / sessão
+                </p>
+                <p class="mt-1 text-lg font-semibold tabular-nums">
+                  {{ pageviewsPerSession }}
+                </p>
+              </div>
+              <div class="rounded-lg border bg-muted/20 px-3 py-3">
+                <p class="text-xs text-muted-foreground">
+                  {{ hasEcommerce ? 'Receita' : 'Eventos-chave' }}
+                </p>
+                <p class="mt-1 text-lg font-semibold tabular-nums">
+                  <template v-if="hasEcommerce">
+                    {{ formatReportMetricValue(metrics?.purchaseRevenue, 'currency') }}
+                  </template>
+                  <template v-else>
+                    {{ formatReportMetricValue(metrics?.conversions, 'decimal') }}
+                  </template>
+                </p>
+                <p v-if="hasEcommerce" class="mt-0.5 text-xs text-muted-foreground">
+                  {{ formatReportMetricValue(metrics?.ecommercePurchases, 'integer') }} compras
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Channels -->
+          <div class="border-b px-4 py-4 sm:px-6">
+            <p class="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Por canal de aquisição
+            </p>
+            <ReportInsightTable
+              :columns="channelColumns"
+              :rows="breakdown as any"
+              empty-text="Sem dados de canais neste período."
+            />
+          </div>
+
+          <!-- Pages + Devices -->
+          <div class="grid gap-0 border-b lg:grid-cols-2">
+            <div class="border-b px-4 py-4 sm:px-6 lg:border-b-0 lg:border-r">
+              <p class="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Top páginas
+              </p>
+              <ReportInsightTable
+                :columns="pageColumns"
+                :rows="pages as any"
+                :max-rows="10"
+                empty-text="Sem dados de páginas."
+              />
+            </div>
+            <div class="px-4 py-4 sm:px-6">
+              <p class="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Dispositivos
+              </p>
+              <ReportInsightTable
+                :columns="deviceColumns"
+                :rows="deviceShareRows as any"
+                empty-text="Sem dados de dispositivos."
               />
             </div>
           </div>
-        </div>
 
-        <div v-if="breakdown.length" class="px-4 py-4 sm:px-6">
-          <p class="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Por canal de aquisição
-          </p>
-          <div class="overflow-x-auto rounded-lg border">
-            <table class="w-full min-w-[520px] text-left text-sm">
-              <thead class="border-b bg-muted/40 text-xs text-muted-foreground">
-                <tr>
-                  <th class="px-3 py-2 font-medium">
-                    Canal
-                  </th>
-                  <th class="px-3 py-2 font-medium text-right">
-                    Sessões
-                  </th>
-                  <th class="px-3 py-2 font-medium text-right">
-                    Usuários
-                  </th>
-                  <th class="px-3 py-2 font-medium text-right">
-                    Engajamento
-                  </th>
-                  <th class="px-3 py-2 font-medium text-right">
-                    Eventos-chave
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr
-                  v-for="row in breakdown"
-                  :key="row.dimension"
-                  class="border-b last:border-0"
-                >
-                  <td class="px-3 py-2 font-medium">
-                    {{ row.dimension }}
-                  </td>
-                  <td class="px-3 py-2 text-right tabular-nums">
-                    {{ formatReportMetricValue(row.sessions, 'integer') }}
-                  </td>
-                  <td class="px-3 py-2 text-right tabular-nums">
-                    {{ formatReportMetricValue(row.totalUsers, 'integer') }}
-                  </td>
-                  <td class="px-3 py-2 text-right tabular-nums">
-                    {{ formatReportMetricValue(row.engagementRate, 'percent') }}
-                  </td>
-                  <td class="px-3 py-2 text-right tabular-nums">
-                    {{ formatReportMetricValue(row.conversions, 'decimal') }}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+          <!-- Events -->
+          <div v-if="events.length" class="px-4 py-4 sm:px-6">
+            <p class="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Eventos-chave
+            </p>
+            <ReportInsightTable
+              :columns="eventColumns"
+              :rows="events as any"
+              :max-rows="10"
+              empty-text="Sem eventos-chave no período."
+            />
           </div>
-        </div>
 
-        <div
-          v-else-if="analytics?.connected && !series.length"
-          class="px-4 py-8 text-center text-sm text-muted-foreground sm:px-6"
-        >
-          Sem dados no período selecionado para esta propriedade.
-        </div>
+          <div
+            v-else-if="analytics?.connected && !series.length && !breakdown.length"
+            class="px-4 py-8 text-center text-sm text-muted-foreground sm:px-6"
+          >
+            Sem dados no período selecionado para esta propriedade.
+          </div>
+        </template>
       </template>
     </CardContent>
   </Card>

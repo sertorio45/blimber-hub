@@ -58,3 +58,42 @@ export function periodLabelPt(period?: {
 export function metricDefsLabelMap(defs: ReportMetricDef[]): Record<string, string> {
   return Object.fromEntries(defs.map(d => [d.key, d.label]))
 }
+
+/** Format a period-over-period delta percentage for report KPIs. */
+export function formatReportDelta(pct: number | null | undefined): string {
+  if (pct == null || Number.isNaN(Number(pct)))
+    return ''
+  const n = Number(pct)
+  const sign = n > 0 ? '+' : ''
+  return `${sign}${n.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}%`
+}
+
+export function reportDeltaTone(
+  pct: number | null | undefined,
+  invert = false,
+): 'up' | 'down' | 'neutral' {
+  if (pct == null || Number.isNaN(Number(pct)) || Math.abs(Number(pct)) < 0.05)
+    return 'neutral'
+  const effective = invert ? -Number(pct) : Number(pct)
+  return effective >= 0 ? 'up' : 'down'
+}
+
+/** Format GA4 averageSessionDuration (seconds) as mm:ss. */
+export function formatDurationSeconds(value: number | null | undefined): string {
+  const n = Number(value || 0)
+  if (!Number.isFinite(n) || n <= 0)
+    return '—'
+  const total = Math.round(n)
+  const m = Math.floor(total / 60)
+  const s = total % 60
+  return `${m}:${String(s).padStart(2, '0')}`
+}
+
+export function shortDateLabel(isoDate: string): string {
+  if (!isoDate)
+    return ''
+  const parts = isoDate.split('-')
+  if (parts.length === 3)
+    return `${parts[2]}/${parts[1]}`
+  return isoDate
+}

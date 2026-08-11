@@ -224,6 +224,26 @@ export async function handleOAuthProviderCallback(
     accessToken = tokenResponse.access_token || ''
     refreshToken = tokenResponse.refresh_token || ''
     expiresIn = Number(tokenResponse.expires_in || 0) || null
+
+    // Persist granted scopes for Google Ads / Analytics diagnostics.
+    const tokenInfo = await $fetch<{ scope?: string }>(
+      `https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=${encodeURIComponent(accessToken)}`,
+    ).catch(() => null)
+    if (tokenInfo?.scope)
+      grantedScopes = tokenInfo.scope.split(/\s+/).filter(Boolean)
+
+    if (provider === 'google_analytics') {
+      const hasAnalyticsReadonly = grantedScopes.some(scope =>
+        scope === 'https://www.googleapis.com/auth/analytics.readonly'
+        || scope === 'https://www.googleapis.com/auth/analytics',
+      )
+      if (!hasAnalyticsReadonly) {
+        return failRedirect(
+          'OAuth do Google Analytics sem escopo analytics.readonly. Reconecte o Google Analytics (não o Ads) e aceite as permissões.',
+          redirectBase,
+        )
+      }
+    }
   }
 
   if (!accessToken)
@@ -246,6 +266,8 @@ export async function handleOAuthProviderCallback(
     // Page token must be refreshed after reconnecting.
     delete config.page_access_token_enc
   }
+  if ((provider === 'google_ads' || provider === 'google_analytics') && grantedScopes.length)
+    config.granted_scopes = grantedScopes
 
   const { data: existing } = await client
     .from('marketing_integrations')

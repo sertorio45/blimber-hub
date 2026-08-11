@@ -2,7 +2,9 @@
 import GoogleAdsBrandIcon from '@/components/brand/GoogleAdsBrandIcon.vue'
 import GoogleAnalyticsBrandIcon from '@/components/brand/GoogleAnalyticsBrandIcon.vue'
 import MetaBrandIcon from '@/components/brand/MetaBrandIcon.vue'
+import GoogleAdsTestTokenNotice from '@/components/marketing/GoogleAdsTestTokenNotice.vue'
 import MarketingPageSkeleton from '@/components/marketing/MarketingPageSkeleton.vue'
+import { isGoogleAdsTestTokenUserMessage } from '~/constants/google-ads'
 
 type Provider = 'google_ads' | 'google_analytics' | 'meta' | 'linkedin'
 
@@ -14,7 +16,6 @@ type GoogleAdsAccountOption = {
   id: string
   name: string
   is_manager?: boolean
-  login_customer_id?: string | null
   has_name?: boolean
 }
 
@@ -38,6 +39,12 @@ const metaPixels = ref<Array<{ id: string, name: string }>>([])
 const metaInstagramAccounts = ref<Array<{ id: string, name: string }>>([])
 const linkedinOrganizations = ref<Array<{ id: string, name: string }>>([])
 
+const isGoogleAdsTestTokenWarning = computed(() =>
+  isGoogleAdsTestTokenUserMessage(googleAdsAccountsWarning.value),
+)
+const isGoogleAdsTestTokenError = computed(() =>
+  isGoogleAdsTestTokenUserMessage(lastError.value),
+)
 function formatGoogleAdsCustomerId(value?: string | null): string {
   const id = String(value || '').replace(/-/g, '').trim()
   if (id.length !== 10 || !/^\d+$/.test(id))
@@ -115,9 +122,9 @@ function displayAccountLabel(provider: Provider): string {
   if (provider === 'google_analytics') {
     const id = String(c.property_id || c.analytics_account_id || '')
     if (!id)
-      return 'Selecione a conta em editar'
+      return row.google_analytics_needs_property ? 'Selecione a propriedade GA4' : 'Selecione a propriedade em editar'
     const acc = googleAnalyticsAccounts.value.find(a => String(a.id) === id)
-    return acc?.name || id
+    return acc?.name || `Propriedade ${id}`
   }
   if (provider === 'meta') {
     if (!c.ad_account_id)
@@ -421,7 +428,6 @@ async function saveGoogleAdsAccount() {
   actionLoading.value = 'google_ads'
   lastError.value = ''
   try {
-    const selected = googleAdsAccounts.value.find(a => String(a.id) === String(selectedGoogleAds.value))
     await $fetch('/api/marketing/integrations', {
       method: 'POST',
       body: {
@@ -429,8 +435,6 @@ async function saveGoogleAdsAccount() {
         provider: 'google_ads',
         config: {
           customer_id: selectedGoogleAds.value,
-          // Auto-detected MCC when the selected client account requires it.
-          login_customer_id: selected?.login_customer_id || null,
         },
         is_active: true,
       },
@@ -608,7 +612,11 @@ watch(
       </p>
     </div>
 
-    <Alert v-if="!pending && lastError" variant="destructive">
+    <GoogleAdsTestTokenNotice
+      v-if="!pending && lastError && isGoogleAdsTestTokenError"
+      :message="lastError"
+    />
+    <Alert v-else-if="!pending && lastError" variant="destructive">
       <Icon name="lucide:triangle-alert" class="h-4 w-4" />
       <AlertTitle>Falha na integração</AlertTitle>
       <AlertDescription>{{ lastError }}</AlertDescription>
@@ -840,7 +848,11 @@ watch(
             <Icon name="lucide:refresh-cw" class="mr-2 h-4 w-4" />
             {{ accountsLoading === 'google_ads' ? 'Carregando...' : 'Atualizar contas' }}
           </Button>
-          <Alert v-if="googleAdsAccountsWarning" class="text-left">
+          <GoogleAdsTestTokenNotice
+            v-if="googleAdsAccountsWarning && isGoogleAdsTestTokenWarning"
+            :message="googleAdsAccountsWarning"
+          />
+          <Alert v-else-if="googleAdsAccountsWarning" class="text-left">
             <Icon name="lucide:info" class="h-4 w-4" />
             <AlertTitle>Nomes parciais</AlertTitle>
             <AlertDescription>{{ googleAdsAccountsWarning }}</AlertDescription>

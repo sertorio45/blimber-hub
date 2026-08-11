@@ -6,7 +6,6 @@ import {
   getGoogleAccessToken,
   listGoogleAdsAccounts,
   resolveGoogleAdsDeveloperToken,
-  resolveGoogleAdsLoginCustomerId,
   throwGoogleAdsConfigError,
 } from '~/server/utils/google-ads'
 import { decryptSecret } from '~/server/utils/marketing'
@@ -35,7 +34,8 @@ export default defineEventHandler(async (event): Promise<any> => {
     .maybeSingle()
 
   const token = decryptSecret(integration?.config?.access_token_enc)
-  if (!token && provider !== 'google_ads') {
+  // Google providers refresh via getGoogleAccessToken; Meta/LinkedIn need a stored access token.
+  if (!token && provider !== 'google_ads' && provider !== 'google_analytics') {
     return { data: [] }
   }
   const graphVersion = process.env.META_GRAPH_VERSION || 'v20.0'
@@ -155,11 +155,9 @@ export default defineEventHandler(async (event): Promise<any> => {
     if (!developerToken)
       throwGoogleAdsConfigError(null)
 
-    const loginCustomerId = resolveGoogleAdsLoginCustomerId(googleConfig)
     const { accounts, warning } = await listGoogleAdsAccounts(
       accessToken,
       developerToken,
-      loginCustomerId,
     )
     return {
       data: accounts,
@@ -168,18 +166,56 @@ export default defineEventHandler(async (event): Promise<any> => {
   }
 
   if (provider === 'google_analytics') {
+    const accessToken = await getGoogleAccessToken(integration?.config || {})
+    if (!accessToken) {
+      throw createError({
+        statusCode: 401,
+        statusMessage: 'Google Analytics não autenticado. Conecte a conta novamente.',
+      })
+    }
+
     const response = await $fetch<any>('https://analyticsadmin.googleapis.com/v1beta/accountSummaries', {
-      headers: { Authorization: `Bearer ${token}` },
-    }).catch(() => ({ accountSummaries: [] }))
+      headers: { Authorization: `Bearer ${accessToken}` },
+    }).catch((error: any) => {
+      const status = error?.statusCode || error?.status || 502
+      const payload = error?.data?.error || error?.data || {}
+      const rawMessage = String(payload?.message || error?.message || '')
+      const reason = Array.isArray(payload?.details)
+        ? String(payload.details.find((d: any) => d?.reason)?.reason || '')
+        : ''
+      let message = rawMessage || 'Falha ao listar propriedades GA4'
+      if (/SERVICE_DISABLED|has not been used in project|it is disabled/i.test(`${reason} ${rawMessage}`)) {
+        message = 'API Google Analytics Admin desativada no projeto Google Cloud do OAuth. Ative "Google Analytics Admin API" no Console.'
+      }
+      else if (/ACCESS_TOKEN_SCOPE_INSUFFICIENT|insufficient authentication scopes/i.test(`${reason} ${rawMessage}`)) {
+        message = 'Token Google sem escopo analytics.readonly. Reconecte o Google Analytics (não o Ads) em Integrações.'
+      }
+      throw createError({
+        statusCode: status >= 400 && status < 600 ? status : 502,
+        statusMessage: message,
+      })
+    })
+
+    // Only real GA4 properties — never fall back to account IDs (Data API needs property_id).
     const data = (response.accountSummaries || []).flatMap((summary: any) => {
-      const accountId = summary.account?.split('/').pop() || ''
+      const accountId = String(summary.account || '').split('/').pop() || ''
       const accountName = summary.displayName || `Conta ${accountId}`
-      const properties = (summary.propertySummaries || []).map((property: any) => ({
-        id: property.property?.split('/').pop() || property.property,
-        name: `${accountName} - ${property.displayName || property.property}`,
-        account_id: accountId,
-      }))
-      return properties.length ? properties : [{ id: accountId, name: accountName, account_id: accountId }]
+      return (summary.propertySummaries || [])
+        .map((property: any) => {
+          // Admin returns `properties/{numericId}` — keep digits only.
+          const id = String(property.property || '')
+            .replace(/^(properties\/)+/i, '')
+            .split('/')
+            .pop() || ''
+          if (!id || !/^\d+$/.test(id))
+            return null
+          return {
+            id,
+            name: `${accountName} — ${property.displayName || id}`,
+            account_id: accountId,
+          }
+        })
+        .filter(Boolean)
     })
     return { data }
   }

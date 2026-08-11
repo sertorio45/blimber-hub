@@ -23,7 +23,7 @@ import {
 } from '~/server/utils/marketing-reports'
 import type { MetaReportTemplateId } from '~/types/marketing-reports'
 
-const MARKETING_OVERVIEW_CALC_VERSION = 'calc_v4'
+const MARKETING_OVERVIEW_CALC_VERSION = 'calc_v7'
 
 /** Default (overview) priority — template-specific lists override at runtime */
 const RESULT_ACTION_PRIORITY = resultActionPriorityForMetaTemplate('overview')
@@ -836,6 +836,9 @@ export default defineEventHandler(async (event) => {
     },
     google: googleData || {
       connected: Boolean(googleConfig),
+      customer_id: googleConfig?.customer_id || null,
+      needs_account: Boolean(googleConfig && !googleConfig.customer_id),
+      error: null,
       metrics: {
         impressions: 0,
         clicks: 0,
@@ -847,12 +850,20 @@ export default defineEventHandler(async (event) => {
         cost_per_conversion: null,
         roas: null,
       },
+      previous_metrics: null,
+      deltas: null,
       campaigns: [],
       series: [],
+      networks: [],
     },
     analytics: analyticsData || {
       connected: Boolean(analyticsConfig),
       property_id: analyticsConfig?.property_id || analyticsConfig?.analytics_account_id || null,
+      needs_property: Boolean(
+        analyticsConfig
+        && !(analyticsConfig.property_id || analyticsConfig.analytics_account_id),
+      ),
+      error: null,
       metrics: {
         sessions: 0,
         totalUsers: 0,
@@ -867,8 +878,13 @@ export default defineEventHandler(async (event) => {
         ecommercePurchases: 0,
         purchaseRevenue: 0,
       },
+      previous_metrics: null,
+      deltas: null,
       series: [],
       breakdown: [],
+      pages: [],
+      devices: [],
+      events: [],
     },
     meta: {
       metrics: metaData?.metrics || emptyMetaMetrics(),
@@ -880,7 +896,10 @@ export default defineEventHandler(async (event) => {
     },
   }
 
-  await setCachedMarketingData(client, tenantId, source as any, cacheKey, payload, 30)
+  // Avoid caching fatal Google/Analytics API errors as "empty success" zeros.
+  const hasReportApiError = Boolean(payload.google?.error || payload.analytics?.error)
+  if (!hasReportApiError)
+    await setCachedMarketingData(client, tenantId, source as any, cacheKey, payload, 30)
 
   return { data: payload, cached: false }
 })
