@@ -2,6 +2,7 @@ import type { MetaDatePreset, MetaGraphFetch } from './types'
 
 import process from 'node:process'
 import { MetaAdsToolError } from './types'
+import { sanitizeMetaWriteAuditPayload } from './write-audit'
 
 export function normalizeMetaAdAccountId(raw: string) {
   return String(raw || '').replace(/^act_/i, '').trim()
@@ -41,6 +42,21 @@ export function buildMetaDateQuery(
   return { date_preset: preset }
 }
 
+/**
+ * Encode a body field for Meta Graph form/query POST.
+ * Booleans → 0/1 (Marketing API create examples use is_adset_budget_sharing_enabled=0).
+ * Objects/arrays → JSON string. Skip undefined/null (never send "undefined").
+ */
+export function encodeMetaGraphBodyValue(value: unknown): string | number | undefined {
+  if (value === undefined || value === null)
+    return undefined
+  if (typeof value === 'string' || typeof value === 'number')
+    return value
+  if (typeof value === 'boolean')
+    return value ? 1 : 0
+  return JSON.stringify(value)
+}
+
 function toQueryString(query?: Record<string, string | number | undefined>) {
   if (!query)
     return ''
@@ -54,6 +70,69 @@ function toQueryString(query?: Record<string, string | number | undefined>) {
   return qs ? `?${qs}` : ''
 }
 
+/** Fields Meta returns inside `error` — expose all that help debug Invalid parameter (100). */
+export interface MetaGraphErrorFields {
+  message: string
+  type?: string | null
+  code?: number | string | null
+  error_subcode?: number | string | null
+  error_user_title?: string | null
+  error_user_msg?: string | null
+  fbtrace_id?: string | null
+  is_transient?: boolean | null
+}
+
+export function extractMetaGraphErrorFields(payload: unknown, httpStatus?: number): MetaGraphErrorFields {
+  const root = (payload && typeof payload === 'object') ? payload as Record<string, unknown> : {}
+  const err = (root.error && typeof root.error === 'object')
+    ? root.error as Record<string, unknown>
+    : root
+
+  const message
+    = (typeof err.message === 'string' && err.message)
+      || (typeof root.message === 'string' && root.message)
+      || (httpStatus ? `Meta Graph error ${httpStatus}` : 'Meta Graph error')
+
+  return {
+    message,
+    type: err.type != null ? String(err.type) : null,
+    code: err.code != null ? err.code as number | string : null,
+    error_subcode: err.error_subcode != null ? err.error_subcode as number | string : null,
+    error_user_title: typeof err.error_user_title === 'string' ? err.error_user_title : null,
+    error_user_msg: typeof err.error_user_msg === 'string' ? err.error_user_msg : null,
+    fbtrace_id: typeof err.fbtrace_id === 'string' ? err.fbtrace_id : null,
+    is_transient: typeof err.is_transient === 'boolean' ? err.is_transient : null,
+  }
+}
+
+/**
+ * Re-throw META_GRAPH_ERROR with sanitized request payload attached for writes.
+ * Non-graph errors pass through unchanged.
+ */
+export function enrichMetaGraphWriteError(
+  error: unknown,
+  requestPayload?: Record<string, unknown> | null,
+): never {
+  if (!(error instanceof MetaAdsToolError) || error.code !== 'META_GRAPH_ERROR')
+    throw error
+
+  const previous = (error.details && typeof error.details === 'object')
+    ? error.details as Record<string, unknown>
+    : {}
+
+  throw new MetaAdsToolError(
+    error.code,
+    error.message,
+    error.statusCode,
+    {
+      ...previous,
+      request_payload: requestPayload == null
+        ? null
+        : sanitizeMetaWriteAuditPayload(requestPayload),
+    },
+  )
+}
+
 /** Default fetch used outside Nuxt ($fetch). Never logs the access token. */
 export const defaultMetaGraphFetch: MetaGraphFetch = async (url, init = {}) => {
   const method = (init.method || 'GET').toUpperCase()
@@ -61,11 +140,10 @@ export const defaultMetaGraphFetch: MetaGraphFetch = async (url, init = {}) => {
   const mergedQuery: Record<string, string | number | undefined> = { ...(init.query || {}) }
   if (init.body && method !== 'GET' && method !== 'HEAD') {
     for (const [key, value] of Object.entries(init.body)) {
-      if (value === undefined || value === null)
+      const encoded = encodeMetaGraphBodyValue(value)
+      if (encoded === undefined)
         continue
-      mergedQuery[key] = typeof value === 'string' || typeof value === 'number'
-        ? value
-        : JSON.stringify(value)
+      mergedQuery[key] = encoded
     }
   }
   const fullUrl = `${url}${toQueryString(mergedQuery)}`
@@ -76,15 +154,13 @@ export const defaultMetaGraphFetch: MetaGraphFetch = async (url, init = {}) => {
   const response = await fetch(fullUrl, { method, headers })
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) {
-    const message
-      = payload?.error?.message
-        || payload?.message
-        || `Meta Graph error ${response.status}`
-    throw new MetaAdsToolError('META_GRAPH_ERROR', message, response.status >= 500 ? 502 : response.status, {
-      type: payload?.error?.type,
-      code: payload?.error?.code,
-      fbtrace_id: payload?.error?.fbtrace_id,
-    })
+    const fields = extractMetaGraphErrorFields(payload, response.status)
+    throw new MetaAdsToolError(
+      'META_GRAPH_ERROR',
+      fields.message,
+      response.status >= 500 ? 502 : response.status,
+      fields,
+    )
   }
   return payload
 }

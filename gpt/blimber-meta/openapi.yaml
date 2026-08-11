@@ -6,7 +6,7 @@ info:
     houver o nome do cliente. Nunca peça access_token. Mutações exigem confirm +
     confirmTenantId; create/edit/delete usam dryRun default true. Bulk delete:
     preview → confirmar IDs → execute. Textos em PT-BR.
-  version: 1.7.0
+  version: 1.7.1
   contact:
     name: Blimber Hub
 servers:
@@ -192,7 +192,8 @@ paths:
       description: >
         Cria campanha Outcome_*. Default status=PAUSED e dryRun=true (preview).
         Exige confirm=true e confirmTenantId=tenantId. ACTIVE exige confirmActive=true.
-        Budget opcional com teto META_GPT_BUDGET_DAILY_MAX_CENTS.
+        Sem budget de campanha envia is_adset_budget_sharing_enabled=false (ABO).
+        Erros Graph trazem code/subcode/user_msg e request_payload sanitizado.
       x-openai-isConsequential: true
       requestBody:
         required: true
@@ -210,7 +211,13 @@ paths:
         "401":
           description: Não autorizado — API key ausente ou inválida
         "400":
-          description: Requisição inválida — erro de validação ou da ferramenta
+          description: >
+            Erro de validação ou Graph (details com code/subcode/user_msg e
+            request_payload sanitizado em META_GRAPH_ERROR).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorToolResponse"
 
   /api/gpt/meta/campaigns/{campaignId}:
     get:
@@ -783,6 +790,27 @@ components:
         data:
           type: object
           description: Payload tipado da tool (estrutura varia por operação).
+    ErrorToolResponse:
+      type: object
+      description: >
+        Erro tipado. Em META_GRAPH_ERROR, details inclui code, error_subcode,
+        error_user_title, error_user_msg, fbtrace_id e request_payload (sem tokens).
+      properties:
+        ok:
+          type: boolean
+          example: false
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            statusCode:
+              type: integer
+            details:
+              type: object
+              description: Campos Graph + request_payload sanitizado em writes.
     ToolsCatalogResponse:
       type: object
       properties:

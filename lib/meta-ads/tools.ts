@@ -7,6 +7,7 @@ import {
   actPath,
   buildMetaDateQuery,
   defaultMetaGraphFetch,
+  enrichMetaGraphWriteError,
   metaGraphUrl,
   normalizeMetaAdAccountId,
 } from './graph'
@@ -625,6 +626,63 @@ function fetchGraph(ctx: MetaToolContext): MetaGraphFetch {
   return ctx.graphFetch || defaultMetaGraphFetch
 }
 
+/**
+ * Graph POST/DELETE for writes — on META_GRAPH_ERROR attaches sanitized request body
+ * (never tokens) so GPT/Postman can debug Invalid parameter (100).
+ */
+async function graphWrite(
+  graph: MetaGraphFetch,
+  url: string,
+  init: {
+    method?: string
+    query?: Record<string, string | number | undefined>
+    body?: Record<string, unknown>
+  },
+  requestPayload?: Record<string, unknown> | null,
+) {
+  try {
+    return await graph(url, init)
+  }
+  catch (err) {
+    enrichMetaGraphWriteError(err, requestPayload ?? init.body ?? null)
+  }
+}
+
+/**
+ * Build POST body for act_{id}/campaigns aligned with current Marketing API.
+ * - special_ad_categories always present (required since API 7.0; [] = none)
+ * - without campaign budget: is_adset_budget_sharing_enabled=false (required v24+ ABO)
+ * - with daily/lifetime budget: omit sharing flag (CBO; Meta forbids combining)
+ */
+export function buildMetaCreateCampaignGraphBody(input: {
+  name: string
+  objective: MetaCampaignObjective
+  status: 'ACTIVE' | 'PAUSED'
+  dailyBudget?: number
+  lifetimeBudget?: number
+  specialAdCategories?: MetaSpecialAdCategory[]
+}): Record<string, unknown> {
+  const specialAdCategories = input.specialAdCategories ?? []
+  const body: Record<string, unknown> = {
+    name: input.name,
+    objective: input.objective,
+    status: input.status,
+    special_ad_categories: specialAdCategories,
+  }
+
+  const hasCampaignBudget = input.dailyBudget != null || input.lifetimeBudget != null
+  if (input.dailyBudget != null)
+    body.daily_budget = input.dailyBudget
+  if (input.lifetimeBudget != null)
+    body.lifetime_budget = input.lifetimeBudget
+
+  // Official Graph create example sends is_adset_budget_sharing_enabled=0 when no CBO.
+  if (!hasCampaignBudget)
+    body.is_adset_budget_sharing_enabled = false
+
+  return body
+}
+
 export async function metaListIntegrations(
   ctx: MetaToolContext,
   raw: unknown,
@@ -927,13 +985,13 @@ async function mutateOwnedObjectStatus(
       ],
     },
     async () => {
-      const updated = await graph(metaGraphUrl(creds.apiVersion, `/${params.objectId}`), {
+      const updated = await graphWrite(graph, metaGraphUrl(creds.apiVersion, `/${params.objectId}`), {
         method: 'POST',
         query: {
           access_token: creds.accessToken,
         },
         body: { status },
-      })
+      }, { status })
       return {
         tenantId: params.tenantId,
         adAccountId: creds.adAccountId,
@@ -1089,16 +1147,14 @@ export async function metaCreateCampaign(
   }
 
   const specialAdCategories = input.specialAdCategories ?? []
-  const graphBody: Record<string, unknown> = {
+  const graphBody = buildMetaCreateCampaignGraphBody({
     name: input.name,
     objective: input.objective,
     status,
-    special_ad_categories: specialAdCategories,
-  }
-  if (input.dailyBudget != null)
-    graphBody.daily_budget = input.dailyBudget
-  if (input.lifetimeBudget != null)
-    graphBody.lifetime_budget = input.lifetimeBudget
+    dailyBudget: input.dailyBudget,
+    lifetimeBudget: input.lifetimeBudget,
+    specialAdCategories,
+  })
 
   const path = `/${actPath(creds.adAccountId)}/campaigns`
   const budgetNotes: string[] = []
@@ -1109,7 +1165,9 @@ export async function metaCreateCampaign(
     budgetNotes.push(`lifetime_budget: ${formatBudgetMinorUnits(input.lifetimeBudget, currency)}`)
   }
   else {
-    budgetNotes.push('Sem budget no nível campanha (CBO); budget tipicamente no adset (Etapa 3).')
+    budgetNotes.push(
+      'Sem budget no nível campanha (ABO): is_adset_budget_sharing_enabled=false; budget no adset.',
+    )
   }
   budgetNotes.push(
     `Teto daily: ${getMetaGptBudgetDailyMaxCents()} centavos (META_GPT_BUDGET_DAILY_MAX_CENTS).`,
@@ -1133,18 +1191,44 @@ export async function metaCreateCampaign(
       ],
     },
     async () => {
-      const created = await graph(metaGraphUrl(creds.apiVersion, path), {
-        method: 'POST',
-        query: { access_token: creds.accessToken },
-        body: graphBody,
-      })
+      let created: any
+      try {
+        created = await graphWrite(
+          graph,
+          metaGraphUrl(creds.apiVersion, path),
+          {
+            method: 'POST',
+            query: { access_token: creds.accessToken },
+            body: graphBody,
+          },
+          graphBody,
+        )
+      }
+      catch (err) {
+        await logMetaWriteAudit({
+          tenantId: input.tenantId,
+          action: 'meta.gpt.campaign.create.failed',
+          entityType: 'meta_campaign',
+          entityId: null,
+          dryRun: false,
+          before: null,
+          after: {
+            request_payload: graphBody,
+            graph_error: err instanceof MetaAdsToolError ? err.details : null,
+            message: err instanceof Error ? err.message : String(err),
+            adAccountId: creds.adAccountId,
+            apiVersion: creds.apiVersion,
+          },
+        }).catch(() => {})
+        throw err
+      }
       const campaignId = created?.id ? String(created.id) : null
       if (!campaignId) {
         throw new MetaAdsToolError(
           'META_CREATE_CAMPAIGN_FAILED',
           'Meta não retornou id da campanha criada.',
           502,
-          { response: created },
+          { response: created, request_payload: graphBody },
         )
       }
       return {
@@ -1333,18 +1417,18 @@ export async function metaCreateAdset(
       ],
     },
     async () => {
-      const created = await graph(metaGraphUrl(creds.apiVersion, path), {
+      const created = await graphWrite(graph, metaGraphUrl(creds.apiVersion, path), {
         method: 'POST',
         query: { access_token: creds.accessToken },
         body: graphBody,
-      })
+      }, graphBody)
       const adsetId = created?.id ? String(created.id) : null
       if (!adsetId) {
         throw new MetaAdsToolError(
           'META_CREATE_ADSET_FAILED',
           'Meta não retornou id do adset criado.',
           502,
-          { response: created },
+          { response: created, request_payload: graphBody },
         )
       }
       return {
@@ -1565,18 +1649,18 @@ export async function metaCreateAd(
       ],
     },
     async () => {
-      const createdCreative = await graph(metaGraphUrl(creds.apiVersion, creativePath), {
+      const createdCreative = await graphWrite(graph, metaGraphUrl(creds.apiVersion, creativePath), {
         method: 'POST',
         query: { access_token: creds.accessToken },
         body: creativeBody,
-      })
+      }, creativeBody)
       const creativeId = createdCreative?.id ? String(createdCreative.id) : null
       if (!creativeId) {
         throw new MetaAdsToolError(
           'META_CREATE_CREATIVE_FAILED',
           'Meta não retornou id do AdCreative criado.',
           502,
-          { response: createdCreative },
+          { response: createdCreative, request_payload: creativeBody },
         )
       }
 
@@ -1589,11 +1673,11 @@ export async function metaCreateAd(
 
       let createdAd: any
       try {
-        createdAd = await graph(metaGraphUrl(creds.apiVersion, adPath), {
+        createdAd = await graphWrite(graph, metaGraphUrl(creds.apiVersion, adPath), {
           method: 'POST',
           query: { access_token: creds.accessToken },
           body: adBody,
-        })
+        }, adBody)
       }
       catch (err) {
         throw new MetaAdsToolError(
@@ -1874,11 +1958,11 @@ export async function metaUpdateAdsetBudget(
       notes,
     },
     async () => {
-      const updated = await graph(metaGraphUrl(creds.apiVersion, `/${input.adsetId}`), {
+      const updated = await graphWrite(graph, metaGraphUrl(creds.apiVersion, `/${input.adsetId}`), {
         method: 'POST',
         query: { access_token: creds.accessToken },
         body: graphBody,
-      })
+      }, graphBody)
       return {
         tenantId: input.tenantId,
         adAccountId: creds.adAccountId,
@@ -1984,11 +2068,11 @@ export async function metaUpdateAdsetTargeting(
       ],
     },
     async () => {
-      const updated = await graph(metaGraphUrl(creds.apiVersion, `/${input.adsetId}`), {
+      const updated = await graphWrite(graph, metaGraphUrl(creds.apiVersion, `/${input.adsetId}`), {
         method: 'POST',
         query: { access_token: creds.accessToken },
         body: graphBody,
-      })
+      }, graphBody)
       return {
         tenantId: input.tenantId,
         adAccountId: creds.adAccountId,
@@ -2170,26 +2254,27 @@ export async function metaUpdateAdCreativeCopy(
       ],
     },
     async () => {
-      const createdCreative = await graph(metaGraphUrl(creds.apiVersion, creativePath), {
+      const createdCreative = await graphWrite(graph, metaGraphUrl(creds.apiVersion, creativePath), {
         method: 'POST',
         query: { access_token: creds.accessToken },
         body: creativeBody,
-      })
+      }, creativeBody)
       const creativeId = createdCreative?.id ? String(createdCreative.id) : null
       if (!creativeId) {
         throw new MetaAdsToolError(
           'META_CREATE_CREATIVE_FAILED',
           'Meta não retornou id do AdCreative criado (update copy).',
           502,
-          { response: createdCreative },
+          { response: createdCreative, request_payload: creativeBody },
         )
       }
 
-      const updated = await graph(metaGraphUrl(creds.apiVersion, `/${input.adId}`), {
+      const swapBody = { creative: { creative_id: creativeId } }
+      const updated = await graphWrite(graph, metaGraphUrl(creds.apiVersion, `/${input.adId}`), {
         method: 'POST',
         query: { access_token: creds.accessToken },
-        body: { creative: { creative_id: creativeId } },
-      })
+        body: swapBody,
+      }, swapBody)
 
       return {
         tenantId: input.tenantId,
@@ -2350,26 +2435,27 @@ export async function metaUpdateAdMedia(
       ],
     },
     async () => {
-      const createdCreative = await graph(metaGraphUrl(creds.apiVersion, creativePath), {
+      const createdCreative = await graphWrite(graph, metaGraphUrl(creds.apiVersion, creativePath), {
         method: 'POST',
         query: { access_token: creds.accessToken },
         body: creativeBody,
-      })
+      }, creativeBody)
       const creativeId = createdCreative?.id ? String(createdCreative.id) : null
       if (!creativeId) {
         throw new MetaAdsToolError(
           'META_CREATE_CREATIVE_FAILED',
           'Meta não retornou id do AdCreative criado (update media).',
           502,
-          { response: createdCreative },
+          { response: createdCreative, request_payload: creativeBody },
         )
       }
 
-      const updated = await graph(metaGraphUrl(creds.apiVersion, `/${input.adId}`), {
+      const swapBody = { creative: { creative_id: creativeId } }
+      const updated = await graphWrite(graph, metaGraphUrl(creds.apiVersion, `/${input.adId}`), {
         method: 'POST',
         query: { access_token: creds.accessToken },
-        body: { creative: { creative_id: creativeId } },
-      })
+        body: swapBody,
+      }, swapBody)
 
       return {
         tenantId: input.tenantId,
@@ -2711,11 +2797,11 @@ export async function metaExecuteBulkDelete(
 
   for (const item of items) {
     try {
-      const updated = await graph(metaGraphUrl(creds.apiVersion, `/${item.id}`), {
+      const updated = await graphWrite(graph, metaGraphUrl(creds.apiVersion, `/${item.id}`), {
         method: 'POST',
         query: { access_token: creds.accessToken },
         body: { status: deleteMode },
-      })
+      }, { status: deleteMode })
       succeeded.push({
         id: item.id,
         name: item.name,

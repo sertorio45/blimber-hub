@@ -362,6 +362,36 @@ describe('meta-ads MCP tools', () => {
       daily_budget: 5000,
       special_ad_categories: [],
     })
+    expect((result as any).preview?.body.is_adset_budget_sharing_enabled).toBeUndefined()
+    expect(graphFetch).not.toHaveBeenCalled()
+  })
+
+  it('create campaign dryRun without budget sets is_adset_budget_sharing_enabled false', async () => {
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret('tok'),
+      ad_account_id: '555',
+    })
+    const graphFetch = vi.fn()
+
+    const result = await metaCreateCampaign(
+      { client, graphFetch },
+      {
+        tenantId: 'tenant-1',
+        name: 'ABO Campaign',
+        objective: 'OUTCOME_TRAFFIC',
+        confirmTenantId: 'tenant-1',
+        confirm: true,
+      },
+    )
+
+    expect((result as any).preview?.body).toMatchObject({
+      name: 'ABO Campaign',
+      objective: 'OUTCOME_TRAFFIC',
+      status: 'PAUSED',
+      special_ad_categories: [],
+      is_adset_budget_sharing_enabled: false,
+    })
+    expect((result as any).preview?.body.daily_budget).toBeUndefined()
     expect(graphFetch).not.toHaveBeenCalled()
   })
 
@@ -460,12 +490,75 @@ describe('meta-ads MCP tools', () => {
     const postCalls = graphFetch.mock.calls.filter(([, init]) => init?.method === 'POST')
     expect(postCalls).toHaveLength(1)
     expect(String(postCalls[0]![0])).toContain('/act_555/campaigns')
+    expect(postCalls[0]![1]?.body).toMatchObject({
+      name: 'Campanha Real',
+      objective: 'OUTCOME_SALES',
+      status: 'PAUSED',
+      daily_budget: 10000,
+      special_ad_categories: [],
+    })
+    expect(postCalls[0]![1]?.body.is_adset_budget_sharing_enabled).toBeUndefined()
     expect(audits.some((a: any) =>
       a.action === 'meta.gpt.campaign.create'
       && a.dryRun === false
       && a.entityId === 'cmp_new_1',
     )).toBe(true)
     expect(JSON.stringify(result)).not.toContain('tok')
+  })
+
+  it('create campaign Graph error returns subcode/user msgs and sanitized payload', async () => {
+    const audits: unknown[] = []
+    setMetaWriteAuditSink(r => audits.push(r))
+
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret('tok-secret'),
+      ad_account_id: '555',
+    })
+
+    const graphFetch = vi.fn(async (_url: string, init?: any) => {
+      if (init?.method === 'POST') {
+        throw new MetaAdsToolError('META_GRAPH_ERROR', 'Invalid parameter', 400, {
+          type: 'OAuthException',
+          code: 100,
+          error_subcode: 4834011,
+          error_user_title: 'Campo obrigatório',
+          error_user_msg: 'Informe is_adset_budget_sharing_enabled',
+          fbtrace_id: 'AbC123',
+        })
+      }
+      return { id: 'act_555', account_id: '555', currency: 'BRL' }
+    })
+
+    await expect(metaCreateCampaign(
+      { client, graphFetch },
+      {
+        tenantId: 'tenant-1',
+        name: 'Falhou',
+        objective: 'OUTCOME_SALES',
+        confirmTenantId: 'tenant-1',
+        confirm: true,
+        dryRun: false,
+      },
+    )).rejects.toMatchObject({
+      code: 'META_GRAPH_ERROR',
+      details: {
+        code: 100,
+        error_subcode: 4834011,
+        error_user_title: 'Campo obrigatório',
+        error_user_msg: 'Informe is_adset_budget_sharing_enabled',
+        fbtrace_id: 'AbC123',
+        request_payload: {
+          name: 'Falhou',
+          objective: 'OUTCOME_SALES',
+          status: 'PAUSED',
+          special_ad_categories: [],
+          is_adset_budget_sharing_enabled: false,
+        },
+      },
+    })
+
+    expect(audits.some((a: any) => a.action === 'meta.gpt.campaign.create.failed')).toBe(true)
+    expect(JSON.stringify(audits)).not.toContain('tok-secret')
   })
 
   it('create campaign rejects budget above META_GPT_BUDGET_DAILY_MAX_CENTS', async () => {

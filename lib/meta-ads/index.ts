@@ -2,9 +2,13 @@ export {
   actPath,
   buildMetaDateQuery,
   defaultMetaGraphFetch,
+  encodeMetaGraphBodyValue,
+  enrichMetaGraphWriteError,
+  extractMetaGraphErrorFields,
   metaGraphUrl,
   normalizeMetaAdAccountId,
   resolveMetaGraphVersion,
+  type MetaGraphErrorFields,
 } from './graph'
 export {
   listMarketingIntegrations,
@@ -44,6 +48,7 @@ export {
   META_CAMPAIGN_OBJECTIVES,
   META_SPECIAL_AD_CATEGORIES,
   META_AD_CALL_TO_ACTIONS,
+  buildMetaCreateCampaignGraphBody,
 } from './tools'
 export {
   META_ADSET_BILLING_EVENTS,
