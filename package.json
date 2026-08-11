@@ -6,10 +6,10 @@
   "description": "Blimber - Hub de soluções — plataforma SaaS multi-tenant (CRM, WhatsApp, CMS)",
   "author": "Dian Pratama <dianpratama2@gmail.com>",
   "license": "MIT",
-  "homepage": "https://dashboard.dianprata.com/",
+  "homepage": "https://github.com/sertorio45/blimber-hub",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/dianprata/nuxt-shadcn-dashboard.git"
+    "url": "git+https://github.com/sertorio45/blimber-hub.git"
   },
   "keywords": [
     "dashboard",

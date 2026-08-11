@@ -45,17 +45,14 @@ O **Blimber** é uma plataforma SaaS e ERP multi-tenant (**Hub de soluções**) 
 ## 2. Quick Start
 
 ```bash
-# Criar projeto a partir do template
-npx degit dianprata/nuxt-shadcn-dashboard my-dashboard-app
-cd my-dashboard-app
-pnpm i
-
-# Desenvolvimento
+# Clonar o repositório
+git clone https://github.com/sertorio45/blimber-hub.git
+cd blimber-hub
 pnpm install
 pnpm run dev
 ```
 
-- [Live demo](https://nuxt-shadcn-dashboard.vercel.app)
+- [Repositório](https://github.com/sertorio45/blimber-hub)
 - [Documentação Shadcn Vue](https://shadcn-vue.com/docs/introduction)
 
 ---
