@@ -46,6 +46,7 @@ export interface HubModuleTile {
 const MODULE_DESCRIPTIONS: Record<string, string> = {
   crm: MODULE_DESCRIPTIONS_PT.crm,
   marketing: MODULE_DESCRIPTIONS_PT.marketing,
+  ads: MODULE_DESCRIPTIONS_PT.ads,
   whatsapp: MODULE_DESCRIPTIONS_PT.whatsapp,
   article: MODULE_DESCRIPTIONS_PT.article,
 }

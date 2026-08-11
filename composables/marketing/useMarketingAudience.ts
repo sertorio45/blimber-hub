@@ -3,7 +3,9 @@ import { computed } from 'vue'
 import { useAuth } from '~/composables/useAuth'
 import { useWorkspace } from '~/composables/useWorkspace'
 import {
+  CLIENT_PORTAL_ADS_LINKS,
   CLIENT_PORTAL_MARKETING_LINKS,
+  isClientPortalAdsLink,
   isClientPortalMarketingLink,
 } from '~/constants/marketing-audience'
 import { isTenantScopedRole } from '~/constants/roles'
@@ -60,6 +62,8 @@ export function useMarketingAudience() {
     isAgencyExperience,
     matchesNavAudience,
     isClientPortalMarketingLink,
+    isClientPortalAdsLink,
     CLIENT_PORTAL_MARKETING_LINKS,
+    CLIENT_PORTAL_ADS_LINKS,
   }
 }

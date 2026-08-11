@@ -89,7 +89,17 @@ describe('tenant modules helpers', () => {
       'crm',
       'article',
       'marketing',
+      'ads',
       'whatsapp',
+    ])
+  })
+
+  it('unlocks Ads as a companion whenever Marketing is active', () => {
+    expect(resolveTenantModuleSlugs(['marketing'])).toEqual(['marketing', 'ads'])
+    expect(resolveTenantModuleSlugs(['crm', 'marketing'])).toEqual([
+      'crm',
+      'marketing',
+      'ads',
     ])
   })
 
@@ -111,7 +121,7 @@ describe('tenant modules helpers', () => {
 
     const state = await getTenantModulesState(client, 'tenant-1')
     expect(state.activeModuleNames).toEqual(['marketing'])
-    expect(state.resolvedModules).toEqual(['marketing'])
+    expect(state.resolvedModules).toEqual(['marketing', 'ads'])
     expect(state.hasAllBundle).toBe(false)
   })
 
@@ -157,7 +167,7 @@ describe('tenant modules helpers', () => {
 
     const after = await syncTenantModules(client, 'tenant-1', ['all'])
     expect(after.hasAllBundle).toBe(true)
-    expect(after.resolvedModules).toHaveLength(4)
+    expect(after.resolvedModules).toHaveLength(5)
 
     const state = await getTenantModulesState(client, 'tenant-1')
     expect(state.activeModuleNames).toEqual(['all'])

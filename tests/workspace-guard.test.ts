@@ -1,8 +1,8 @@
-import { describe, expect, it } from 'vitest'
+import type { NavGroup, NavLink } from '~/types/nav'
 
+import { describe, expect, it } from 'vitest'
 import { navMenu, navMenuOrganization } from '~/constants/menus'
 import { canEnterWorkspaceRoute, matchesNavAudience } from '~/utils/workspace-guard'
-import type { NavGroup, NavLink } from '~/types/nav'
 
 const agencyOwnerScope = {
   capabilities: [
@@ -125,14 +125,41 @@ describe('guarda de rotas por tipo de organização', () => {
     const production = leaves.find(child => child.link === '/marketing/production')!
     const content = leaves.find(child => child.link === '/marketing/content')!
     const publishing = leaves.find(child => child.link === '/marketing/publishing')!
+    const brand = leaves.find(child => child.link === '/marketing/brand')!
+    const reports = leaves.find(child => child.link === '/marketing/reports')!
+    const settings = leaves.find(child => child.link === '/marketing/settings')!
+    const socialAccounts = leaves.find(child => child.link === '/settings/integrations')
+    const topTitles = marketing.children.map(child => child.title)
 
     expect(packages).toBeUndefined()
     expect(approvals.audience).toBe('agency')
     expect(production.audience).toBe('agency')
     expect(publishing.audience).toBe('agency')
+    expect(brand.audience).toBe('agency')
+    expect(brand.title).toBe('Marca')
     expect(content.clientTitle).toBe('Publicações')
+    expect(content.title).toBe('Conteúdos')
     expect(publishing.title).toBe('Publicações')
     expect(calendar.title).toBe('Calendário')
+    expect(reports.title).toBe('Relatórios')
+    expect(settings.title).toBe('Configurações')
+    // Contas sociais moved out of Marketing top-level → Configurações hub.
+    expect(socialAccounts).toBeUndefined()
+    expect(topTitles).toEqual([
+      'Visão Geral',
+      'Planejamento',
+      'Conteúdos',
+      'Produção',
+      'Aprovações',
+      'Biblioteca',
+      'Marca',
+      'Publicações',
+      'Relatórios',
+      'Configurações',
+    ])
+    // Paid Ads boards must not appear under Marketing.
+    expect(leaves.some(leaf => leaf.link?.startsWith('/ads'))).toBe(false)
+    expect(leaves.some(leaf => leaf.link === '/ads/meta' || leaf.link === '/ads/google')).toBe(false)
   })
 })
 
@@ -169,8 +196,28 @@ describe('matchesNavAudience', () => {
     expect(isClientPortalMarketingLink('/marketing/production')).toBe(false)
     expect(isClientPortalMarketingLink('/marketing/production/tasks')).toBe(false)
     expect(isClientPortalMarketingLink('/marketing/publishing')).toBe(false)
+    expect(isClientPortalMarketingLink('/marketing/brand')).toBe(false)
+    expect(isClientPortalMarketingLink('/marketing/brand-guide')).toBe(false)
     expect(isClientPortalMarketingLink('/marketing/calendar')).toBe(true)
     expect(isClientPortalMarketingLink('/settings/integrations')).toBe(true)
     expect(isClientPortalMarketingLink('/settings/integrations/meta-capi')).toBe(true)
+  })
+
+  it('client portal Ads whitelist allows the product shell', async () => {
+    const { CLIENT_PORTAL_ADS_LINKS, isClientPortalAdsLink } = await import('~/constants/marketing-audience')
+    expect([...CLIENT_PORTAL_ADS_LINKS]).toEqual([
+      '/ads',
+      '/ads/meta',
+      '/ads/google',
+      '/ads/analytics',
+      '/ads/campaigns',
+      '/ads/reports',
+      '/ads/integrations',
+    ])
+    expect(isClientPortalAdsLink('/ads')).toBe(true)
+    expect(isClientPortalAdsLink('/ads/')).toBe(true)
+    expect(isClientPortalAdsLink('/ads/meta')).toBe(true)
+    expect(isClientPortalAdsLink('/ads/reports')).toBe(true)
+    expect(isClientPortalAdsLink('/marketing/reports')).toBe(false)
   })
 })

@@ -1,11 +1,17 @@
+import type { ModuleMeta } from '~/constants/modules'
+
 import { useSupabaseClient } from '#imports'
-
 import { createSharedComposable } from '@vueuse/core'
-import { computed, onMounted, watch } from 'vue'
 
+import { computed, onMounted, watch } from 'vue'
 import { useAuth } from '~/composables/useAuth'
 import { useTenant } from '~/composables/useTenant'
-import { MODULE_META, type ModuleMeta, DEFAULT_MODULE_SLUG } from '~/constants/modules'
+import {
+  DEFAULT_MODULE_SLUG,
+  expandTenantModuleRows,
+  MODULE_META,
+
+} from '~/constants/modules'
 
 function getModuleSlugFromPath(path: string): string | null {
   for (const meta of Object.values(MODULE_META)) {
@@ -102,18 +108,12 @@ function _useModule() {
     }
 
     const rows = data ?? []
-    const hasAllBundle = rows.some(row => row.module_name === 'all' && row.is_active)
-
-    if (hasAllBundle) {
-      tenantModules.value = Object.keys(MODULE_META).map(module_name => ({
-        id: `all-${module_name}`,
-        module_name,
-        is_active: true,
-      }))
-      return tenantModules.value
-    }
-
-    tenantModules.value = rows
+    // Expand "all" + Marketing→Ads companion so the module switcher matches resolveTenantModuleSlugs.
+    tenantModules.value = expandTenantModuleRows(rows) as Array<{
+      id: string
+      module_name: string
+      is_active: boolean
+    }>
     return tenantModules.value
   }
 

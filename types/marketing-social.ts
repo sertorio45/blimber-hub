@@ -214,6 +214,7 @@ export interface MediaAsset {
   height: number | null
   status: 'uploading' | 'ready' | 'processing' | 'failed' | 'archived'
   purpose: MediaAssetPurpose
+  category?: string | null
   previewUrl?: string | null
   createdAt: string
 }

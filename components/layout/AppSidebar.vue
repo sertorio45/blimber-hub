@@ -4,11 +4,11 @@ import type { NavGroup, NavLink, NavMenu, NavSectionTitle } from '~/types/nav'
 import { computed, onMounted } from 'vue'
 
 import { useRole } from '@/composables/useRole'
-import { useAuth } from '~/composables/useAuth'
 import { useMarketingAudience } from '~/composables/marketing/useMarketingAudience'
+import { useAuth } from '~/composables/useAuth'
 import { useModule } from '~/composables/useModule'
 import { useWorkspace } from '~/composables/useWorkspace'
-import { isClientPortalMarketingLink } from '~/constants/marketing-audience'
+import { isClientPortalAdsLink, isClientPortalMarketingLink } from '~/constants/marketing-audience'
 import { navMenu, navMenuAdmin, navMenuGlobal, navMenuOrganization } from '~/constants/menus'
 import { isTenantScopedRole } from '~/constants/roles'
 import { holdsCapability } from '~/constants/workspace'
@@ -54,10 +54,12 @@ function hasCapability(item: NavLink | NavGroup | NavSectionTitle) {
 }
 
 function matchesAudience(item: NavLink | NavGroup | NavSectionTitle) {
-  // Hard whitelist for Marketing on the client portal — ignore stale caps.
+  // Hard whitelist for Marketing / Ads on the client portal — ignore stale caps.
   if (isClientExperience.value && 'link' in item && item.link) {
     if (item.link.startsWith('/marketing') || item.link.startsWith('/settings/integrations'))
       return isClientPortalMarketingLink(item.link)
+    if (item.link.startsWith('/ads'))
+      return isClientPortalAdsLink(item.link)
   }
 
   if (!('audience' in item) || !item.audience)

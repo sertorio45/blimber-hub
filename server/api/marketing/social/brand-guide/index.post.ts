@@ -1,44 +1,64 @@
 import { readBody } from 'h3'
-import { z } from 'zod'
 
+import { brandGuideBodySchema } from '~/server/utils/brand-guide-schema'
+import {
+  fetchBrandGuideForTenant,
+  mergeAiPreferences,
+  mergeVisualDirection,
+} from '~/server/utils/brand-guide'
 import { recordSocialAudit } from '~/server/utils/social-audit'
 import { requireSocialContext } from '~/server/utils/social-context'
-
-const bodySchema = z.object({
-  toneOfVoice: z.string().max(5000).optional(),
-  audience: z.string().max(5000).optional(),
-  allowedWords: z.array(z.string().max(80)).max(100).optional(),
-  forbiddenWords: z.array(z.string().max(80)).max(100).optional(),
-  ctas: z.array(z.string().max(200)).max(50).optional(),
-  hashtags: z.array(z.string().max(80)).max(100).optional(),
-  colors: z.array(z.record(z.unknown())).max(20).optional(),
-  fonts: z.array(z.record(z.unknown())).max(20).optional(),
-  products: z.array(z.record(z.unknown())).max(50).optional(),
-  competitors: z.array(z.record(z.unknown())).max(50).optional(),
-  restrictions: z.string().max(5000).optional(),
-  legalNotes: z.string().max(5000).optional(),
-  logoAssetIds: z.array(z.string().uuid()).max(20).optional(),
-})
+import { createEmptyAudienceProfile, normalizeBrandGuide } from '~/utils/brand-guide'
 
 export default defineEventHandler(async (event) => {
-  const body = bodySchema.parse(await readBody(event))
+  const body = brandGuideBodySchema.parse(await readBody(event))
   const { client, tenantId, user } = await requireSocialContext(event, 'marketing.social.brand_guide.manage')
+
+  const existing = await fetchBrandGuideForTenant(client, tenantId)
+  const audienceSummary = body.audience
+    ?? body.metadata?.audienceProfile?.summary
+    ?? existing.audience
+    ?? ''
+
+  const nextMetadata = {
+    ...existing.metadata,
+    ...(body.metadata || {}),
+    audienceProfile: {
+      ...createEmptyAudienceProfile(audienceSummary),
+      ...(existing.metadata.audienceProfile || {}),
+      ...(body.metadata?.audienceProfile || {}),
+      summary: body.metadata?.audienceProfile?.summary || audienceSummary,
+    },
+    references: body.metadata?.references ?? existing.metadata.references ?? [],
+    communicationStyle: body.metadata?.communicationStyle
+      ?? existing.metadata.communicationStyle
+      ?? '',
+    visualDirection: mergeVisualDirection(
+      existing.metadata.visualDirection,
+      body.metadata?.visualDirection,
+    ),
+    aiPreferences: mergeAiPreferences(
+      existing.metadata.aiPreferences,
+      body.metadata?.aiPreferences,
+    ),
+  }
 
   const payload = {
     tenant_id: tenantId,
-    tone_of_voice: body.toneOfVoice ?? '',
-    audience: body.audience ?? '',
-    allowed_words: body.allowedWords ?? [],
-    forbidden_words: body.forbiddenWords ?? [],
-    ctas: body.ctas ?? [],
-    hashtags: body.hashtags ?? [],
-    colors: body.colors ?? [],
-    fonts: body.fonts ?? [],
-    products: body.products ?? [],
-    competitors: body.competitors ?? [],
-    restrictions: body.restrictions ?? '',
-    legal_notes: body.legalNotes ?? '',
-    logo_asset_ids: body.logoAssetIds ?? [],
+    tone_of_voice: body.toneOfVoice ?? existing.toneOfVoice ?? '',
+    audience: audienceSummary,
+    allowed_words: body.allowedWords ?? existing.allowedWords ?? [],
+    forbidden_words: body.forbiddenWords ?? existing.forbiddenWords ?? [],
+    ctas: body.ctas ?? existing.ctas ?? [],
+    hashtags: body.hashtags ?? existing.hashtags ?? [],
+    colors: body.colors ?? existing.colors ?? [],
+    fonts: body.fonts ?? existing.fonts ?? [],
+    products: body.products ?? existing.products ?? [],
+    competitors: body.competitors ?? existing.competitors ?? [],
+    restrictions: body.restrictions ?? existing.restrictions ?? '',
+    legal_notes: body.legalNotes ?? existing.legalNotes ?? '',
+    logo_asset_ids: body.logoAssetIds ?? existing.logoAssetIds ?? [],
+    metadata: nextMetadata,
     updated_by: user.id,
     updated_at: new Date().toISOString(),
   }
@@ -60,5 +80,7 @@ export default defineEventHandler(async (event) => {
     entityId: data.id,
   })
 
-  return { data }
+  const guided = await fetchBrandGuideForTenant(client, tenantId)
+  // Prefer freshly upserted scalars if hydration fails somehow.
+  return { data: guided.id ? guided : normalizeBrandGuide(data, tenantId) }
 })

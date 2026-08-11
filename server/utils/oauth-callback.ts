@@ -23,6 +23,13 @@ export function toOAuthProvider(value: string): OAuthProvider | null {
   return null
 }
 
+function isLocalHostname(hostname: string): boolean {
+  return hostname === 'localhost'
+    || hostname === '127.0.0.1'
+    || hostname === '[::1]'
+    || hostname === '::1'
+}
+
 /**
  * True for the old shared Google callback (`/auth/google/callback`) that serves
  * both Ads and Analytics. Provider-specific paths must not use that override.
@@ -35,6 +42,46 @@ function isSharedGoogleRedirectUri(uri: string): boolean {
   catch {
     return false
   }
+}
+
+/** LinkedIn/Meta/Google may return `error` + `error_description` on the callback. */
+function formatOAuthAuthorizeError(
+  provider: OAuthProvider,
+  error: string,
+  description: string,
+): string {
+  const safeDescription = description.replace(/\+/g, ' ').trim().slice(0, 280)
+  const labels: Record<OAuthProvider, string> = {
+    google_ads: 'Google Ads',
+    google_analytics: 'Google Analytics',
+    meta: 'Meta',
+    linkedin: 'LinkedIn',
+  }
+  const label = labels[provider]
+  if (safeDescription)
+    return `Falha na autorização ${label}: ${safeDescription}`
+  if (error)
+    return `Falha na autorização ${label} (${error}). Tente conectar novamente.`
+  return `Falha na autorização ${label}. Tente conectar novamente.`
+}
+
+/** Never leak client secrets; only surface provider error fields. */
+function extractOAuthTokenError(err: unknown): string {
+  const data = (err as { data?: Record<string, unknown> })?.data
+    ?? (err as { response?: { _data?: Record<string, unknown> } })?.response?._data
+  if (!data || typeof data !== 'object')
+    return ''
+
+  const description = String(data.error_description || data.message || '').trim()
+  const error = String(data.error || '').trim()
+  const combined = (description || error).replace(/\+/g, ' ').trim()
+  if (!combined)
+    return ''
+
+  return combined
+    .replace(/client_secret[=:]\S+/gi, '[redacted]')
+    .replace(/client_id[=:]\S+/gi, '[redacted]')
+    .slice(0, 280)
 }
 
 /**
@@ -60,8 +107,14 @@ export function resolveOAuthCallbackUrl(
   }
 
   if (provider === 'linkedin') {
-    return process.env.LINKEDIN_REDIRECT_URI
-      || `${baseUrl}/api/oauth/linkedin/callback`
+    // Prefer request host so localhost/port stay in sync with the browser
+    // (same as Google Ads without GOOGLE_ADS_REDIRECT_URI). Optional env
+    // override is only for reverse proxies in non-local environments — a
+    // production LINKEDIN_REDIRECT_URI must not hijack local authorize/token exchange.
+    const envRedirect = process.env.LINKEDIN_REDIRECT_URI?.trim()
+    if (envRedirect && !isLocalHostname(requestUrl.hostname))
+      return envRedirect
+    return `${baseUrl}/api/oauth/linkedin/callback`
   }
 
   const sharedGoogleRedirect
@@ -102,8 +155,24 @@ export async function handleOAuthProviderCallback(
   const query = getQuery(event)
   const code = String(query.code || '')
   const state = String(query.state || '')
-  if (!code || !state)
-    throw createError({ statusCode: 400, statusMessage: 'Código OAuth inválido' })
+  const providerError = String(query.error || '')
+  const providerErrorDescription = String(
+    query.error_description || query.errorDescription || '',
+  )
+
+  // LinkedIn (and others) redirect with ?error=&error_description= when authorize fails.
+  // Without this, a missing `code` surfaces as the opaque "Código OAuth inválido".
+  if (providerError) {
+    return failRedirect(
+      formatOAuthAuthorizeError(provider, providerError, providerErrorDescription),
+    )
+  }
+
+  if (!code || !state) {
+    return failRedirect(
+      'Código OAuth inválido. Inicie a conexão novamente a partir das integrações.',
+    )
+  }
 
   const client: any = await serverSupabaseServiceRole(event)
   const stateHash = createHash('sha256').update(state).digest('hex')
@@ -178,25 +247,34 @@ export async function handleOAuthProviderCallback(
     missingPublishScopes = PUBLISH_SCOPES.filter(scope => !grantedScopes.includes(scope))
   }
   else if (provider === 'linkedin') {
-    const clientId = process.env.LINKEDIN_CLIENT_ID || ''
-    const clientSecret = process.env.LINKEDIN_CLIENT_SECRET || ''
+    const clientId = (process.env.LINKEDIN_CLIENT_ID || '').trim()
+    const clientSecret = (process.env.LINKEDIN_CLIENT_SECRET || '').trim()
     if (!clientId || !clientSecret)
       throw createError({ statusCode: 500, statusMessage: 'Credenciais LinkedIn não configuradas' })
 
+    let tokenErrorDetail = ''
     const tokenResponse = await $fetch<any>('https://www.linkedin.com/oauth/v2/accessToken', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      // LinkedIn requires application/x-www-form-urlencoded (string body is safest with ofetch).
       body: new URLSearchParams({
         grant_type: 'authorization_code',
         code,
         client_id: clientId,
         client_secret: clientSecret,
         redirect_uri: callbackUrl,
-      }),
-    }).catch(() => null)
+      }).toString(),
+    }).catch((err: unknown) => {
+      tokenErrorDetail = extractOAuthTokenError(err)
+      return null
+    })
 
-    if (!tokenResponse?.access_token)
-      return failRedirect('Falha ao obter token LinkedIn. Verifique o acesso ao Community Management API.', redirectBase)
+    if (!tokenResponse?.access_token) {
+      const detail = tokenErrorDetail
+        ? ` ${tokenErrorDetail}`
+        : ' Verifique redirect URI (mesmo host/porta do app), Client ID/Secret e produtos/scopes habilitados.'
+      return failRedirect(`Falha ao obter token LinkedIn.${detail}`, redirectBase)
+    }
 
     accessToken = tokenResponse.access_token
     refreshToken = tokenResponse.refresh_token || ''

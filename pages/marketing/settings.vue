@@ -24,9 +24,9 @@ const links = computed(() => [
   },
   {
     title: 'Marca',
-    description: 'Guia de marca, voz e referências visuais do cliente.',
+    description: 'Brand Center: identidade, comunicação e restrições do cliente.',
     icon: 'lucide:book-open',
-    to: '/marketing/brand-guide',
+    to: '/marketing/brand',
     enabled: canBrandGuide.value,
   },
 ].filter(item => item.enabled))
@@ -39,11 +39,11 @@ const links = computed(() => [
         Configurações
       </h1>
       <p class="mt-1 text-muted-foreground">
-        Contas sociais e marca — fora do caminho operacional principal.
+        Contas sociais e atalhos secundários. Marca também está no menu principal.
       </p>
     </div>
 
-    <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+    <div class="grid gap-4 lg:grid-cols-3 sm:grid-cols-2">
       <NuxtLink
         v-for="link in links"
         :key="link.to"

@@ -1,0 +1,452 @@
+openapi: 3.1.0
+info:
+  title: Blimber Meta Ads API
+  description: >
+    API HTTP para Custom GPT Actions no ChatGPT. Gerencia Meta Ads do Blimber Hub
+    via marketing_integrations (OAuth já conectado). Sempre informe tenantId.
+    Nunca peça ou exponha access_token. Mutações exigem confirm + confirmTenantId.
+  version: 1.0.0
+  contact:
+    name: Blimber Hub
+servers:
+  - url: https://app.blimber.com.br
+    description: Produção Blimber Hub (substitua se o deploy tiver outro host HTTPS)
+  - url: https://YOUR_PUBLIC_HTTPS_HOST
+    description: Placeholder — troque pela URL pública HTTPS do seu Blimber
+security:
+  - BearerAuth: []
+paths:
+  /api/gpt/meta/tools:
+    get:
+      operationId: listMetaTools
+      summary: Listar tools Meta disponíveis
+      description: Catálogo das operações Meta Ads expostas ao GPT (sem secrets).
+      responses:
+        "200":
+          description: Catálogo de tools
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ToolsCatalogResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          $ref: "#/components/responses/ServiceUnavailable"
+
+  /api/gpt/meta/integrations:
+    get:
+      operationId: listIntegrations
+      summary: Status das integrações do tenant
+      description: >
+        Lista marketing_integrations (Meta/Google/etc.) do tenantId. Use primeiro
+        para confirmar meta conectado. Não retorna tokens.
+      parameters:
+        - $ref: "#/components/parameters/TenantIdQuery"
+      responses:
+        "200":
+          description: Integrações (sem tokens)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkToolResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/gpt/meta/ad-accounts:
+    get:
+      operationId: listAdAccounts
+      summary: Listar ad accounts Meta
+      description: Lista contas de anúncio acessíveis pelo OAuth Meta do tenant.
+      parameters:
+        - $ref: "#/components/parameters/TenantIdQuery"
+      responses:
+        "200":
+          description: Ad accounts
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkToolResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/gpt/meta/campaigns:
+    get:
+      operationId: listCampaigns
+      summary: Listar campanhas Meta
+      description: Lista campanhas da ad account do tenant (leitura). Filtre por status se necessário.
+      parameters:
+        - $ref: "#/components/parameters/TenantIdQuery"
+        - $ref: "#/components/parameters/AdAccountIdQuery"
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+          description: Máximo de campanhas a retornar (1–200).
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [ACTIVE, PAUSED, ARCHIVED, DELETED]
+          description: Filtrar por effective_status da campanha.
+      responses:
+        "200":
+          description: Campanhas
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkToolResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/gpt/meta/campaigns/{campaignId}:
+    get:
+      operationId: getCampaign
+      summary: Detalhe de uma campanha
+      description: Obtém detalhe da campanha e valida ownership na ad account do tenant.
+      parameters:
+        - $ref: "#/components/parameters/CampaignIdPath"
+        - $ref: "#/components/parameters/TenantIdQuery"
+        - $ref: "#/components/parameters/AdAccountIdQuery"
+      responses:
+        "200":
+          description: Campanha
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkToolResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/gpt/meta/campaigns/{campaignId}/status:
+    post:
+      operationId: updateCampaignStatus
+      summary: Pausar ou ativar campanha
+      description: >
+        Muda status para ACTIVE ou PAUSED. Exige confirm=true e confirmTenantId
+        idêntico a tenantId. Sempre confirme com o usuário antes de chamar.
+      x-openai-isConsequential: true
+      parameters:
+        - $ref: "#/components/parameters/CampaignIdPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateCampaignStatusBody"
+      responses:
+        "200":
+          description: Status atualizado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkToolResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/gpt/meta/adsets:
+    get:
+      operationId: listAdsets
+      summary: Listar adsets
+      description: Lista conjuntos de anúncios da conta ou filtrados por campanha.
+      parameters:
+        - $ref: "#/components/parameters/TenantIdQuery"
+        - $ref: "#/components/parameters/AdAccountIdQuery"
+        - name: campaignId
+          in: query
+          schema:
+            type: string
+          description: Filtrar adsets desta campanha.
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+          description: Máximo de adsets (1–200).
+      responses:
+        "200":
+          description: Adsets
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkToolResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/gpt/meta/ads:
+    get:
+      operationId: listAds
+      summary: Listar anúncios
+      description: Lista anúncios da conta, campanha ou adset.
+      parameters:
+        - $ref: "#/components/parameters/TenantIdQuery"
+        - $ref: "#/components/parameters/AdAccountIdQuery"
+        - name: campaignId
+          in: query
+          schema:
+            type: string
+          description: Filtrar por campanha.
+        - name: adsetId
+          in: query
+          schema:
+            type: string
+          description: Filtrar por adset.
+        - name: activeOnly
+          in: query
+          schema:
+            type: boolean
+            default: false
+          description: Se true, retorna só anúncios ativos.
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+          description: Máximo de anúncios (1–200).
+      responses:
+        "200":
+          description: Anúncios
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkToolResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/gpt/meta/insights:
+    post:
+      operationId: getInsights
+      summary: Consultar insights Meta
+      description: >
+        Métricas (impressions, spend, CTR, etc.) por nível account|campaign|adset|ad
+        e período (datePreset ou custom). Sempre informe tenantId.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InsightsBody"
+      responses:
+        "200":
+          description: Insights
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkToolResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+  /api/gpt/meta/invoke:
+    post:
+      operationId: invokeMetaTool
+      summary: Invoke genérico (fallback)
+      description: >
+        Fallback tipado por nome de tool. Prefira as rotas REST acima no Custom GPT.
+      x-openai-isConsequential: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InvokeBody"
+      responses:
+        "200":
+          description: Resultado da tool
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkToolResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      description: >
+        No Custom GPT → Authentication → API Key → Auth Type Bearer.
+        Cole o valor de BLIMBER_MCP_API_KEY (sem prefixo Bearer no campo do ChatGPT).
+
+  parameters:
+    TenantIdQuery:
+      name: tenantId
+      in: query
+      required: true
+      schema:
+        type: string
+        format: uuid
+      description: UUID do tenant (empresa) no Blimber. Obrigatório — nunca misture tenants.
+    AdAccountIdQuery:
+      name: adAccountId
+      in: query
+      required: false
+      schema:
+        type: string
+      description: Conta de anúncios sem prefixo act_. Usa a da integração se omitido.
+    CampaignIdPath:
+      name: campaignId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: ID da campanha na Meta Graph API.
+
+  schemas:
+    OkToolResponse:
+      type: object
+      properties:
+        ok:
+          type: boolean
+          example: true
+        tool:
+          type: string
+        data:
+          type: object
+          additionalProperties: true
+    ToolsCatalogResponse:
+      type: object
+      properties:
+        server:
+          type: string
+        version:
+          type: string
+        primary:
+          type: string
+        tools:
+          type: array
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+              description:
+                type: string
+              arguments:
+                type: array
+                items:
+                  type: string
+    InsightsBody:
+      type: object
+      required: [tenantId]
+      properties:
+        tenantId:
+          type: string
+          format: uuid
+          description: UUID do tenant.
+        adAccountId:
+          type: string
+          description: Ad account opcional (sem act_).
+        level:
+          type: string
+          enum: [account, campaign, adset, ad]
+          default: campaign
+        datePreset:
+          type: string
+          enum: [today, yesterday, last_7d, last_14d, last_30d, last_90d, custom]
+          default: last_7d
+        dateStart:
+          type: string
+          description: YYYY-MM-DD se datePreset=custom.
+        dateEnd:
+          type: string
+          description: YYYY-MM-DD se datePreset=custom.
+        metrics:
+          type: array
+          items:
+            type: string
+          description: Campos Graph opcionais; padrão inclui spend, clicks, impressions.
+        objectId:
+          type: string
+          description: ID de campanha/adset/ad para insights do nó.
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 200
+          default: 50
+    UpdateCampaignStatusBody:
+      type: object
+      required: [tenantId, status, confirmTenantId, confirm]
+      properties:
+        tenantId:
+          type: string
+          format: uuid
+        adAccountId:
+          type: string
+        status:
+          type: string
+          enum: [ACTIVE, PAUSED]
+        confirmTenantId:
+          type: string
+          format: uuid
+          description: Deve ser idêntico a tenantId.
+        confirm:
+          type: boolean
+          enum: [true]
+          description: Deve ser true para aplicar a mutação.
+    InvokeBody:
+      type: object
+      required: [tool, arguments]
+      properties:
+        tool:
+          type: string
+          enum:
+            - meta_list_integrations
+            - meta_list_ad_accounts
+            - meta_list_campaigns
+            - meta_get_campaign
+            - meta_list_adsets
+            - meta_list_ads
+            - meta_get_insights
+            - meta_update_campaign_status
+        arguments:
+          type: object
+          additionalProperties: true
+          description: Payload da tool (sempre com tenantId).
+
+  responses:
+    Unauthorized:
+      description: API key ausente ou inválida
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: true
+    BadRequest:
+      description: Validação / tool error
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: true
+    ServiceUnavailable:
+      description: BLIMBER_MCP_API_KEY não configurado no servidor
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: true

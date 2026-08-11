@@ -272,7 +272,11 @@ export function useMarketingSocial() {
     return response.data
   }
 
-  async function uploadAsset(file: File, purpose: MediaAssetPurpose = 'reference') {
+  async function uploadAsset(
+    file: File,
+    purpose: MediaAssetPurpose = 'reference',
+    options?: { category?: string | null },
+  ) {
     if (!tenantId.value)
       throw new Error('Selecione uma empresa')
 
@@ -298,6 +302,7 @@ export function useMarketingSocial() {
           mimeType: file.type || 'application/octet-stream',
           sizeBytes: file.size,
           purpose,
+          category: options?.category || undefined,
         },
       })
       return response.data

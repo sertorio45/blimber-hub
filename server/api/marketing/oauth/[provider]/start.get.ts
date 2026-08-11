@@ -80,7 +80,7 @@ export default defineEventHandler(async (event) => {
   }
 
   if (provider === 'linkedin') {
-    const clientId = process.env.LINKEDIN_CLIENT_ID || ''
+    const clientId = (process.env.LINKEDIN_CLIENT_ID || '').trim()
     if (!clientId)
       throw createError({ statusCode: 500, statusMessage: 'LINKEDIN_CLIENT_ID não configurado' })
 

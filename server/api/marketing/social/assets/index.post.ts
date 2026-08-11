@@ -4,6 +4,16 @@ import { z } from 'zod'
 import { recordSocialAudit } from '~/server/utils/social-audit'
 import { requireSocialContext } from '~/server/utils/social-context'
 
+const LIBRARY_CATEGORIES = [
+  'logo',
+  'brand_manual',
+  'photo',
+  'video',
+  'product',
+  'document',
+  'reference',
+] as const
+
 const schema = z.object({
   name: z.string().trim().min(1).max(255),
   objectPath: z.string().min(1).max(1024),
@@ -14,6 +24,7 @@ const schema = z.object({
   durationSeconds: z.number().nonnegative().nullable().optional(),
   checksum: z.string().max(128).nullable().optional(),
   purpose: z.enum(['reference', 'publication']).default('reference'),
+  category: z.enum(LIBRARY_CATEGORIES).nullable().optional(),
   metadata: z.record(z.unknown()).default({}),
 })
 
@@ -50,6 +61,7 @@ export default defineEventHandler(async (event) => {
       duration_seconds: input.durationSeconds || null,
       checksum: input.checksum || null,
       purpose: input.purpose,
+      category: input.category ?? null,
       metadata: input.metadata,
       created_by: user.id,
     })
@@ -68,5 +80,14 @@ export default defineEventHandler(async (event) => {
     after: data,
   })
 
-  return { data }
+  const { data: signed } = await client.storage
+    .from('marketing-assets')
+    .createSignedUrl(data.object_path, 60 * 60)
+
+  return {
+    data: {
+      ...data,
+      preview_url: signed?.signedUrl || null,
+    },
+  }
 })

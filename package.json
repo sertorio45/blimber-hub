@@ -43,7 +43,8 @@
     "typecheck": "vue-tsc --noEmit",
     "test": "vitest run",
     "lint": "eslint .",
-    "format": "eslint --fix ."
+    "format": "eslint --fix .",
+    "mcp:meta": "pnpm --dir mcp/blimber-meta start"
   },
   "dependencies": {
     "@emotion/cache": "^11.14.0",

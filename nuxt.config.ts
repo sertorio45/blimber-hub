@@ -61,6 +61,7 @@ export default defineNuxtConfig({
     '/marketing/posts/tasks': { redirect: { to: '/marketing/production/tasks', statusCode: 301 } },
     '/marketing/posts/**': { redirect: { to: '/marketing/content/**', statusCode: 301 } },
     '/marketing/library': { redirect: { to: '/marketing/media', statusCode: 301 } },
+    '/marketing/brand-guide': { redirect: { to: '/marketing/brand', statusCode: 301 } },
     // Agency MVP aliases stay as page aliases; keep SSR headers for both trees.
     // Authenticated app: keep SSR (project rule) but never share/cache across users.
     '/crm/**': {
@@ -79,6 +80,8 @@ export default defineNuxtConfig({
     },
     '/marketing': { ssr: true, headers: { 'Cache-Control': 'private, no-store' } },
     '/marketing/**': { ssr: true, headers: { 'Cache-Control': 'private, no-store' } },
+    '/ads': { ssr: true, headers: { 'Cache-Control': 'private, no-store' } },
+    '/ads/**': { ssr: true, headers: { 'Cache-Control': 'private, no-store' } },
     '/whatsapp': { ssr: true, headers: { 'Cache-Control': 'private, no-store' } },
     '/whatsapp/**': { ssr: true, headers: { 'Cache-Control': 'private, no-store' } },
     // Inbox usa realtime e componentes client-only; evita erro de vnode no SSR.

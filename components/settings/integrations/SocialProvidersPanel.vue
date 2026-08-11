@@ -1,18 +1,39 @@
 <script setup lang="ts">
+import type { IntegrationConnectionStatus } from '~/composables/marketing/useIntegrationConnectionStatus'
+import type { MarketingProvider } from '~/types/marketing'
+
 import GoogleAdsBrandIcon from '@/components/brand/GoogleAdsBrandIcon.vue'
 import GoogleAnalyticsBrandIcon from '@/components/brand/GoogleAnalyticsBrandIcon.vue'
 import MetaBrandIcon from '@/components/brand/MetaBrandIcon.vue'
 import GoogleAdsTestTokenNotice from '@/components/marketing/GoogleAdsTestTokenNotice.vue'
 import MarketingPageSkeleton from '@/components/marketing/MarketingPageSkeleton.vue'
+import IntegrationStatusBadge from '@/components/settings/integrations/IntegrationStatusBadge.vue'
+import SocialProviderCard from '@/components/settings/integrations/SocialProviderCard.vue'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { useToast } from '@/components/ui/toast'
+import { resolveIntegrationConnectionStatus } from '~/composables/marketing/useIntegrationConnectionStatus'
 import { isGoogleAdsTestTokenUserMessage } from '~/constants/google-ads'
 
-type Provider = 'google_ads' | 'google_analytics' | 'meta' | 'linkedin'
+type Provider = MarketingProvider
 
 const SETTINGS_INTEGRATIONS_PATH = '/settings/integrations'
+const PROVIDERS: Provider[] = ['google_ads', 'google_analytics', 'meta', 'linkedin']
 
 const { tenantId } = useTenant()
 const route = useRoute()
-type GoogleAdsAccountOption = {
+const router = useRouter()
+const { toast } = useToast()
+
+interface GoogleAdsAccountOption {
   id: string
   name: string
   is_manager?: boolean
@@ -39,12 +60,17 @@ const metaPixels = ref<Array<{ id: string, name: string }>>([])
 const metaInstagramAccounts = ref<Array<{ id: string, name: string }>>([])
 const linkedinOrganizations = ref<Array<{ id: string, name: string }>>([])
 
+const disconnectDialogOpen = ref(false)
+const disconnectTarget = ref<Provider | null>(null)
+const oauthCallbackHandled = ref(false)
+
 const isGoogleAdsTestTokenWarning = computed(() =>
   isGoogleAdsTestTokenUserMessage(googleAdsAccountsWarning.value),
 )
 const isGoogleAdsTestTokenError = computed(() =>
   isGoogleAdsTestTokenUserMessage(lastError.value),
 )
+
 function formatGoogleAdsCustomerId(value?: string | null): string {
   const id = String(value || '').replace(/-/g, '').trim()
   if (id.length !== 10 || !/^\d+$/.test(id))
@@ -62,30 +88,60 @@ function googleAdsAccountLabel(account: GoogleAdsAccountOption): string {
 
 const editDialogOpen = ref(false)
 const editProvider = ref<Provider | null>(null)
+const editDialogInitialLoad = ref(false)
 
-const { data: integrations, refresh, pending, showSkeleton } = useMarketingFetch({
+interface IntegrationListRow {
+  id?: string
+  provider: Provider
+  has_key?: boolean
+  can_publish?: boolean
+  has_page_token?: boolean
+  has_capi_token?: boolean
+  google_ads_needs_account?: boolean
+  google_analytics_needs_property?: boolean
+  capi_enabled?: boolean
+  missing_publish_scopes?: string[]
+  config?: Record<string, unknown> | null
+}
+
+const {
+  data: integrations,
+  refresh,
+  pending,
+  showSkeleton,
+  error: fetchError,
+} = useMarketingFetch({
   key: () => `marketing-integrations-${tenantId.value}`,
   handler: async () => {
-    const response = await $fetch<{ data: any[] }>('/api/marketing/integrations', {
+    const response = await $fetch<{ data: IntegrationListRow[] }>('/api/marketing/integrations', {
       query: {
         tenant_id: tenantId.value || undefined,
       },
     })
     return response.data || []
   },
-  default: () => [] as any[],
+  default: () => [] as IntegrationListRow[],
   watch: [tenantId],
   enabled: () => Boolean(tenantId.value),
+  ttlMs: 60_000,
 })
 
-const connectedProviders = computed(() => new Set((integrations.value || []).map((i: any) => i.provider)))
+const connectedProviders = computed(() =>
+  new Set(
+    (integrations.value || [])
+      .filter(i => i.has_key)
+      .map(i => i.provider),
+  ),
+)
 
-function isConnected(provider: string) {
-  return connectedProviders.value.has(provider)
+const connectedCount = computed(() => connectedProviders.value.size)
+
+function rowFor(provider: Provider): IntegrationListRow | undefined {
+  return integrations.value?.find(r => r.provider === provider)
 }
 
-function rowFor(provider: Provider) {
-  return integrations.value?.find((r: any) => r.provider === provider)
+function statusFor(provider: Provider): IntegrationConnectionStatus {
+  return resolveIntegrationConnectionStatus(provider, rowFor(provider))
 }
 
 const metaPublishReady = computed(() => {
@@ -94,6 +150,17 @@ const metaPublishReady = computed(() => {
     return false
   return Boolean(row.can_publish)
 })
+
+function statusLabelFor(provider: Provider): string | undefined {
+  if (provider !== 'meta')
+    return undefined
+  const status = statusFor(provider)
+  if (status === 'connected' && metaPublishReady.value)
+    return 'Pronto para publicar'
+  if (status === 'needs_setup')
+    return 'Publicação incompleta'
+  return undefined
+}
 
 const metaPublishIssues = computed(() => {
   const row = rowFor('meta')
@@ -110,49 +177,62 @@ const metaPublishIssues = computed(() => {
 function displayAccountLabel(provider: Provider): string {
   const row = rowFor(provider)
   if (!row?.has_key)
-    return '—'
+    return 'Nenhuma conta conectada'
   const c = row.config || {}
   if (provider === 'google_ads') {
     const id = c.customer_id ? String(c.customer_id) : ''
     if (!id)
-      return row.google_ads_needs_account ? 'Selecione a conta de anúncios' : 'Selecione a conta em editar'
+      return row.google_ads_needs_account ? 'Selecione a conta de anúncios' : 'Selecione a conta em configurar'
     const acc = googleAdsAccounts.value.find(a => String(a.id) === id)
     return acc ? googleAdsAccountLabel(acc) : `Conta ${formatGoogleAdsCustomerId(id)}`
   }
   if (provider === 'google_analytics') {
     const id = String(c.property_id || c.analytics_account_id || '')
     if (!id)
-      return row.google_analytics_needs_property ? 'Selecione a propriedade GA4' : 'Selecione a propriedade em editar'
+      return row.google_analytics_needs_property ? 'Selecione a propriedade GA4' : 'Selecione a propriedade em configurar'
     const acc = googleAnalyticsAccounts.value.find(a => String(a.id) === id)
     return acc?.name || `Propriedade ${id}`
   }
   if (provider === 'meta') {
     if (!c.ad_account_id)
-      return 'Selecione em editar'
+      return 'Selecione conta, página e Instagram'
     const adId = String(c.ad_account_id)
     const adName = metaAccounts.value.find(a => String(a.id) === adId)?.name || adId
     const parts: string[] = [adName]
     if (c.page_id) {
       const pn = metaPages.value.find(p => String(p.id) === String(c.page_id))?.name
+        || (c.page_name ? String(c.page_name) : null)
       parts.push(pn || `Página ${c.page_id}`)
     }
     if (c.pixel_id)
       parts.push(metaPixels.value.find(p => String(p.id) === String(c.pixel_id))?.name || `Pixel ${c.pixel_id}`)
     if (c.instagram_business_account_id) {
       const ig = metaInstagramAccounts.value.find(i => String(i.id) === String(c.instagram_business_account_id))
-      parts.push(ig?.name || `IG ${c.instagram_business_account_id}`)
+      const igFallback = c.instagram_username
+        ? `@${c.instagram_username}`
+        : (c.instagram_name ? String(c.instagram_name) : null)
+      parts.push(ig?.name || igFallback || `IG ${c.instagram_business_account_id}`)
     }
     return parts.join(' · ')
   }
   if (provider === 'linkedin') {
     const id = String(c.organization_id || '')
     if (!id)
-      return 'Selecione a organização em editar'
+      return 'Selecione a organização em configurar'
     return linkedinOrganizations.value.find(item => item.id === id)?.name
-      || c.organization_name
+      || (c.organization_name ? String(c.organization_name) : null)
       || id
   }
   return '—'
+}
+
+function metaNote(): string | undefined {
+  const row = rowFor('meta')
+  if (!row?.has_key)
+    return undefined
+  if (row.capi_enabled)
+    return row.has_capi_token ? 'CAPI CRM ativo' : 'CAPI CRM ativo — falta token'
+  return undefined
 }
 
 watch(
@@ -186,77 +266,21 @@ watch(
   { immediate: true, deep: true },
 )
 
-watch(
-  () => integrations.value,
-  async (rows) => {
-    if (!rows?.length || !import.meta.client)
-      return
-    for (const r of rows) {
-      if (!r.has_key)
-        continue
-      const p = r.provider as Provider
-      if (p === 'google_ads' || p === 'google_analytics')
-        await loadAccounts(p)
-      if (p === 'linkedin')
-        await loadAccounts('linkedin')
-      if (p === 'meta') {
-        await loadAccounts('meta')
-        await loadMetaAuxiliaryListsForCard()
-      }
-    }
-  },
-  { immediate: true },
-)
-
-async function refreshMetaInstagramList() {
-  const tid = tenantId.value || undefined
-  if (!selectedMetaAdAccount.value && !selectedMetaPage.value) {
-    metaInstagramAccounts.value = []
+async function clearOauthQuery() {
+  if (!import.meta.client)
     return
-  }
-  const q: Record<string, string | undefined> = {
-    provider: 'meta',
-    resource: 'instagram',
-    tenant_id: tid,
-  }
-  if (selectedMetaAdAccount.value)
-    q.ad_account_id = selectedMetaAdAccount.value
-  if (selectedMetaPage.value)
-    q.page_id = selectedMetaPage.value
-  const ig = await $fetch<{ data: Array<{ id: string, name: string }> }>('/api/marketing/oauth/accounts', {
-    query: q,
-  })
-  metaInstagramAccounts.value = ig.data || []
+  if (!route.query.oauth && !route.query.message && !route.query.provider)
+    return
+  const nextQuery = { ...route.query }
+  delete nextQuery.oauth
+  delete nextQuery.message
+  delete nextQuery.provider
+  await router.replace({ path: route.path, query: nextQuery })
 }
 
-/** Load pages / pixels / IG names for summary line when integration already configured */
-async function loadMetaAuxiliaryListsForCard() {
-  if (!isConnected('meta'))
-    return
-  const tid = tenantId.value || undefined
-  try {
-    const [pages, pixels] = await Promise.all([
-      $fetch<{ data: Array<{ id: string, name: string }> }>('/api/marketing/oauth/accounts', {
-        query: { provider: 'meta', resource: 'pages', tenant_id: tid },
-      }),
-      selectedMetaAdAccount.value
-        ? $fetch<{ data: Array<{ id: string, name: string }> }>('/api/marketing/oauth/accounts', {
-            query: {
-              provider: 'meta',
-              resource: 'pixels',
-              ad_account_id: selectedMetaAdAccount.value,
-              tenant_id: tid,
-            },
-          })
-        : Promise.resolve({ data: [] }),
-    ])
-    metaPages.value = pages.data || []
-    metaPixels.value = pixels.data || []
-    await refreshMetaInstagramList()
-  }
-  catch {
-    /* non-blocking for card label */
-  }
+function parseProviderParam(value: unknown): Provider | null {
+  const raw = String(value || '')
+  return (PROVIDERS as string[]).includes(raw) ? (raw as Provider) : null
 }
 
 async function connectProvider(provider: Provider) {
@@ -269,15 +293,22 @@ async function connectProvider(provider: Provider) {
         redirect_path: SETTINGS_INTEGRATIONS_PATH,
       },
     })
-    if (!response?.redirectTo)
+    if (!response?.redirectTo) {
+      lastError.value = 'Não foi possível iniciar a conexão. Tente novamente.'
+      oauthLoading.value = null
       return
-    if (import.meta.client)
+    }
+    if (import.meta.client) {
+      toast({
+        title: 'Abrindo autenticação',
+        description: 'Você será redirecionado para autorizar o acesso.',
+      })
+      // Keep loading UI until navigation completes.
       window.location.assign(response.redirectTo)
+    }
   }
   catch (error: any) {
     lastError.value = error?.data?.statusMessage || error?.message || 'Erro ao iniciar OAuth'
-  }
-  finally {
     oauthLoading.value = null
   }
 }
@@ -318,6 +349,27 @@ async function loadAccounts(provider: Provider) {
   finally {
     accountsLoading.value = null
   }
+}
+
+async function refreshMetaInstagramList() {
+  const tid = tenantId.value || undefined
+  if (!selectedMetaAdAccount.value && !selectedMetaPage.value) {
+    metaInstagramAccounts.value = []
+    return
+  }
+  const q: Record<string, string | undefined> = {
+    provider: 'meta',
+    resource: 'instagram',
+    tenant_id: tid,
+  }
+  if (selectedMetaAdAccount.value)
+    q.ad_account_id = selectedMetaAdAccount.value
+  if (selectedMetaPage.value)
+    q.page_id = selectedMetaPage.value
+  const ig = await $fetch<{ data: Array<{ id: string, name: string }> }>('/api/marketing/oauth/accounts', {
+    query: q,
+  })
+  metaInstagramAccounts.value = ig.data || []
 }
 
 async function loadMetaIntegrationLists() {
@@ -440,6 +492,7 @@ async function saveGoogleAdsAccount() {
       },
     })
     await refresh()
+    toast({ title: 'Conta salva', description: 'Google Ads atualizado com sucesso.' })
   }
   catch (error: any) {
     lastError.value = error?.data?.statusMessage || error?.message || 'Erro ao salvar conta Google Ads'
@@ -451,64 +504,99 @@ async function saveGoogleAdsAccount() {
 
 async function saveGoogleAnalyticsAccount() {
   actionLoading.value = 'google_analytics'
-  await $fetch('/api/marketing/integrations', {
-    method: 'POST',
-    body: {
-      tenant_id: tenantId.value || undefined,
-      provider: 'google_analytics',
-      config: {
-        analytics_account_id: selectedGoogleAnalytics.value,
-        property_id: selectedGoogleAnalytics.value,
+  lastError.value = ''
+  try {
+    await $fetch('/api/marketing/integrations', {
+      method: 'POST',
+      body: {
+        tenant_id: tenantId.value || undefined,
+        provider: 'google_analytics',
+        config: {
+          analytics_account_id: selectedGoogleAnalytics.value,
+          property_id: selectedGoogleAnalytics.value,
+        },
+        is_active: true,
       },
-      is_active: true,
-    },
-  })
-  await refresh()
-  actionLoading.value = null
+    })
+    await refresh()
+    toast({ title: 'Propriedade salva', description: 'Google Analytics atualizado com sucesso.' })
+  }
+  catch (error: any) {
+    lastError.value = error?.data?.statusMessage || error?.message || 'Erro ao salvar Google Analytics'
+  }
+  finally {
+    actionLoading.value = null
+  }
 }
 
 async function saveMetaAccount() {
   actionLoading.value = 'meta'
-  await $fetch('/api/marketing/integrations', {
-    method: 'POST',
-    body: {
-      tenant_id: tenantId.value || undefined,
-      provider: 'meta',
-      config: {
-        ad_account_id: selectedMetaAdAccount.value,
-        page_id: selectedMetaPage.value,
-        pixel_id: selectedMetaPixel.value,
-        instagram_business_account_id: selectedMetaInstagram.value,
+  lastError.value = ''
+  try {
+    await $fetch('/api/marketing/integrations', {
+      method: 'POST',
+      body: {
+        tenant_id: tenantId.value || undefined,
+        provider: 'meta',
+        config: {
+          ad_account_id: selectedMetaAdAccount.value,
+          page_id: selectedMetaPage.value,
+          pixel_id: selectedMetaPixel.value,
+          instagram_business_account_id: selectedMetaInstagram.value,
+        },
+        is_active: true,
       },
-      is_active: true,
-    },
-  })
-  await refresh()
-  await loadMetaAuxiliaryListsForCard()
-  actionLoading.value = null
+    })
+    await refresh()
+    toast({ title: 'Meta atualizada', description: 'Configuração de publicação salva.' })
+  }
+  catch (error: any) {
+    lastError.value = error?.data?.statusMessage || error?.message || 'Erro ao salvar Meta'
+  }
+  finally {
+    actionLoading.value = null
+  }
 }
 
 async function saveLinkedinOrganization() {
   actionLoading.value = 'linkedin'
-  const organization = linkedinOrganizations.value.find(item => item.id === selectedLinkedinOrganization.value)
-  await $fetch('/api/marketing/integrations', {
-    method: 'POST',
-    body: {
-      tenant_id: tenantId.value || undefined,
-      provider: 'linkedin',
-      config: {
-        organization_id: selectedLinkedinOrganization.value,
-        organization_name: organization?.name,
+  lastError.value = ''
+  try {
+    const organization = linkedinOrganizations.value.find(item => item.id === selectedLinkedinOrganization.value)
+    await $fetch('/api/marketing/integrations', {
+      method: 'POST',
+      body: {
+        tenant_id: tenantId.value || undefined,
+        provider: 'linkedin',
+        config: {
+          organization_id: selectedLinkedinOrganization.value,
+          organization_name: organization?.name,
+        },
+        is_active: true,
       },
-      is_active: true,
-    },
-  })
-  await refresh()
-  actionLoading.value = null
+    })
+    await refresh()
+    toast({ title: 'Organização salva', description: 'LinkedIn atualizado com sucesso.' })
+  }
+  catch (error: any) {
+    lastError.value = error?.data?.statusMessage || error?.message || 'Erro ao salvar LinkedIn'
+  }
+  finally {
+    actionLoading.value = null
+  }
 }
 
-async function disconnectProvider(provider: Provider) {
+function requestDisconnect(provider: Provider) {
+  disconnectTarget.value = provider
+  disconnectDialogOpen.value = true
+}
+
+async function confirmDisconnect() {
+  const provider = disconnectTarget.value
+  if (!provider)
+    return
   actionLoading.value = `disconnect:${provider}`
+  lastError.value = ''
   try {
     await $fetch('/api/marketing/integrations', {
       method: 'DELETE',
@@ -518,23 +606,38 @@ async function disconnectProvider(provider: Provider) {
       },
     })
     await refresh()
+    toast({
+      title: 'Conta desconectada',
+      description: 'A integração foi removida desta empresa.',
+    })
+  }
+  catch (error: any) {
+    lastError.value = error?.data?.statusMessage || error?.message || 'Erro ao desconectar'
   }
   finally {
     actionLoading.value = null
+    disconnectDialogOpen.value = false
+    disconnectTarget.value = null
   }
 }
 
-function openEdit(provider: Provider) {
+async function openEdit(provider: Provider) {
   editProvider.value = provider
   editDialogOpen.value = true
-  if (provider === 'meta')
-    loadMetaIntegrationLists()
-  else
-    loadAccounts(provider)
+  editDialogInitialLoad.value = true
+  try {
+    if (provider === 'meta')
+      await loadMetaIntegrationLists()
+    else
+      await loadAccounts(provider)
+  }
+  finally {
+    editDialogInitialLoad.value = false
+  }
 }
 
 const dialogSaveDisabled = computed(() => {
-  if (pending.value || actionLoading.value === editProvider.value)
+  if (pending.value || actionLoading.value === editProvider.value || editDialogInitialLoad.value)
     return true
   const p = editProvider.value
   if (!p)
@@ -545,6 +648,8 @@ const dialogSaveDisabled = computed(() => {
     return !selectedGoogleAnalytics.value
   if (p === 'linkedin')
     return !selectedLinkedinOrganization.value
+  if (p === 'meta')
+    return !selectedMetaAdAccount.value || !selectedMetaPage.value
   return false
 })
 
@@ -560,56 +665,117 @@ async function saveFromDialog() {
     await saveMetaAccount()
   else if (p === 'linkedin')
     await saveLinkedinOrganization()
-  editDialogOpen.value = false
+  if (!lastError.value)
+    editDialogOpen.value = false
 }
 
-async function primaryAction(provider: Provider) {
-  if (isConnected(provider)) {
-    await disconnectProvider(provider)
-    return
-  }
-  await connectProvider(provider)
+function providerTitle(provider: Provider): string {
+  if (provider === 'google_ads')
+    return 'Google Ads'
+  if (provider === 'google_analytics')
+    return 'Google Analytics'
+  if (provider === 'meta')
+    return 'Meta'
+  return 'LinkedIn'
 }
 
-function primaryButtonLabel(provider: Provider) {
-  if (oauthLoading.value === provider)
-    return 'Conectando...'
-  if (actionLoading.value === `disconnect:${provider}`)
-    return 'Desconectando...'
-  return isConnected(provider) ? 'Desconectar' : 'Conectar conta'
-}
-
-function primaryDisabled(provider: Provider) {
-  if (oauthLoading.value)
-    return true
-  if (actionLoading.value === `disconnect:${provider}`)
-    return true
-  return false
+function anyBusy(): boolean {
+  return Boolean(oauthLoading.value || actionLoading.value)
 }
 
 watch(
-  () => route.query.oauth,
-  async (oauthStatus) => {
+  () => [route.query.oauth, tenantId.value] as const,
+  async ([oauthStatus]) => {
+    if (!oauthStatus || oauthCallbackHandled.value)
+      return
+    oauthCallbackHandled.value = true
+    const provider = parseProviderParam(route.query.provider)
     if (oauthStatus === 'success') {
       await refresh()
+      const needsSetup = provider ? statusFor(provider) === 'needs_setup' : false
+      toast({
+        title: 'Conexão concluída',
+        description: needsSetup
+          ? 'Conta autorizada. Escolha a conta ou página para concluir.'
+          : 'Conta autorizada com sucesso.',
+      })
+      if (provider && needsSetup)
+        await openEdit(provider)
     }
-    if (oauthStatus === 'error') {
+    else if (oauthStatus === 'error') {
       lastError.value = String(route.query.message || 'Falha na autenticação OAuth')
+      toast({
+        title: 'Falha na autenticação',
+        description: lastError.value,
+        variant: 'destructive',
+      })
     }
+    await clearOauthQuery()
   },
   { immediate: true },
 )
+
+watch(tenantId, () => {
+  oauthCallbackHandled.value = false
+})
+
+const fetchErrorMessage = computed(() => {
+  if (!fetchError.value)
+    return ''
+  const err = fetchError.value as any
+  return err?.data?.statusMessage || err?.message || 'Não foi possível carregar as integrações.'
+})
 </script>
 
 <template>
   <div class="w-full flex flex-col gap-6">
-    <div>
-      <h2 class="text-lg text-foreground font-semibold tracking-tight">
-        Redes e anúncios
-      </h2>
-      <p class="mt-1 max-w-3xl text-sm text-muted-foreground">
-        Meta, Google e LinkedIn — mesmas contas usadas no Marketing. Credenciais só no servidor, por empresa.
-      </p>
+    <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+      <div>
+        <h2 class="text-lg text-foreground font-semibold tracking-tight">
+          Redes e anúncios
+        </h2>
+        <p class="mt-1 max-w-3xl text-sm text-muted-foreground">
+          Meta, Google e LinkedIn — mesmas contas usadas no Marketing. Credenciais só no servidor, por empresa.
+        </p>
+      </div>
+      <div
+        v-if="!showSkeleton"
+        class="flex flex-wrap items-center gap-2"
+        aria-live="polite"
+      >
+        <IntegrationStatusBadge
+          :status="connectedCount > 0 ? 'connected' : 'disconnected'"
+          :label="`${connectedCount} de ${PROVIDERS.length} conectadas`"
+        />
+        <Button
+          variant="ghost"
+          size="sm"
+          class="h-8 text-muted-foreground"
+          :disabled="pending || anyBusy()"
+          aria-label="Atualizar integrações"
+          @click="refresh()"
+        >
+          <Icon
+            name="lucide:refresh-cw"
+            class="h-4 w-4"
+            :class="pending ? 'animate-spin' : ''"
+          />
+          <span class="ml-1.5 hidden sm:inline">Atualizar</span>
+        </Button>
+      </div>
+    </div>
+
+    <div
+      v-if="oauthLoading"
+      class="flex items-center gap-3 border border-border/70 rounded-xl bg-muted/30 px-4 py-3 text-sm"
+      role="status"
+      aria-live="polite"
+    >
+      <Icon name="lucide:loader-2" class="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
+      <span>
+        Abrindo autenticação do {{ providerTitle(oauthLoading as Provider) }}…
+        Não feche esta aba.
+      </span>
     </div>
 
     <GoogleAdsTestTokenNotice
@@ -619,10 +785,31 @@ watch(
     <Alert v-else-if="!pending && lastError" variant="destructive">
       <Icon name="lucide:triangle-alert" class="h-4 w-4" />
       <AlertTitle>Falha na integração</AlertTitle>
-      <AlertDescription>{{ lastError }}</AlertDescription>
+      <AlertDescription class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <span>{{ lastError }}</span>
+        <Button
+          variant="outline"
+          size="sm"
+          class="shrink-0 self-start"
+          @click="lastError = ''"
+        >
+          Dispensar
+        </Button>
+      </AlertDescription>
     </Alert>
 
-    <Alert v-if="!pending && isConnected('meta') && metaPublishIssues.length">
+    <Alert v-else-if="fetchErrorMessage && !showSkeleton" variant="destructive">
+      <Icon name="lucide:wifi-off" class="h-4 w-4" />
+      <AlertTitle>Não foi possível carregar</AlertTitle>
+      <AlertDescription class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <span>{{ fetchErrorMessage }}</span>
+        <Button variant="outline" size="sm" class="shrink-0 self-start" :disabled="pending" @click="refresh()">
+          Tentar novamente
+        </Button>
+      </AlertDescription>
+    </Alert>
+
+    <Alert v-if="!pending && statusFor('meta') !== 'disconnected' && metaPublishIssues.length">
       <Icon name="lucide:info" class="h-4 w-4" />
       <AlertTitle>Meta conectada, mas publicação incompleta</AlertTitle>
       <AlertDescription class="space-y-1">
@@ -630,192 +817,109 @@ watch(
           {{ issue }}
         </p>
         <p>
-          Clique em <strong>Conectar conta</strong> novamente, aceite todas as permissões e selecione a Página vinculada ao Instagram.
+          Use <strong>Configurar</strong> para escolher a Página ou
+          <strong>Reconectar permissões</strong> e aceite todas as autorizações.
         </p>
       </AlertDescription>
     </Alert>
 
     <MarketingPageSkeleton v-if="showSkeleton" variant="integrations" content-only />
 
-    <div v-else class="grid gap-6 lg:grid-cols-3 sm:grid-cols-2">
-      <!-- Google Ads -->
-      <Card class="relative overflow-hidden border rounded-2xl bg-card shadow-md">
-        <Button
-          variant="ghost"
-          size="icon"
-          class="absolute right-2 top-2 z-10 h-9 w-9 text-muted-foreground hover:text-foreground"
-          aria-label="Edit Google Ads integration"
-          @click="openEdit('google_ads')"
+    <div
+      v-else
+      class="grid gap-4 lg:grid-cols-3 sm:grid-cols-2 xl:grid-cols-4"
+      role="list"
+      aria-label="Provedores de integração"
+    >
+      <div role="listitem">
+        <SocialProviderCard
+          title="Google Ads"
+          :status="statusFor('google_ads')"
+          :account-label="displayAccountLabel('google_ads')"
+          :connecting="oauthLoading === 'google_ads'"
+          :disconnecting="actionLoading === 'disconnect:google_ads'"
+          :busy="anyBusy()"
+          show-edit
+          @connect="connectProvider('google_ads')"
+          @disconnect="requestDisconnect('google_ads')"
+          @edit="openEdit('google_ads')"
+          @reconnect="connectProvider('google_ads')"
         >
-          <Icon name="lucide:square-pen" class="h-4 w-4" />
-        </Button>
-        <CardContent class="flex flex-col items-center px-6 pb-8 pt-10 text-center">
-          <div class="h-14 w-14 flex items-center justify-center">
+          <template #icon>
             <GoogleAdsBrandIcon size="lg" />
-          </div>
-          <h2 class="mt-4 text-lg text-foreground font-semibold">
-            Google Ads
-          </h2>
-          <Button
-            class="mt-6 max-w-[240px] w-full rounded-full bg-foreground text-background shadow-sm hover:bg-foreground/90"
-            :disabled="primaryDisabled('google_ads')"
-            @click="primaryAction('google_ads')"
-          >
-            {{ primaryButtonLabel('google_ads') }}
-          </Button>
-          <p class="mt-4 max-w-[240px] truncate text-xs text-muted-foreground font-medium tracking-wide uppercase">
-            {{ displayAccountLabel('google_ads') }}
-          </p>
-          <div
-            v-if="isConnected('google_ads')"
-            class="mt-6 flex items-center gap-2 text-sm text-muted-foreground"
-          >
-            <span class="h-2 w-2 shrink-0 rounded-full bg-emerald-500" aria-hidden="true" />
-            <span>Conectado</span>
-          </div>
-        </CardContent>
-      </Card>
+          </template>
+        </SocialProviderCard>
+      </div>
 
-      <!-- Google Analytics -->
-      <Card class="relative overflow-hidden border rounded-2xl bg-card shadow-md">
-        <Button
-          variant="ghost"
-          size="icon"
-          class="absolute right-2 top-2 z-10 h-9 w-9 text-muted-foreground hover:text-foreground"
-          aria-label="Edit Google Analytics integration"
-          @click="openEdit('google_analytics')"
+      <div role="listitem">
+        <SocialProviderCard
+          title="Google Analytics"
+          :status="statusFor('google_analytics')"
+          :account-label="displayAccountLabel('google_analytics')"
+          :connecting="oauthLoading === 'google_analytics'"
+          :disconnecting="actionLoading === 'disconnect:google_analytics'"
+          :busy="anyBusy()"
+          show-edit
+          @connect="connectProvider('google_analytics')"
+          @disconnect="requestDisconnect('google_analytics')"
+          @edit="openEdit('google_analytics')"
+          @reconnect="connectProvider('google_analytics')"
         >
-          <Icon name="lucide:square-pen" class="h-4 w-4" />
-        </Button>
-        <CardContent class="flex flex-col items-center px-6 pb-8 pt-10 text-center">
-          <div class="h-14 w-14 flex items-center justify-center">
+          <template #icon>
             <GoogleAnalyticsBrandIcon size="lg" />
-          </div>
-          <h2 class="mt-4 text-lg text-foreground font-semibold">
-            Google Analytics
-          </h2>
-          <Button
-            class="mt-6 max-w-[240px] w-full rounded-full bg-foreground text-background shadow-sm hover:bg-foreground/90"
-            :disabled="primaryDisabled('google_analytics')"
-            @click="primaryAction('google_analytics')"
-          >
-            {{ primaryButtonLabel('google_analytics') }}
-          </Button>
-          <p class="mt-4 max-w-[240px] truncate text-xs text-muted-foreground font-medium tracking-wide uppercase">
-            {{ displayAccountLabel('google_analytics') }}
-          </p>
-          <div
-            v-if="isConnected('google_analytics')"
-            class="mt-6 flex items-center gap-2 text-sm text-muted-foreground"
-          >
-            <span class="h-2 w-2 shrink-0 rounded-full bg-emerald-500" aria-hidden="true" />
-            <span>Conectado</span>
-          </div>
-        </CardContent>
-      </Card>
+          </template>
+        </SocialProviderCard>
+      </div>
 
-      <!-- Meta -->
-      <Card class="relative overflow-hidden border rounded-2xl bg-card shadow-md">
-        <Button
-          variant="ghost"
-          size="icon"
-          class="absolute right-2 top-2 z-10 h-9 w-9 text-muted-foreground hover:text-foreground"
-          aria-label="Edit Meta integration"
-          @click="openEdit('meta')"
+      <div role="listitem">
+        <SocialProviderCard
+          title="Meta"
+          subtitle="Facebook & Instagram"
+          :status="statusFor('meta')"
+          :status-label="statusLabelFor('meta')"
+          :account-label="displayAccountLabel('meta')"
+          :note="metaNote()"
+          :connecting="oauthLoading === 'meta'"
+          :disconnecting="actionLoading === 'disconnect:meta'"
+          :reconnecting="oauthLoading === 'meta'"
+          :busy="anyBusy()"
+          show-edit
+          :show-reconnect="statusFor('meta') === 'needs_setup' || statusFor('meta') === 'connected'"
+          @connect="connectProvider('meta')"
+          @disconnect="requestDisconnect('meta')"
+          @edit="openEdit('meta')"
+          @reconnect="connectProvider('meta')"
         >
-          <Icon name="lucide:square-pen" class="h-4 w-4" />
-        </Button>
-        <CardContent class="flex flex-col items-center px-6 pb-8 pt-10 text-center">
-          <div class="h-14 w-14 flex items-center justify-center text-[#0866FF]">
-            <MetaBrandIcon size="lg" />
-          </div>
-          <h2 class="mt-4 text-lg text-foreground font-semibold">
-            Meta
-          </h2>
-          <p class="mt-1 text-sm text-muted-foreground">
-            Facebook &amp; Instagram
-          </p>
-          <Button
-            class="mt-6 max-w-[240px] w-full rounded-full bg-foreground text-background shadow-sm hover:bg-foreground/90"
-            :disabled="primaryDisabled('meta')"
-            @click="primaryAction('meta')"
-          >
-            {{ primaryButtonLabel('meta') }}
-          </Button>
-          <p class="line-clamp-2 mt-4 max-w-[260px] text-xs text-muted-foreground font-medium tracking-wide uppercase">
-            {{ displayAccountLabel('meta') }}
-          </p>
-          <div
-            v-if="isConnected('meta')"
-            class="mt-6 flex items-center gap-2 text-sm"
-            :class="metaPublishReady ? 'text-muted-foreground' : 'text-amber-600 dark:text-amber-400'"
-          >
-            <span
-              class="h-2 w-2 shrink-0 rounded-full"
-              :class="metaPublishReady ? 'bg-emerald-500' : 'bg-amber-500'"
-              aria-hidden="true"
-            />
-            <span>{{ metaPublishReady ? 'Pronto para publicar' : 'Conectado — falta configurar publicação' }}</span>
-          </div>
-          <p
-            v-if="isConnected('meta') && rowFor('meta')?.capi_enabled"
-            class="mt-2 text-xs text-muted-foreground"
-          >
-            CAPI CRM {{ rowFor('meta')?.has_capi_token ? 'ativo' : 'ativo — falta token' }}
-          </p>
-          <Button
-            v-if="isConnected('meta') && !metaPublishReady"
-            variant="outline"
-            size="sm"
-            class="mt-3 rounded-full"
-            :disabled="primaryDisabled('meta')"
-            @click="connectProvider('meta')"
-          >
-            Reconectar Meta
-          </Button>
-        </CardContent>
-      </Card>
+          <template #icon>
+            <div class="text-[#0866FF]">
+              <MetaBrandIcon size="lg" />
+            </div>
+          </template>
+        </SocialProviderCard>
+      </div>
 
-      <!-- LinkedIn -->
-      <Card class="relative overflow-hidden border rounded-2xl bg-card shadow-md">
-        <Button
-          variant="ghost"
-          size="icon"
-          class="absolute right-2 top-2 z-10 h-9 w-9 text-muted-foreground hover:text-foreground"
-          aria-label="Editar integração LinkedIn"
-          @click="openEdit('linkedin')"
+      <div role="listitem">
+        <SocialProviderCard
+          title="LinkedIn"
+          subtitle="Páginas de empresas"
+          :status="statusFor('linkedin')"
+          :account-label="displayAccountLabel('linkedin')"
+          :connecting="oauthLoading === 'linkedin'"
+          :disconnecting="actionLoading === 'disconnect:linkedin'"
+          :busy="anyBusy()"
+          show-edit
+          @connect="connectProvider('linkedin')"
+          @disconnect="requestDisconnect('linkedin')"
+          @edit="openEdit('linkedin')"
+          @reconnect="connectProvider('linkedin')"
         >
-          <Icon name="lucide:square-pen" class="h-4 w-4" />
-        </Button>
-        <CardContent class="flex flex-col items-center px-6 pb-8 pt-10 text-center">
-          <div class="h-14 w-14 flex items-center justify-center rounded-xl bg-[#0A66C2] text-white">
-            <Icon name="lucide:linkedin" class="h-8 w-8" />
-          </div>
-          <h2 class="mt-4 text-lg text-foreground font-semibold">
-            LinkedIn
-          </h2>
-          <p class="mt-1 text-sm text-muted-foreground">
-            Páginas de empresas
-          </p>
-          <Button
-            class="mt-6 max-w-[240px] w-full rounded-full bg-foreground text-background hover:bg-foreground/90"
-            :disabled="primaryDisabled('linkedin')"
-            @click="primaryAction('linkedin')"
-          >
-            {{ primaryButtonLabel('linkedin') }}
-          </Button>
-          <p class="line-clamp-2 mt-4 max-w-[260px] text-xs text-muted-foreground font-medium tracking-wide uppercase">
-            {{ displayAccountLabel('linkedin') }}
-          </p>
-          <div
-            v-if="isConnected('linkedin')"
-            class="mt-6 flex items-center gap-2 text-sm text-muted-foreground"
-          >
-            <span class="h-2 w-2 rounded-full bg-emerald-500" aria-hidden="true" />
-            <span>Conectado</span>
-          </div>
-        </CardContent>
-      </Card>
+          <template #icon>
+            <div class="h-14 w-14 flex items-center justify-center rounded-xl bg-[#0A66C2] text-white">
+              <Icon name="lucide:linkedin" class="h-8 w-8" />
+            </div>
+          </template>
+        </SocialProviderCard>
+      </div>
     </div>
 
     <Dialog v-model:open="editDialogOpen">
@@ -838,6 +942,16 @@ watch(
           </DialogDescription>
         </DialogHeader>
 
+        <div
+          v-if="editDialogInitialLoad || accountsLoading === editProvider"
+          class="flex items-center gap-2 border rounded-lg border-dashed px-3 py-2 text-sm text-muted-foreground"
+          role="status"
+          aria-live="polite"
+        >
+          <Icon name="lucide:loader-2" class="h-4 w-4 animate-spin" />
+          Carregando contas…
+        </div>
+
         <div v-if="editProvider === 'google_ads'" class="py-2 space-y-3">
           <Button
             variant="outline"
@@ -845,7 +959,7 @@ watch(
             :disabled="accountsLoading === 'google_ads'"
             @click="loadAccounts('google_ads')"
           >
-            <Icon name="lucide:refresh-cw" class="mr-2 h-4 w-4" />
+            <Icon name="lucide:refresh-cw" class="mr-2 h-4 w-4" :class="accountsLoading === 'google_ads' ? 'animate-spin' : ''" />
             {{ accountsLoading === 'google_ads' ? 'Carregando...' : 'Atualizar contas' }}
           </Button>
           <GoogleAdsTestTokenNotice
@@ -882,7 +996,7 @@ watch(
             :disabled="accountsLoading === 'google_analytics'"
             @click="loadAccounts('google_analytics')"
           >
-            <Icon name="lucide:refresh-cw" class="mr-2 h-4 w-4" />
+            <Icon name="lucide:refresh-cw" class="mr-2 h-4 w-4" :class="accountsLoading === 'google_analytics' ? 'animate-spin' : ''" />
             {{ accountsLoading === 'google_analytics' ? 'Carregando...' : 'Carregar contas' }}
           </Button>
           <div class="space-y-2">
@@ -897,6 +1011,9 @@ watch(
                 </SelectItem>
               </SelectContent>
             </Select>
+            <p v-if="!googleAnalyticsAccounts.length && accountsLoading !== 'google_analytics'" class="text-xs text-muted-foreground">
+              Nenhuma propriedade encontrada. Reconecte o Google Analytics e aceite o escopo de leitura.
+            </p>
           </div>
         </div>
 
@@ -907,7 +1024,7 @@ watch(
             :disabled="accountsLoading === 'meta'"
             @click="loadMetaIntegrationLists"
           >
-            <Icon name="lucide:refresh-cw" class="mr-2 h-4 w-4" />
+            <Icon name="lucide:refresh-cw" class="mr-2 h-4 w-4" :class="accountsLoading === 'meta' ? 'animate-spin' : ''" />
             {{ accountsLoading === 'meta' ? 'Carregando...' : 'Recarregar listas' }}
           </Button>
           <div class="space-y-2">
@@ -992,7 +1109,7 @@ watch(
             :disabled="accountsLoading === 'linkedin'"
             @click="loadAccounts('linkedin')"
           >
-            <Icon name="lucide:refresh-cw" class="mr-2 h-4 w-4" />
+            <Icon name="lucide:refresh-cw" class="mr-2 h-4 w-4" :class="accountsLoading === 'linkedin' ? 'animate-spin' : ''" />
             {{ accountsLoading === 'linkedin' ? 'Carregando...' : 'Carregar organizações' }}
           </Button>
           <div class="space-y-2">
@@ -1025,11 +1142,45 @@ watch(
             :disabled="dialogSaveDisabled"
             @click="saveFromDialog"
           >
-            <Icon name="lucide:save" class="mr-2 h-4 w-4" />
-            Salvar
+            <Icon
+              v-if="actionLoading === editProvider"
+              name="lucide:loader-2"
+              class="mr-2 h-4 w-4 animate-spin"
+            />
+            <Icon
+              v-else
+              name="lucide:save"
+              class="mr-2 h-4 w-4"
+            />
+            {{ actionLoading === editProvider ? 'Salvando...' : 'Salvar' }}
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    <AlertDialog v-model:open="disconnectDialogOpen">
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Desconectar integração?</AlertDialogTitle>
+          <AlertDialogDescription>
+            Isso remove o acesso de
+            {{ disconnectTarget ? providerTitle(disconnectTarget) : 'esta conta' }}
+            nesta empresa. Você poderá conectar novamente depois.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel :disabled="Boolean(actionLoading?.startsWith('disconnect:'))">
+            Cancelar
+          </AlertDialogCancel>
+          <AlertDialogAction
+            class="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            :disabled="Boolean(actionLoading?.startsWith('disconnect:'))"
+            @click.prevent="confirmDisconnect"
+          >
+            {{ actionLoading?.startsWith('disconnect:') ? 'Desconectando...' : 'Desconectar' }}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   </div>
 </template>

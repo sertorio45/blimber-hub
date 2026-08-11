@@ -3,9 +3,9 @@ import MetaBrandIcon from '@/components/brand/MetaBrandIcon.vue'
 import SocialProvidersPanel from '@/components/settings/integrations/SocialProvidersPanel.vue'
 import Card from '@/components/ui/card/Card.vue'
 import CardContent from '@/components/ui/card/CardContent.vue'
-import { holdsCapability } from '~/constants/workspace'
 import { useModule } from '~/composables/useModule'
 import { useWorkspace } from '~/composables/useWorkspace'
+import { holdsCapability } from '~/constants/workspace'
 
 definePageMeta({
   middleware: ['auth'],
@@ -58,13 +58,13 @@ const moduleLinks = computed(() => [
 </script>
 
 <template>
-  <div class="mx-auto max-w-5xl w-full px-4 py-8 md:py-10 space-y-10">
+  <div class="mx-auto max-w-5xl w-full px-4 py-8 space-y-10 md:py-10">
     <header>
       <h1 class="text-2xl text-foreground font-semibold tracking-tight md:text-3xl">
         Integrações
       </h1>
       <p class="mt-2 max-w-2xl text-sm text-muted-foreground leading-relaxed">
-        Tudo em um só lugar — redes, anúncios, conversões do CRM e WhatsApp, conforme os módulos da empresa.
+        Conecte redes sociais, anúncios, conversões do CRM e WhatsApp — conforme os módulos da sua empresa.
       </p>
     </header>
 

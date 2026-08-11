@@ -32,101 +32,167 @@ export const navMenu: NavMenu[] = [
         icon: 'i-lucide-megaphone',
         roles: ['admin', 'funcionario', 'cliente', 'atendente'],
         /**
-         * MVP IA tree (PDF §5). Advanced items (packages, automations, ops-metrics,
-         * logs, notifications) stay reachable by URL but hidden from the main path.
-         * Nested children flatten in the sidebar flat-module menu.
+         * ETAPA 3 — organic / editorial product tree.
+         * Campaigns here are editorial (`social_campaigns`), not paid Ads.
+         * Paid Meta/Google boards live under the Ads module.
+         * Advanced items (packages, automations, ops-metrics, logs,
+         * notifications) stay reachable by URL but hidden from the main path.
+         * Nested children under Planejamento flatten in the sidebar.
          */
         children: [
-          { title: 'Visão geral', icon: 'i-lucide-layout-dashboard', link: '/marketing', capability: 'marketing.social.read' },
+          {
+            title: 'Visão Geral',
+            icon: 'i-lucide-layout-dashboard',
+            link: '/marketing',
+            capability: 'marketing.social.read',
+          },
           {
             title: 'Planejamento',
             icon: 'i-lucide-calendar-range',
             link: '/marketing/calendar',
             children: [
-              { title: 'Calendário', icon: 'i-lucide-calendar-days', link: '/marketing/calendar', capability: 'marketing.social.read' },
-              { title: 'Campanhas', icon: 'i-lucide-megaphone', link: '/marketing/campaigns', capability: 'marketing.social.campaigns.read' },
-              { title: 'Briefings', icon: 'i-lucide-clipboard-list', link: '/marketing/briefings', capability: 'marketing.social.briefing.create', audience: 'agency' },
+              {
+                title: 'Calendário',
+                icon: 'i-lucide-calendar-days',
+                link: '/marketing/calendar',
+                capability: 'marketing.social.read',
+              },
+              {
+                // Editorial campaigns (social_campaigns) — paid lives in Ads.
+                title: 'Campanhas',
+                icon: 'i-lucide-megaphone',
+                link: '/marketing/campaigns',
+                capability: 'marketing.social.campaigns.read',
+              },
+              {
+                title: 'Briefings',
+                icon: 'i-lucide-clipboard-list',
+                link: '/marketing/briefings',
+                capability: 'marketing.social.briefing.create',
+                audience: 'agency',
+              },
             ],
           },
           {
-            title: 'Conteúdo',
-            icon: 'i-lucide-file-pen-line',
+            title: 'Conteúdos',
+            clientTitle: 'Publicações',
+            icon: 'i-lucide-panels-top-left',
             link: '/marketing/content',
-            children: [
-              {
-                title: 'Conteúdos',
-                clientTitle: 'Publicações',
-                icon: 'i-lucide-panels-top-left',
-                link: '/marketing/content',
-                capability: 'marketing.social.create',
-              },
-              {
-                title: 'Produção',
-                icon: 'i-lucide-kanban',
-                link: '/marketing/production',
-                capability: 'marketing.social.read',
-                audience: 'agency',
-              },
-              {
-                title: 'Aprovações',
-                icon: 'i-lucide-badge-check',
-                link: '/marketing/approvals',
-                capability: 'marketing.social.read',
-                audience: 'agency',
-              },
-            ],
+            capability: 'marketing.social.create',
           },
           {
-            title: 'Operação',
-            icon: 'i-lucide-workflow',
+            title: 'Produção',
+            icon: 'i-lucide-kanban',
+            link: '/marketing/production',
+            capability: 'marketing.social.read',
+            audience: 'agency',
+          },
+          {
+            title: 'Aprovações',
+            icon: 'i-lucide-badge-check',
+            link: '/marketing/approvals',
+            capability: 'marketing.social.read',
+            audience: 'agency',
+          },
+          {
+            title: 'Biblioteca',
+            icon: 'i-lucide-images',
             link: '/marketing/media',
-            children: [
-              { title: 'Biblioteca', icon: 'i-lucide-images', link: '/marketing/media', capability: 'marketing.social.read' },
-              {
-                title: 'Publicações',
-                icon: 'i-lucide-send',
-                link: '/marketing/publishing',
-                capability: 'marketing.social.read',
-                // Agency queue (scheduled / live / errors). Client portal uses
-                // Conteúdos as "Publicações" instead — avoid duplicate labels.
-                audience: 'agency',
-              },
-            ],
+            capability: 'marketing.social.read',
           },
           {
-            title: 'Resultados',
+            title: 'Marca',
+            icon: 'i-lucide-book-open',
+            link: '/marketing/brand',
+            capability: 'marketing.social.brand_guide.read',
+            audience: 'agency',
+          },
+          {
+            title: 'Publicações',
+            icon: 'i-lucide-send',
+            link: '/marketing/publishing',
+            capability: 'marketing.social.read',
+            // Agency queue (scheduled / live / errors). Client portal uses
+            // Conteúdos as "Publicações" via clientTitle — avoid duplicate labels.
+            audience: 'agency',
+          },
+          {
+            // Organic reports surface kept in Marketing; Ads has its own Relatórios.
+            // Do not redirect /marketing/reports to Ads in this stage.
+            title: 'Relatórios',
             icon: 'i-lucide-bar-chart-3',
             link: '/marketing/reports',
-            children: [
-              {
-                title: 'Relatórios',
-                icon: 'i-lucide-bar-chart-3',
-                link: '/marketing/reports',
-                roles: ['admin', 'funcionario', 'cliente'],
-                capability: 'marketing.social.reports',
-              },
-            ],
+            roles: ['admin', 'funcionario', 'cliente'],
+            capability: 'marketing.social.reports',
           },
           {
+            // Hub for Contas sociais → /settings/integrations (also in global
+            // Configurações and Ads → Integrações). Not a top-level Marketing leaf.
             title: 'Configurações',
             icon: 'i-lucide-settings',
             link: '/marketing/settings',
-            children: [
-              {
-                title: 'Contas sociais',
-                icon: 'i-lucide-share-2',
-                link: '/settings/integrations',
-                roles: ['admin', 'funcionario', 'cliente'],
-                capability: 'marketing.social.integrations',
-              },
-              {
-                title: 'Marca',
-                icon: 'i-lucide-book-open',
-                link: '/marketing/brand-guide',
-                capability: 'marketing.social.brand_guide.read',
-                audience: 'agency',
-              },
-            ],
+            capability: 'marketing.social.read',
+          },
+        ],
+      },
+    ],
+  },
+  {
+    heading: '',
+    items: [
+      {
+        title: 'Ads',
+        icon: 'i-lucide-circle-dollar-sign',
+        roles: ['admin', 'funcionario', 'cliente', 'atendente'],
+        /**
+         * ETAPA 2 — paid media product. Boards reused from Marketing reports
+         * components; `/marketing/reports` remains as the organic reports
+         * surface until a future cutover. Campaigns here are paid (live APIs /
+         * marketing_campaigns), not editorial social_campaigns under
+         * /marketing/campaigns.
+         */
+        children: [
+          {
+            title: 'Visão Geral',
+            icon: 'i-lucide-layout-dashboard',
+            link: '/ads',
+            capability: 'marketing.social.reports',
+          },
+          {
+            title: 'Meta Ads',
+            icon: 'i-lucide-target',
+            link: '/ads/meta',
+            capability: 'marketing.social.reports',
+          },
+          {
+            title: 'Google Ads',
+            icon: 'i-lucide-search',
+            link: '/ads/google',
+            capability: 'marketing.social.reports',
+          },
+          {
+            title: 'Analytics',
+            icon: 'i-lucide-chart-column',
+            link: '/ads/analytics',
+            capability: 'marketing.social.reports',
+          },
+          {
+            title: 'Campanhas',
+            icon: 'i-lucide-megaphone',
+            link: '/ads/campaigns',
+            capability: 'marketing.social.reports',
+          },
+          {
+            title: 'Relatórios',
+            icon: 'i-lucide-bar-chart-3',
+            link: '/ads/reports',
+            capability: 'marketing.social.reports',
+          },
+          {
+            title: 'Integrações',
+            icon: 'i-lucide-plug',
+            link: '/ads/integrations',
+            capability: 'marketing.social.integrations',
           },
         ],
       },
