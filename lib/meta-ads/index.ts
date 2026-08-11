@@ -51,6 +51,19 @@ export {
   buildMetaCreateCampaignGraphBody,
 } from './tools'
 export {
+  META_AD_DESTINATION_TYPES,
+  META_CTWA_CAMPAIGN_OBJECTIVES,
+  META_CTWA_OPTIMIZATION_GOALS_BY_OBJECTIVE,
+  META_WHATSAPP_MESSAGING_LINK,
+  assertWhatsAppAdsetCompatibility,
+  buildMetaCreateAdCreativeBody,
+  buildMetaCreateAdsetGraphBody,
+  buildWebsiteLinkData,
+  buildWhatsAppLinkData,
+  isMetaMessagingProtocolUrl,
+  type MetaAdDestinationType,
+} from './ad-destination'
+export {
   META_ADSET_BILLING_EVENTS,
   META_ADSET_OPTIMIZATION_GOALS,
   META_ADSET_TARGETING_TEMPLATES,
@@ -86,6 +99,7 @@ export {
   assertConfirmActive,
   assertConfirmDelete,
   assertMetaPageCreativeReady,
+  assertMetaPageId,
   assertWriteConfirmation,
   metaWriteConfirmationSchema,
   resolveDryRun,

@@ -22,7 +22,7 @@ Uso principal: **GPT personalizado + Ações** no ChatGPT. MCP stdio (Cursor/Cla
 - Relatórios / insights Meta Ads de um tenant
 - Listar campanhas, conjuntos de anúncios (adsets) e anúncios
 - Pausar ou reativar **campanha, adset ou anúncio** (ACTIVE/PAUSED, com confirmação)
-- **Criar** campanha, adset ou anúncio+criativo link (default PAUSED + dryRun true)
+- **Criar** campanha, adset ou anúncio+criativo (link/WEBSITE ou Click-to-WhatsApp)
 - **Editar** budget/targeting do adset; copy/mídia do ad (dryRun default true)
 - **Excluir em massa** com preview obrigatório (IDs explícitos — nunca por nome)
 - Verificar se Meta está conectado e write-ready (`meta_ready`, `write_readiness`)
@@ -56,11 +56,11 @@ Uso principal: **GPT personalizado + Ações** no ChatGPT. MCP stdio (Cursor/Cla
 | `getCampaign` | `meta_get_campaign` | Detalhe + ownership |
 | `createCampaign` | `meta_create_campaign` | Criar (PAUSED / dryRun default true) |
 | `listAdsets` | `meta_list_adsets` | Conjuntos de anúncios |
-| `createAdset` | `meta_create_adset` | Criar adset (templates BR_*) |
+| `createAdset` | `meta_create_adset` | Criar adset (BR_*); destination WEBSITE\|WHATSAPP |
 | `updateAdsetBudget` | `meta_update_adset_budget` | Budget adset (dryRun default true) |
 | `updateAdsetTargeting` | `meta_update_adset_targeting` | Targeting BR_* |
 | `listAds` | `meta_list_ads` | Anúncios |
-| `createAd` | `meta_create_ad` | Criativo link/page + anúncio |
+| `createAd` | `meta_create_ad` | Criativo WEBSITE (linkUrl) ou WHATSAPP (CTWA) + anúncio |
 | `updateAdCreativeCopy` | `meta_update_ad_creative_copy` | Copy via novo creative |
 | `updateAdMedia` | `meta_update_ad_media` | imageUrl\|imageHash via novo creative |
 | `previewBulkDelete` | `meta_preview_bulk_delete` | Preview exclusão (IDs + previewToken) |
@@ -89,7 +89,14 @@ Docs curtos: `docs/gpt-blimber-meta.md`
    - `previewBulkDelete` → mostre tabela (nome/status/budget) → peça “confirmar exclusão” listando IDs
    - Só então `executeBulkDelete` com **mesmos** `deletableIds`, `previewToken`, `confirmDelete: true`, `confirm: true`, `confirmTenantId`, `dryRun: false`
    - Máx. `META_GPT_BULK_MAX` (default 20). Default `deleteMode=DELETED` (≠ ARCHIVED)
-9. **Nunca invente** URLs de destino ou mídia
+9. **Nunca invente** URLs de site, wa.me, api.whatsapp.com ou mídia. WhatsApp Ads: `destinationType=WHATSAPP` (não fabricar linkUrl).
+
+### Click-to-WhatsApp (`destinationType=WHATSAPP`)
+
+1. Campanha com objective `OUTCOME_ENGAGEMENT|LEADS|SALES|TRAFFIC` (WHATSAPP **não** é objective).
+2. `createAdset` com `destinationType=WHATSAPP`, `billingEvent=IMPRESSIONS`, `optimizationGoal=CONVERSATIONS` (matriz oficial × objective).
+3. `createAd` com `destinationType=WHATSAPP`, `message`, sem `linkUrl` — CTA oficial `WHATSAPP_MESSAGE`.
+4. Sempre dryRun primeiro; mostre o payload Graph do preview.
 
 ### Templates de targeting (`BR_*`)
 

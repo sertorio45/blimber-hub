@@ -3,6 +3,13 @@
 Experiência **primária**: GPT personalizado + **Ações** (Actions / OpenAPI) + **Habilidade** (Skill) OpenAI.  
 MCP stdio (Cursor / Claude Desktop) é **opcional** — ver [`mcp-blimber-meta.md`](./mcp-blimber-meta.md).
 
+> **Hub unificado (Marketing + Ads):** [`mcp-blimber-platform.md`](./mcp-blimber-platform.md) e pack `gpt/blimber/`.  
+> Este doc e o pack `gpt/blimber-meta/` continuam válidos para Meta Ads.
+
+> **Hub unificado (Marketing editorial + ponte Meta):**  
+> [`gpt-blimber-UNIFIED-PLAN.md`](./gpt-blimber-UNIFIED-PLAN.md) · pack [`gpt/blimber/`](../gpt/blimber/) · marketing [`gpt-blimber-MARKETING.md`](./gpt-blimber-MARKETING.md)  
+> Este pack Meta **continua válido** para Ads pagos; no GPT unificado, importe-o como **2ª Ação**.
+
 > **Tutorial completo (passo a passo, prompts, troubleshooting):**  
 > [`gpt-blimber-meta-TUTORIAL.md`](./gpt-blimber-meta-TUTORIAL.md)
 

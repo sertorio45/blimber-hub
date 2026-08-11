@@ -6,7 +6,7 @@ info:
     houver o nome do cliente. Nunca peça access_token. Mutações exigem confirm +
     confirmTenantId; create/edit/delete usam dryRun default true. Bulk delete:
     preview → confirmar IDs → execute. Textos em PT-BR.
-  version: 1.7.1
+  version: 1.8.0
   contact:
     name: Blimber Hub
 servers:
@@ -336,9 +336,9 @@ paths:
       operationId: createAdset
       summary: Criar adset (PAUSED)
       description: >
-        Cria adset com targetingTemplate fechado (BR_*). Default PAUSED + dryRun=true.
-        Exige confirm+confirmTenantId, budget e campaignId da conta do tenant.
-        ACTIVE exige confirmActive. Sem Advantage+/catálogo.
+        Cria adset com targetingTemplate BR_*. Default PAUSED + dryRun=true.
+        destinationType WEBSITE|WHATSAPP (CTWA: destination_type + page_id).
+        Exige confirm+budget+campaignId. ACTIVE exige confirmActive.
       x-openai-isConsequential: true
       requestBody:
         required: true
@@ -512,11 +512,11 @@ paths:
           description: Requisição inválida — erro de validação ou da ferramenta
     post:
       operationId: createAd
-      summary: Criar anúncio + criativo link/page
+      summary: Criar anúncio + criativo
       description: >
-        Cria AdCreative (object_story_spec com page_id) + Ad no adsetId do tenant.
-        Default PAUSED + dryRun=true. Exige confirm+confirmTenantId, page_id/page token.
-        imageUrl|imageHash opcional (HTTPS; nunca inventar). Sem geração de imagem.
+        Cria AdCreative + Ad. WEBSITE: linkUrl obrigatório. WHATSAPP: CTWA oficial
+        (sem linkUrl/wa.me; CTA WHATSAPP_MESSAGE). Default PAUSED + dryRun=true.
+        Exige confirm, page_id/page token. imageUrl|imageHash opcional.
       x-openai-isConsequential: true
       requestBody:
         required: true
@@ -1045,7 +1045,7 @@ components:
         billingEvent:
           type: string
           enum: [IMPRESSIONS, LINK_CLICKS]
-          description: Evento de cobrança whitelisted.
+          description: Cobrança. CTWA (WHATSAPP) exige IMPRESSIONS.
         optimizationGoal:
           type: string
           enum:
@@ -1059,7 +1059,25 @@ components:
             - CONVERSATIONS
             - THRUPLAY
             - POST_ENGAGEMENT
-          description: Meta de otimização whitelisted.
+          description: Otimização. CTWA tipicamente CONVERSATIONS.
+        destinationType:
+          type: string
+          enum: [WEBSITE, WHATSAPP]
+          default: WEBSITE
+          description: Destino do adset. WHATSAPP ≠ objective de campanha.
+        campaignObjective:
+          type: string
+          enum:
+            - OUTCOME_AWARENESS
+            - OUTCOME_ENGAGEMENT
+            - OUTCOME_LEADS
+            - OUTCOME_SALES
+            - OUTCOME_TRAFFIC
+            - OUTCOME_APP_PROMOTION
+          description: Objective da campanha p/ validar CTWA no dry-run.
+        whatsappPhoneNumber:
+          type: string
+          description: Opcional. Telefone E.164 no promoted_object CTWA.
         status:
           type: string
           enum: [ACTIVE, PAUSED]
@@ -1101,7 +1119,6 @@ components:
         - tenantId
         - adsetId
         - name
-        - linkUrl
         - message
         - confirmTenantId
         - confirm
@@ -1120,10 +1137,15 @@ components:
           minLength: 1
           maxLength: 400
           description: Nome do anúncio.
+        destinationType:
+          type: string
+          enum: [WEBSITE, WHATSAPP]
+          default: WEBSITE
+          description: WEBSITE exige linkUrl; WHATSAPP = CTWA oficial (sem linkUrl).
         linkUrl:
           type: string
           format: uri
-          description: URL https de destino (nunca inventar).
+          description: URL https de site (só WEBSITE). Rejeita wa.me; nunca inventar.
         message:
           type: string
           minLength: 1
@@ -1150,7 +1172,11 @@ components:
             - APPLY_NOW
             - GET_QUOTE
             - WHATSAPP_MESSAGE
-          default: LEARN_MORE
+          description: WEBSITE default LEARN_MORE; WHATSAPP força WHATSAPP_MESSAGE.
+        welcomeMessage:
+          type: string
+          maxLength: 1000
+          description: Só WHATSAPP — saudação/autofill (page_welcome_message).
         imageUrl:
           type: string
           format: uri

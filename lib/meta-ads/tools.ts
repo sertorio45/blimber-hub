@@ -18,6 +18,15 @@ import {
 } from './integration'
 import { MetaAdsToolError } from './types'
 import {
+  assertWhatsAppAdsetCompatibility,
+  buildMetaCreateAdCreativeBody,
+  buildMetaCreateAdsetGraphBody,
+  isMetaMessagingProtocolUrl,
+  META_AD_DESTINATION_TYPES,
+  normalizeWhatsappPhoneNumber,
+  type MetaAdDestinationType,
+} from './ad-destination'
+import {
   META_ADSET_BILLING_EVENTS,
   META_ADSET_OPTIMIZATION_GOALS,
   META_ADSET_TARGETING_TEMPLATE_IDS,
@@ -38,6 +47,7 @@ import {
   assertConfirmActive,
   assertConfirmDelete,
   assertMetaPageCreativeReady,
+  assertMetaPageId,
   assertWriteConfirmation,
   metaWriteConfirmationFields,
   metaWriteDryRunField,
@@ -200,6 +210,7 @@ export const metaCreateCampaignSchema = tenantContextSchema
  * Create adset — dryRun defaults to true.
  * Targeting only via closed templates (no free-form Graph targeting).
  * Status defaults to PAUSED; ACTIVE requires confirmActive: true.
+ * destinationType=WHATSAPP → Click-to-WhatsApp (promoted_object.page_id + destination_type).
  */
 export const metaCreateAdsetSchema = tenantContextSchema
   .extend({
@@ -210,10 +221,25 @@ export const metaCreateAdsetSchema = tenantContextSchema
       .describe('Template fechado de targeting (geo+idade). Sem targeting Graph livre.'),
     billingEvent: z
       .enum(META_ADSET_BILLING_EVENTS)
-      .describe('Evento de cobrança whitelisted (IMPRESSIONS|LINK_CLICKS).'),
+      .describe('Evento de cobrança whitelisted (IMPRESSIONS|LINK_CLICKS). CTWA exige IMPRESSIONS.'),
     optimizationGoal: z
       .enum(META_ADSET_OPTIMIZATION_GOALS)
-      .describe('Meta de otimização whitelisted (sem Advantage+/catálogo).'),
+      .describe('Meta de otimização whitelisted. CTWA: CONVERSATIONS (ou matriz oficial × objective).'),
+    destinationType: z
+      .enum(META_AD_DESTINATION_TYPES)
+      .optional()
+      .default('WEBSITE')
+      .describe('WEBSITE (default) ou WHATSAPP (Click-to-WhatsApp). Não é objective de campanha.'),
+    campaignObjective: z
+      .enum(META_CAMPAIGN_OBJECTIVES)
+      .optional()
+      .describe('Objective da campanha — usado p/ validar CTWA no dry-run; na execução a Graph confirma.'),
+    whatsappPhoneNumber: z
+      .string()
+      .min(8)
+      .max(20)
+      .optional()
+      .describe('Opcional: telefone WhatsApp do promoted_object (E.164). Page ligada é o principal.'),
     status: z
       .enum(['ACTIVE', 'PAUSED'])
       .optional()
@@ -268,6 +294,42 @@ export const metaCreateAdsetSchema = tenantContextSchema
         path: ['endTime'],
       })
     }
+    if (data.destinationType === 'WHATSAPP' && data.billingEvent !== 'IMPRESSIONS') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'destinationType=WHATSAPP exige billingEvent=IMPRESSIONS.',
+        path: ['billingEvent'],
+      })
+    }
+    if (data.destinationType === 'WHATSAPP' && data.whatsappPhoneNumber) {
+      try {
+        normalizeWhatsappPhoneNumber(data.whatsappPhoneNumber)
+      }
+      catch (err) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: err instanceof Error ? err.message : 'whatsappPhoneNumber inválido.',
+          path: ['whatsappPhoneNumber'],
+        })
+      }
+    }
+    if (data.destinationType === 'WHATSAPP' && data.campaignObjective) {
+      try {
+        assertWhatsAppAdsetCompatibility({
+          destinationType: 'WHATSAPP',
+          optimizationGoal: data.optimizationGoal,
+          billingEvent: data.billingEvent,
+          campaignObjective: data.campaignObjective,
+        })
+      }
+      catch (err) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: err instanceof Error ? err.message : 'Combinação CTWA inválida.',
+          path: ['optimizationGoal'],
+        })
+      }
+    }
   })
 
 /** CTA whitelist for link creatives (Marketing API call_to_action.type). */
@@ -289,18 +351,26 @@ export const META_AD_CALL_TO_ACTIONS = [
 export type MetaAdCallToAction = (typeof META_AD_CALL_TO_ACTIONS)[number]
 
 /**
- * Create ad + link creative (object_story_spec) on the tenant ad account.
+ * Create ad + creative (object_story_spec) on the tenant ad account.
  * dryRun default true. Status default PAUSED. Requires page_id + page token.
+ * destinationType=WEBSITE (default): linkUrl obrigatório.
+ * destinationType=WHATSAPP: linkUrl de site NÃO obrigatório; CTA WHATSAPP_MESSAGE oficial.
  * Optional media: imageUrl (HTTPS) XOR imageHash — never invent URLs.
  */
 export const metaCreateAdSchema = tenantContextSchema
   .extend({
     adsetId: z.string().min(1).describe('ID do adset Meta (deve pertencer à ad account do tenant).'),
     name: z.string().min(1).max(400).describe('Nome do anúncio na Meta.'),
+    destinationType: z
+      .enum(META_AD_DESTINATION_TYPES)
+      .optional()
+      .default('WEBSITE')
+      .describe('WEBSITE (default, linkUrl obrigatório) ou WHATSAPP (Click-to-WhatsApp; sem linkUrl de site).'),
     linkUrl: z
       .string()
       .url()
-      .describe('URL de destino do anúncio (https). Nunca inventar.'),
+      .optional()
+      .describe('URL https de site (obrigatória só em WEBSITE). Nunca inventar; rejeita wa.me/api.whatsapp.com.'),
     message: z
       .string()
       .min(1)
@@ -319,8 +389,13 @@ export const metaCreateAdSchema = tenantContextSchema
     callToAction: z
       .enum(META_AD_CALL_TO_ACTIONS)
       .optional()
-      .default('LEARN_MORE')
-      .describe('CTA whitelist (default LEARN_MORE).'),
+      .describe('CTA whitelist. WEBSITE default LEARN_MORE; WHATSAPP força WHATSAPP_MESSAGE.'),
+    welcomeMessage: z
+      .string()
+      .min(1)
+      .max(1000)
+      .optional()
+      .describe('Só WHATSAPP: saudação/autofill (page_welcome_message). Opcional.'),
     imageUrl: z
       .string()
       .url()
@@ -351,13 +426,63 @@ export const metaCreateAdSchema = tenantContextSchema
     ...metaWriteDryRunField,
   })
   .superRefine((data, ctx) => {
-    if (!data.linkUrl.startsWith('https://')) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'linkUrl deve usar https://.',
-        path: ['linkUrl'],
-      })
+    const destinationType = data.destinationType ?? 'WEBSITE'
+
+    if (destinationType === 'WEBSITE') {
+      if (!data.linkUrl) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'destinationType=WEBSITE exige linkUrl https de site. Para WhatsApp use destinationType=WHATSAPP.',
+          path: ['linkUrl'],
+        })
+      }
+      else if (!data.linkUrl.startsWith('https://')) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'linkUrl deve usar https://.',
+          path: ['linkUrl'],
+        })
+      }
+      else if (isMetaMessagingProtocolUrl(data.linkUrl)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Não use wa.me/api.whatsapp.com como linkUrl de site. Use destinationType=WHATSAPP (estrutura oficial CTWA).',
+          path: ['linkUrl'],
+        })
+      }
+      if (data.callToAction === 'WHATSAPP_MESSAGE') {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'CTA WHATSAPP_MESSAGE exige destinationType=WHATSAPP (não WEBSITE).',
+          path: ['callToAction'],
+        })
+      }
+      if (data.welcomeMessage) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'welcomeMessage só é válido com destinationType=WHATSAPP.',
+          path: ['welcomeMessage'],
+        })
+      }
     }
+
+    if (destinationType === 'WHATSAPP') {
+      if (data.linkUrl) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'destinationType=WHATSAPP não aceita linkUrl de site (nem wa.me fabricado). Omita linkUrl.',
+          path: ['linkUrl'],
+        })
+      }
+      if (data.callToAction && data.callToAction !== 'WHATSAPP_MESSAGE') {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'destinationType=WHATSAPP usa CTA WHATSAPP_MESSAGE (oficial). Omita callToAction ou envie WHATSAPP_MESSAGE.',
+          path: ['callToAction'],
+        })
+      }
+    }
+
     if (data.imageUrl && data.imageHash) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -1312,6 +1437,7 @@ export async function metaCreateCampaign(
  * Create an adset on the tenant ad account (POST /act_{id}/adsets).
  * dryRun default true — no Graph until dryRun: false.
  * On execute: validates campaign ownership against tenant ad account.
+ * WHATSAPP: destination_type + promoted_object.page_id (+ optional phone).
  */
 export async function metaCreateAdset(
   ctx: MetaToolContext,
@@ -1327,13 +1453,23 @@ export async function metaCreateAdset(
   })
 
   const dryRun = resolveDryRun(input.dryRun, true)
+  const destinationType: MetaAdDestinationType = input.destinationType ?? 'WEBSITE'
   const creds = await withCreds(ctx, input.tenantId, input.adAccountId)
   const graph = fetchGraph(ctx)
   const template = resolveAdsetTargetingTemplate(input.targetingTemplate)
 
-  // Ownership + currency only on execute (GET). Dry-run stays Graph-free except credentials from DB.
+  let pageId: string | null = null
+  let whatsappPhone: string | undefined
+  if (destinationType === 'WHATSAPP') {
+    const tokenCtx = await resolveMetaAccessToken(ctx.client, input.tenantId)
+    pageId = assertMetaPageId(tokenCtx.publicConfig.page_id)
+    whatsappPhone = normalizeWhatsappPhoneNumber(input.whatsappPhoneNumber)
+  }
+
+  // Ownership + currency + objective only on execute (GET). Dry-run stays Graph-free except credentials from DB.
   let currency: string | null = null
   let campaignName: string | null = null
+  let campaignObjective: string | null = input.campaignObjective ?? null
   if (!dryRun) {
     const campaign = await graph(metaGraphUrl(creds.apiVersion, `/${input.campaignId}`), {
       query: {
@@ -1348,6 +1484,7 @@ export async function metaCreateAdset(
       message: 'Campanha não pertence à ad account do tenant.',
     })
     campaignName = campaign?.name ? String(campaign.name) : null
+    campaignObjective = campaign?.objective ? String(campaign.objective) : campaignObjective
 
     try {
       const account = await graph(
@@ -1366,23 +1503,31 @@ export async function metaCreateAdset(
     }
   }
 
-  const graphBody: Record<string, unknown> = {
-    name: input.name,
-    campaign_id: input.campaignId,
-    billing_event: input.billingEvent,
-    optimization_goal: input.optimizationGoal,
-    bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
-    targeting: template.targeting,
-    status,
+  if (destinationType === 'WHATSAPP') {
+    assertWhatsAppAdsetCompatibility({
+      destinationType,
+      optimizationGoal: input.optimizationGoal,
+      billingEvent: input.billingEvent,
+      // dry-run: use explicit campaignObjective when provided; execute: Graph objective
+      campaignObjective: dryRun ? (input.campaignObjective ?? null) : campaignObjective,
+    })
   }
-  if (input.dailyBudget != null)
-    graphBody.daily_budget = input.dailyBudget
-  if (input.lifetimeBudget != null)
-    graphBody.lifetime_budget = input.lifetimeBudget
-  if (input.startTime)
-    graphBody.start_time = input.startTime
-  if (input.endTime)
-    graphBody.end_time = input.endTime
+
+  const graphBody = buildMetaCreateAdsetGraphBody({
+    name: input.name,
+    campaignId: input.campaignId,
+    billingEvent: input.billingEvent,
+    optimizationGoal: input.optimizationGoal,
+    status,
+    targeting: template.targeting,
+    destinationType,
+    pageId: pageId ?? undefined,
+    whatsappPhoneNumber: whatsappPhone,
+    dailyBudget: input.dailyBudget,
+    lifetimeBudget: input.lifetimeBudget,
+    startTime: input.startTime,
+    endTime: input.endTime,
+  })
 
   const path = `/${actPath(creds.adAccountId)}/adsets`
   const budgetNotes: string[] = []
@@ -1399,6 +1544,15 @@ export async function metaCreateAdset(
     budgetNotes.push('Moeda da conta não consultada no dry-run (sem Graph). Use listAdAccounts se precisar.')
     budgetNotes.push('Ownership da campanha será validado na execução (dryRun: false).')
   }
+  if (destinationType === 'WHATSAPP') {
+    budgetNotes.push(`destination_type=WHATSAPP · promoted_object.page_id=${pageId}`)
+    if (whatsappPhone)
+      budgetNotes.push(`whatsapp_phone_number=${whatsappPhone}`)
+    if (campaignObjective)
+      budgetNotes.push(`campaign.objective=${campaignObjective}`)
+    else if (dryRun)
+      budgetNotes.push('Informe campaignObjective no dry-run para validar matriz CTWA; na execução a Graph confirma.')
+  }
 
   const run = await withDryRun(
     dryRun,
@@ -1409,6 +1563,7 @@ export async function metaCreateAdset(
       notes: [
         `Adset "${input.name}" → ${status}`,
         `campaign_id: ${input.campaignId}${campaignName ? ` (${campaignName})` : ''}`,
+        `destinationType: ${destinationType}`,
         `targetingTemplate: ${template.id} — ${template.summary}`,
         `billing_event=${input.billingEvent} · optimization_goal=${input.optimizationGoal}`,
         `ad_account: ${creds.adAccountId}${currency ? ` (${currency})` : ''}`,
@@ -1436,11 +1591,15 @@ export async function metaCreateAdset(
         adAccountId: creds.adAccountId,
         campaignId: input.campaignId,
         campaignName,
+        campaignObjective,
         adsetId,
         name: input.name,
         status,
         billingEvent: input.billingEvent,
         optimizationGoal: input.optimizationGoal,
+        destinationType,
+        pageId,
+        whatsappPhoneNumber: whatsappPhone ?? null,
         targetingTemplate: template.id,
         targeting: template.targeting,
         targetingSummary: template.summary,
@@ -1468,6 +1627,8 @@ export async function metaCreateAdset(
         preview: run.preview,
         campaignId: input.campaignId,
         targetingTemplate: template.id,
+        destinationType,
+        pageId,
         adAccountId: creds.adAccountId,
         currency,
         budgetLimitCents: getMetaGptBudgetDailyMaxCents(),
@@ -1478,11 +1639,15 @@ export async function metaCreateAdset(
       adAccountId: creds.adAccountId,
       campaignId: input.campaignId,
       campaignName: null,
+      campaignObjective,
       adsetId: null,
       name: input.name,
       status,
       billingEvent: input.billingEvent,
       optimizationGoal: input.optimizationGoal,
+      destinationType,
+      pageId,
+      whatsappPhoneNumber: whatsappPhone ?? null,
       targetingTemplate: template.id,
       targeting: template.targeting,
       targetingSummary: template.summary,
@@ -1514,6 +1679,8 @@ export async function metaCreateAdset(
         status: result.status,
         billingEvent: result.billingEvent,
         optimizationGoal: result.optimizationGoal,
+        destinationType: result.destinationType,
+        pageId: result.pageId,
         targetingTemplate: result.targetingTemplate,
         targeting: result.targeting,
         dailyBudget: result.dailyBudget,
@@ -1530,8 +1697,9 @@ export async function metaCreateAdset(
 }
 
 /**
- * Create link AdCreative (object_story_spec) + Ad on the tenant ad account.
+ * Create AdCreative (object_story_spec) + Ad on the tenant ad account.
  * dryRun default true. Validates adset ownership on execute. Requires page_id + page token.
+ * WEBSITE: link_data com linkUrl do usuário. WHATSAPP: CTWA oficial (sem linkUrl de site).
  */
 export async function metaCreateAd(
   ctx: MetaToolContext,
@@ -1543,6 +1711,7 @@ export async function metaCreateAd(
   assertConfirmActive({ status, confirmActive: input.confirmActive })
 
   const dryRun = resolveDryRun(input.dryRun, true)
+  const destinationType: MetaAdDestinationType = input.destinationType ?? 'WEBSITE'
   const creds = await withCreds(ctx, input.tenantId, input.adAccountId)
   const graph = fetchGraph(ctx)
 
@@ -1554,43 +1723,46 @@ export async function metaCreateAd(
     pageAccessToken: pageToken,
   })
 
-  const callToAction = input.callToAction ?? 'LEARN_MORE'
+  const callToAction = destinationType === 'WHATSAPP'
+    ? 'WHATSAPP_MESSAGE'
+    : (input.callToAction ?? 'LEARN_MORE')
   const creativeName = input.creativeName || `${input.name} Creative`
 
-  const linkData: Record<string, unknown> = {
-    message: input.message,
-    link: input.linkUrl,
-    call_to_action: {
-      type: callToAction,
-      value: { link: input.linkUrl },
-    },
-  }
-  if (input.headline)
-    linkData.name = input.headline
-  if (input.description)
-    linkData.description = input.description
-  if (input.imageHash)
-    linkData.image_hash = input.imageHash
-  if (input.imageUrl)
-    linkData.picture = input.imageUrl
-
-  const objectStorySpec = {
-    page_id: pageId,
-    link_data: linkData,
-  }
-
-  const creativeBody: Record<string, unknown> = {
-    name: creativeName,
-    object_story_spec: objectStorySpec,
-  }
+  const creativeBody = buildMetaCreateAdCreativeBody({
+    creativeName,
+    pageId,
+    destinationType,
+    website: destinationType === 'WEBSITE'
+      ? {
+          message: input.message,
+          linkUrl: input.linkUrl!,
+          callToAction,
+          headline: input.headline,
+          description: input.description,
+          imageUrl: input.imageUrl,
+          imageHash: input.imageHash,
+        }
+      : undefined,
+    whatsapp: destinationType === 'WHATSAPP'
+      ? {
+          message: input.message,
+          headline: input.headline,
+          description: input.description,
+          imageUrl: input.imageUrl,
+          imageHash: input.imageHash,
+          welcomeMessage: input.welcomeMessage,
+        }
+      : undefined,
+  })
 
   // Ownership only on execute (GET). Dry-run stays Graph-free except credentials from DB.
   let adsetName: string | null = null
   let campaignId: string | null = null
+  let adsetDestinationType: string | null = null
   if (!dryRun) {
     const adset = await graph(metaGraphUrl(creds.apiVersion, `/${input.adsetId}`), {
       query: {
-        fields: 'id,name,account_id,campaign_id,status,effective_status',
+        fields: 'id,name,account_id,campaign_id,status,effective_status,destination_type',
         access_token: creds.accessToken,
       },
     })
@@ -1602,6 +1774,18 @@ export async function metaCreateAd(
     })
     adsetName = adset?.name ? String(adset.name) : null
     campaignId = adset?.campaign_id ? String(adset.campaign_id) : null
+    adsetDestinationType = adset?.destination_type != null
+      ? String(adset.destination_type)
+      : null
+
+    if (destinationType === 'WHATSAPP' && adsetDestinationType && adsetDestinationType !== 'WHATSAPP') {
+      throw new MetaAdsToolError(
+        'ADSET_DESTINATION_MISMATCH',
+        `Criativo WHATSAPP exige adset com destination_type=WHATSAPP (adset atual: ${adsetDestinationType}).`,
+        400,
+        { adsetId: input.adsetId, adsetDestinationType, destinationType },
+      )
+    }
   }
 
   const creativePath = `/${actPath(creds.adAccountId)}/adcreatives`
@@ -1622,11 +1806,16 @@ export async function metaCreateAd(
   else if (input.imageUrl)
     mediaNotes.push(`mídia: imageUrl=${input.imageUrl}`)
   else
-    mediaNotes.push('mídia: sem imagem (link post text-only / Meta pode exigir mídia conforme objetivo).')
+    mediaNotes.push('mídia: sem imagem (Meta pode exigir mídia conforme objetivo/placement).')
   if (status === 'ACTIVE')
     mediaNotes.push('ATENÇÃO: criando ACTIVE — gasto potencial imediato.')
   if (dryRun)
     mediaNotes.push('Ownership do adset será validado na execução (dryRun: false).')
+  if (destinationType === 'WHATSAPP') {
+    mediaNotes.push('CTWA: link_data oficial (CTA WHATSAPP_MESSAGE + app_destination=WHATSAPP). Sem linkUrl de site.')
+    if (input.welcomeMessage)
+      mediaNotes.push('page_welcome_message: saudação customizada.')
+  }
 
   const run = await withDryRun(
     dryRun,
@@ -1636,16 +1825,19 @@ export async function metaCreateAd(
       body: previewBody,
       notes: [
         `Anúncio "${input.name}" → ${status}`,
+        `destinationType: ${destinationType}`,
         `adset_id: ${input.adsetId}${adsetName ? ` (${adsetName})` : ''}`,
         `page_id: ${pageId}${tokenCtx.publicConfig.page_name ? ` (${tokenCtx.publicConfig.page_name})` : ''}`,
-        `link: ${input.linkUrl}`,
+        destinationType === 'WEBSITE'
+          ? `link: ${input.linkUrl}`
+          : 'link: (protocolo messaging Meta — sem linkUrl de site do usuário)',
         `message: ${input.message.slice(0, 120)}${input.message.length > 120 ? '…' : ''}`,
         input.headline ? `headline: ${input.headline}` : 'headline: (omitido)',
         `CTA: ${callToAction}`,
         `ad_account: ${creds.adAccountId}`,
         ...mediaNotes,
         'dryRun=true (default): nenhuma mutação enviada à Graph API.',
-        'Nunca inventar URLs de mídia ou link.',
+        'Nunca inventar URLs de mídia ou link de site / wa.me.',
       ],
     },
     async () => {
@@ -1713,11 +1905,13 @@ export async function metaCreateAd(
         creativeName,
         status,
         pageId,
-        linkUrl: input.linkUrl,
+        destinationType,
+        linkUrl: destinationType === 'WEBSITE' ? (input.linkUrl ?? null) : null,
         message: input.message,
         headline: input.headline ?? null,
         description: input.description ?? null,
         callToAction,
+        welcomeMessage: input.welcomeMessage ?? null,
         imageUrl: input.imageUrl ?? null,
         imageHash: input.imageHash ?? null,
         success: true as const,
@@ -1739,7 +1933,8 @@ export async function metaCreateAd(
         preview: run.preview,
         adsetId: input.adsetId,
         pageId,
-        linkUrl: input.linkUrl,
+        destinationType,
+        linkUrl: destinationType === 'WEBSITE' ? (input.linkUrl ?? null) : null,
         adAccountId: creds.adAccountId,
       },
     })
@@ -1755,11 +1950,13 @@ export async function metaCreateAd(
       creativeName,
       status,
       pageId,
-      linkUrl: input.linkUrl,
+      destinationType,
+      linkUrl: destinationType === 'WEBSITE' ? (input.linkUrl ?? null) : null,
       message: input.message,
       headline: input.headline ?? null,
       description: input.description ?? null,
       callToAction,
+      welcomeMessage: input.welcomeMessage ?? null,
       imageUrl: input.imageUrl ?? null,
       imageHash: input.imageHash ?? null,
       success: true as const,
@@ -1786,6 +1983,7 @@ export async function metaCreateAd(
         name: result.name,
         status: result.status,
         pageId: result.pageId,
+        destinationType: result.destinationType,
         linkUrl: result.linkUrl,
         message: result.message,
         headline: result.headline,
@@ -2950,9 +3148,9 @@ export const META_TOOL_DESCRIPTIONS: Record<MetaToolName, string> = {
   meta_create_campaign:
     'Cria campanha (Outcome_*). Default PAUSED + dryRun=true. Exige confirm+confirmTenantId. ACTIVE exige confirmActive. Budget opcional com teto env.',
   meta_create_adset:
-    'Cria adset com targetingTemplate fechado. Default PAUSED + dryRun=true. Exige confirm+confirmTenantId + budget. ACTIVE exige confirmActive.',
+    'Cria adset (BR_*). PAUSED+dryRun. destinationType WEBSITE|WHATSAPP (CTWA: destination_type+page_id, CONVERSATIONS). Exige confirm+budget+campaignId.',
   meta_create_ad:
-    'Cria AdCreative (link/page object_story_spec) + Ad. Default PAUSED + dryRun=true. Exige page_id/page token, confirm+confirmTenantId, adsetId. imageUrl|imageHash opcional. Sem geração de imagem.',
+    'Cria AdCreative+Ad. WEBSITE: linkUrl. WHATSAPP: CTWA oficial (sem linkUrl/wa.me). PAUSED+dryRun. Exige page token, confirm, adsetId.',
   meta_update_adset_budget:
     'Atualiza budget do adset (daily|lifetime). dryRun default true. Teto META_GPT_BUDGET_* + confirmBudgetIncrease se aumento % alto.',
   meta_update_adset_targeting:

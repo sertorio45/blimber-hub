@@ -1,10 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import {
+  assertWhatsAppAdsetCompatibility,
+  buildMetaCreateAdCreativeBody,
+  buildMetaCreateAdsetGraphBody,
   buildMetaCreateCampaignGraphBody,
   encodeMetaGraphBodyValue,
   enrichMetaGraphWriteError,
   extractMetaGraphErrorFields,
+  isMetaMessagingProtocolUrl,
   MetaAdsToolError,
+  META_WHATSAPP_MESSAGING_LINK,
 } from '~/lib/meta-ads'
 
 describe('meta graph create campaign payload', () => {
@@ -50,6 +55,113 @@ describe('meta graph create campaign payload', () => {
     })
     expect(body.lifetime_budget).toBe(90000)
     expect(body.is_adset_budget_sharing_enabled).toBeUndefined()
+  })
+})
+
+describe('meta CTWA / destination payloads', () => {
+  it('detects messaging protocol hosts used as fake website URLs', () => {
+    expect(isMetaMessagingProtocolUrl('https://wa.me/5511999999999')).toBe(true)
+    expect(isMetaMessagingProtocolUrl('https://api.whatsapp.com/send')).toBe(true)
+    expect(isMetaMessagingProtocolUrl('https://example.com/oferta')).toBe(false)
+  })
+
+  it('builds WEBSITE creative with value.link = site URL', () => {
+    const body = buildMetaCreateAdCreativeBody({
+      creativeName: 'C',
+      pageId: 'page_1',
+      destinationType: 'WEBSITE',
+      website: {
+        message: 'Buy',
+        linkUrl: 'https://example.com/lp',
+        callToAction: 'LEARN_MORE',
+      },
+    })
+    expect(body).toEqual({
+      name: 'C',
+      object_story_spec: {
+        page_id: 'page_1',
+        link_data: {
+          message: 'Buy',
+          link: 'https://example.com/lp',
+          call_to_action: {
+            type: 'LEARN_MORE',
+            value: { link: 'https://example.com/lp' },
+          },
+        },
+      },
+    })
+  })
+
+  it('builds WHATSAPP creative with official CTWA CTA (no site linkUrl)', () => {
+    const body = buildMetaCreateAdCreativeBody({
+      creativeName: 'WA',
+      pageId: 'page_9',
+      destinationType: 'WHATSAPP',
+      whatsapp: { message: 'Oi WhatsApp' },
+    })
+    expect(body).toEqual({
+      name: 'WA',
+      object_story_spec: {
+        page_id: 'page_9',
+        link_data: {
+          message: 'Oi WhatsApp',
+          link: META_WHATSAPP_MESSAGING_LINK,
+          call_to_action: {
+            type: 'WHATSAPP_MESSAGE',
+            value: { app_destination: 'WHATSAPP' },
+          },
+        },
+      },
+    })
+  })
+
+  it('builds WHATSAPP adset with destination_type and promoted_object', () => {
+    const body = buildMetaCreateAdsetGraphBody({
+      name: 'Set',
+      campaignId: 'cmp_1',
+      billingEvent: 'IMPRESSIONS',
+      optimizationGoal: 'CONVERSATIONS',
+      status: 'PAUSED',
+      targeting: { geo_locations: { countries: ['BR'] }, age_min: 18, age_max: 65 },
+      destinationType: 'WHATSAPP',
+      pageId: 'page_1',
+      whatsappPhoneNumber: '+5511999999999',
+      dailyBudget: 1000,
+    })
+    expect(body).toMatchObject({
+      destination_type: 'WHATSAPP',
+      promoted_object: {
+        page_id: 'page_1',
+        whatsapp_phone_number: '+5511999999999',
+      },
+      optimization_goal: 'CONVERSATIONS',
+      daily_budget: 1000,
+    })
+    expect(body).not.toHaveProperty('link')
+  })
+
+  it('WEBSITE adset omits destination_type (retrocompat)', () => {
+    const body = buildMetaCreateAdsetGraphBody({
+      name: 'Web',
+      campaignId: 'cmp_1',
+      billingEvent: 'IMPRESSIONS',
+      optimizationGoal: 'LINK_CLICKS',
+      status: 'PAUSED',
+      targeting: { geo_locations: { countries: ['BR'] }, age_min: 18, age_max: 65 },
+      destinationType: 'WEBSITE',
+      dailyBudget: 2000,
+    })
+    expect(body.destination_type).toBeUndefined()
+    expect(body.promoted_object).toBeUndefined()
+  })
+
+  it('assertWhatsAppAdsetCompatibility rejects AWARENESS', () => {
+    expect(() => assertWhatsAppAdsetCompatibility({
+      destinationType: 'WHATSAPP',
+      optimizationGoal: 'CONVERSATIONS',
+      billingEvent: 'IMPRESSIONS',
+      campaignObjective: 'OUTCOME_AWARENESS',
+    })).toThrow(MetaAdsToolError)
   })
 })
 

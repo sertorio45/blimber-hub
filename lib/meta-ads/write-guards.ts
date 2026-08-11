@@ -230,6 +230,22 @@ export function assertConfirmDelete(confirmDelete: unknown): void {
 }
 
 /**
+ * Returns trimmed page_id when present on the Meta integration.
+ * Used by WhatsApp adset promoted_object (page_id required; page token optional here).
+ */
+export function assertMetaPageId(pageId?: string | null): string {
+  const trimmed = pageId ? String(pageId).trim() : ''
+  if (!trimmed) {
+    throw new MetaAdsToolError(
+      'META_PAGE_ID_REQUIRED',
+      'page_id ausente na integração Meta. Configure a Page em Ads → Integrações.',
+      400,
+    )
+  }
+  return trimmed
+}
+
+/**
  * Link/page creatives need page_id + page_access_token on the Meta integration.
  * Returns the trimmed page_id when both are present.
  */
@@ -237,14 +253,7 @@ export function assertMetaPageCreativeReady(params: {
   pageId?: string | null
   pageAccessToken?: string | null
 }): string {
-  const pageId = params.pageId ? String(params.pageId).trim() : ''
-  if (!pageId) {
-    throw new MetaAdsToolError(
-      'META_PAGE_ID_REQUIRED',
-      'page_id ausente na integração Meta. Configure a Page em Ads → Integrações.',
-      400,
-    )
-  }
+  const pageId = assertMetaPageId(params.pageId)
   if (!params.pageAccessToken) {
     throw new MetaAdsToolError(
       'META_PAGE_TOKEN_REQUIRED',

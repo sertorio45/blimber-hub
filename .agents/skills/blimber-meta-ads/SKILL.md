@@ -13,6 +13,7 @@ description: >-
 
 > **Primário (PT-BR):** ChatGPT GPT personalizado + Ações + Habilidade em `gpt/blimber-meta/`.  
 > Docs: `docs/gpt-blimber-meta.md` e `docs/gpt-blimber-meta-TUTORIAL.md`  
+> **Hub unificado (Marketing + ponte Meta):** `gpt/blimber/` — ver `docs/gpt-blimber-UNIFIED-PLAN.md`.  
 > Este arquivo (Cursor) é **legado / espelho** — não é a entrega principal ao usuário.
 > Mantenha alinhado ao pack GPT; edite primeiro `gpt/blimber-meta/skills/blimber-meta-ads/SKILL.md`.
 
@@ -21,7 +22,7 @@ description: >-
 - Relatórios / insights Meta Ads de um tenant
 - Listar campanhas, conjuntos de anúncios (adsets) e anúncios
 - Pausar ou reativar campanha, adset ou anúncio (com confirmação)
-- Criar campanha, adset ou anúncio+criativo link (default PAUSED + dryRun true)
+- Criar campanha, adset ou anúncio+criativo (WEBSITE ou WhatsApp CTWA; default PAUSED + dryRun true)
 - Editar budget/targeting do adset; copy/mídia do ad (dryRun default true)
 - Excluir em massa com preview → execute (IDs explícitos; nunca por nome)
 - Ver se Meta está conectado / write-ready (`write_readiness`)
@@ -35,7 +36,7 @@ description: >-
 4. Tools Meta **sempre** exigem `tenantId` (UUID). Isolamento por tenant mantido.
 5. **Não** peça/revele `access_token`.
 6. Escrita: fluxo **mostrar → confirmar → mutar** com `confirm: true` e `confirmTenantId === tenantId`.
-7. Create/edit/delete: default `dryRun: true`; ACTIVE no create exige `confirmActive: true`. Bulk delete: preview → confirmDelete + previewToken + dryRun false. Nunca inventar URLs nem apagar por nome.
+7. Create/edit/delete: default `dryRun: true`; ACTIVE no create exige `confirmActive: true`. Bulk delete: preview → confirmDelete + previewToken + dryRun false. Nunca inventar URLs (nem wa.me); WhatsApp Ads usam `destinationType=WHATSAPP`. Nunca apagar por nome.
 8. **Idioma:** respostas ao usuário final em **português (Brasil)**.
 
 ## Tools
@@ -49,11 +50,11 @@ description: >-
 | `meta_get_campaign` | Detalhe |
 | `meta_create_campaign` | Criar campanha (PAUSED / dryRun default true) |
 | `meta_list_adsets` | Conjuntos de anúncios |
-| `meta_create_adset` | Criar adset (templates BR_* / dryRun default true) |
+| `meta_create_adset` | Criar adset (templates BR_* / destination WEBSITE\|WHATSAPP) |
 | `meta_update_adset_budget` | Budget adset (dryRun default true) |
 | `meta_update_adset_targeting` | Targeting BR_* |
 | `meta_list_ads` | Anúncios |
-| `meta_create_ad` | Criar criativo link/page + anúncio (PAUSED / dryRun default true) |
+| `meta_create_ad` | Criar criativo WEBSITE ou WHATSAPP (CTWA) + anúncio (PAUSED / dryRun true) |
 | `meta_update_ad_creative_copy` | Copy via novo creative |
 | `meta_update_ad_media` | imageUrl\|imageHash via novo creative |
 | `meta_preview_bulk_delete` | Preview exclusão (IDs + previewToken) |

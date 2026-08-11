@@ -1038,6 +1038,233 @@ describe('meta-ads MCP tools', () => {
     expect(JSON.stringify(result)).not.toContain('tok')
   })
 
+  it('create ad WEBSITE rejects fake wa.me linkUrl', async () => {
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret('tok'),
+      page_access_token_enc: encryptSecret('page-tok'),
+      ad_account_id: '555',
+      page_id: 'page_1',
+    })
+
+    await expect(metaCreateAd(
+      { client, graphFetch: vi.fn() },
+      {
+        tenantId: 'tenant-1',
+        adsetId: 'adset_1',
+        name: 'Fake WA',
+        destinationType: 'WEBSITE',
+        linkUrl: 'https://wa.me/5511999999999',
+        message: 'Fale conosco',
+        confirmTenantId: 'tenant-1',
+        confirm: true,
+        dryRun: true,
+      },
+    )).rejects.toBeInstanceOf(Error)
+  })
+
+  it('create ad WEBSITE rejects api.whatsapp.com as linkUrl', async () => {
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret('tok'),
+      page_access_token_enc: encryptSecret('page-tok'),
+      ad_account_id: '555',
+      page_id: 'page_1',
+    })
+
+    await expect(metaCreateAd(
+      { client, graphFetch: vi.fn() },
+      {
+        tenantId: 'tenant-1',
+        adsetId: 'adset_1',
+        name: 'Fake API WA',
+        linkUrl: 'https://api.whatsapp.com/send?phone=5511999999999',
+        message: 'Oi',
+        confirmTenantId: 'tenant-1',
+        confirm: true,
+        dryRun: true,
+      },
+    )).rejects.toBeInstanceOf(Error)
+  })
+
+  it('create ad WHATSAPP dryRun omits site linkUrl and builds CTWA creative payload', async () => {
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret('tok'),
+      page_access_token_enc: encryptSecret('page-tok'),
+      ad_account_id: '555',
+      page_id: 'page_99',
+      page_name: 'Page WA',
+    })
+    const graphFetch = vi.fn()
+
+    const result = await metaCreateAd(
+      { client, graphFetch },
+      {
+        tenantId: 'tenant-1',
+        adsetId: 'adset_wa',
+        name: 'Ad WhatsApp',
+        destinationType: 'WHATSAPP',
+        message: 'Fale no WhatsApp',
+        headline: 'Atendimento',
+        welcomeMessage: 'Olá! Posso ajudar?',
+        confirmTenantId: 'tenant-1',
+        confirm: true,
+      },
+    )
+
+    expect(result.success).toBe(true)
+    expect((result as any).dryRun).toBe(true)
+    expect((result as any).destinationType).toBe('WHATSAPP')
+    expect((result as any).linkUrl).toBeNull()
+    expect((result as any).callToAction).toBe('WHATSAPP_MESSAGE')
+    const linkData = (result as any).preview?.body?.creative?.object_story_spec?.link_data
+    expect(linkData).toMatchObject({
+      message: 'Fale no WhatsApp',
+      name: 'Atendimento',
+      link: 'https://api.whatsapp.com/send',
+      call_to_action: {
+        type: 'WHATSAPP_MESSAGE',
+        value: { app_destination: 'WHATSAPP' },
+      },
+    })
+    expect(linkData.call_to_action.value.link).toBeUndefined()
+    expect(linkData.page_welcome_message).toBeTruthy()
+    expect((result as any).preview?.notes?.some((n: string) => n.includes('destinationType: WHATSAPP'))).toBe(true)
+    expect(graphFetch).not.toHaveBeenCalled()
+  })
+
+  it('create ad WHATSAPP rejects fabricated linkUrl input', async () => {
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret('tok'),
+      page_access_token_enc: encryptSecret('page-tok'),
+      ad_account_id: '555',
+      page_id: 'page_1',
+    })
+
+    await expect(metaCreateAd(
+      { client, graphFetch: vi.fn() },
+      {
+        tenantId: 'tenant-1',
+        adsetId: 'adset_1',
+        name: 'WA bad',
+        destinationType: 'WHATSAPP',
+        linkUrl: 'https://wa.me/5511999999999',
+        message: 'Oi',
+        confirmTenantId: 'tenant-1',
+        confirm: true,
+        dryRun: true,
+      },
+    )).rejects.toBeInstanceOf(Error)
+  })
+
+  it('create ad without linkUrl fails on WEBSITE default', async () => {
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret('tok'),
+      page_access_token_enc: encryptSecret('page-tok'),
+      ad_account_id: '555',
+      page_id: 'page_1',
+    })
+
+    await expect(metaCreateAd(
+      { client, graphFetch: vi.fn() },
+      {
+        tenantId: 'tenant-1',
+        adsetId: 'adset_1',
+        name: 'Sem link',
+        message: 'Copy',
+        confirmTenantId: 'tenant-1',
+        confirm: true,
+        dryRun: true,
+      },
+    )).rejects.toBeInstanceOf(Error)
+  })
+
+  it('create adset WHATSAPP dryRun includes destination_type and promoted_object page_id', async () => {
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret('tok'),
+      ad_account_id: '555',
+      page_id: 'page_wa_1',
+    })
+    const graphFetch = vi.fn()
+
+    const result = await metaCreateAdset(
+      { client, graphFetch },
+      {
+        tenantId: 'tenant-1',
+        campaignId: 'cmp_eng',
+        name: 'Adset WA',
+        targetingTemplate: 'BR_25_54',
+        billingEvent: 'IMPRESSIONS',
+        optimizationGoal: 'CONVERSATIONS',
+        destinationType: 'WHATSAPP',
+        campaignObjective: 'OUTCOME_ENGAGEMENT',
+        dailyBudget: 5000,
+        confirmTenantId: 'tenant-1',
+        confirm: true,
+      },
+    )
+
+    expect(result.success).toBe(true)
+    expect((result as any).dryRun).toBe(true)
+    expect((result as any).destinationType).toBe('WHATSAPP')
+    expect((result as any).preview?.body).toMatchObject({
+      destination_type: 'WHATSAPP',
+      billing_event: 'IMPRESSIONS',
+      optimization_goal: 'CONVERSATIONS',
+      promoted_object: { page_id: 'page_wa_1' },
+    })
+    expect(graphFetch).not.toHaveBeenCalled()
+  })
+
+  it('create adset WHATSAPP rejects incompatible campaignObjective AWARENESS', async () => {
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret('tok'),
+      ad_account_id: '555',
+      page_id: 'page_1',
+    })
+
+    await expect(metaCreateAdset(
+      { client, graphFetch: vi.fn() },
+      {
+        tenantId: 'tenant-1',
+        campaignId: 'cmp_1',
+        name: 'Bad WA',
+        targetingTemplate: 'BR_18_65',
+        billingEvent: 'IMPRESSIONS',
+        optimizationGoal: 'CONVERSATIONS',
+        destinationType: 'WHATSAPP',
+        campaignObjective: 'OUTCOME_AWARENESS',
+        dailyBudget: 2000,
+        confirmTenantId: 'tenant-1',
+        confirm: true,
+        dryRun: true,
+      },
+    )).rejects.toBeInstanceOf(Error)
+  })
+
+  it('create adset WHATSAPP rejects LINK_CLICKS billingEvent', async () => {
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret('tok'),
+      ad_account_id: '555',
+      page_id: 'page_1',
+    })
+
+    await expect(metaCreateAdset(
+      { client, graphFetch: vi.fn() },
+      {
+        tenantId: 'tenant-1',
+        campaignId: 'cmp_1',
+        name: 'Bad billing',
+        targetingTemplate: 'BR_18_65',
+        billingEvent: 'LINK_CLICKS',
+        optimizationGoal: 'CONVERSATIONS',
+        destinationType: 'WHATSAPP',
+        dailyBudget: 2000,
+        confirmTenantId: 'tenant-1',
+        confirm: true,
+        dryRun: true,
+      },
+    )).rejects.toBeInstanceOf(Error)
+  })
+
   it('update adset budget dryRun default GETs before and skips POST', async () => {
     const client = createIntegrationClient({
       access_token_enc: encryptSecret('tok'),

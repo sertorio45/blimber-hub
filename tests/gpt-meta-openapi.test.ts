@@ -203,6 +203,9 @@ describe('gpt/blimber-meta OpenAPI pack', () => {
     expect(yaml).toContain('targetingTemplate')
     expect(yaml).toContain('BR_18_65')
     expect(yaml).toContain('linkUrl')
+    expect(yaml).toContain('destinationType')
+    expect(yaml).toContain('WHATSAPP')
+    expect(yaml).toContain('welcomeMessage')
     expect(yaml).toContain('confirmBudgetIncrease')
   })
   it('every OpenAPI path maps to an existing Nuxt server route file', () => {

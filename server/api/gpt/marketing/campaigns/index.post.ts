@@ -1,0 +1,24 @@
+import { defineEventHandler, readBody } from 'h3'
+import {
+  optionalBool,
+  optionalString,
+  runMarketingGptTool,
+} from '~/server/utils/blimber-gpt-api'
+
+/** Cria campanha EDITORIAL (social_campaigns). dryRun default true. */
+export default defineEventHandler(async (event) => {
+  const body = (await readBody(event)) as Record<string, unknown>
+  return runMarketingGptTool(event, 'marketing_create_campaign', {
+    tenantId: optionalString(body.tenantId),
+    name: optionalString(body.name),
+    objective: optionalString(body.objective) ?? '',
+    status: optionalString(body.status),
+    startsAt: body.startsAt === null ? null : optionalString(body.startsAt),
+    endsAt: body.endsAt === null ? null : optionalString(body.endsAt),
+    briefingSummary: optionalString(body.briefingSummary) ?? '',
+    actorUserId: optionalString(body.actorUserId),
+    confirmTenantId: optionalString(body.confirmTenantId),
+    confirm: body.confirm === true ? true : body.confirm,
+    dryRun: optionalBool(body.dryRun),
+  })
+})

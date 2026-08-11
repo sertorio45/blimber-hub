@@ -35,9 +35,9 @@ Mutações de status: body com `tenantId`, `status` (ACTIVE\|PAUSED), `confirm: 
 
 Create campaign: `name`, `objective` (OUTCOME_*), `confirm` + `confirmTenantId`; default `status=PAUSED`, `dryRun=true`; ACTIVE exige `confirmActive=true`.
 
-Create adset: `campaignId`, `name`, `targetingTemplate` (`BR_18_65`|`BR_25_54`|`BR_18_34`|`BR_35_65`), `billingEvent`, `optimizationGoal`, budget (`dailyBudget`|`lifetimeBudget`), `confirm` + `confirmTenantId`; default `PAUSED` + `dryRun=true`.
+Create adset: `campaignId`, `name`, `targetingTemplate` (`BR_*`), `billingEvent`, `optimizationGoal`, budget, `confirm` + `confirmTenantId`; `destinationType` WEBSITE|WHATSAPP (CTWA: IMPRESSIONS + CONVERSATIONS + page_id); default `PAUSED` + `dryRun=true`.
 
-Create ad: `adsetId`, `name`, `linkUrl` (https), `message`, `confirm` + `confirmTenantId`; opcionais `headline`/`description`/`callToAction`/`imageUrl`|`imageHash`; default `PAUSED` + `dryRun=true`. Exige page_id + page token. Nunca inventar URLs.
+Create ad: `adsetId`, `name`, `message`, `confirm` + `confirmTenantId`; `destinationType` WEBSITE (exige `linkUrl` https de site; rejeita wa.me) ou WHATSAPP (sem linkUrl; CTA WHATSAPP_MESSAGE). Opcionais: headline/description/imageUrl|imageHash/welcomeMessage (só WA). Default `PAUSED` + `dryRun=true`. Exige page_id + page token. Nunca inventar URLs.
 
 Edits (dryRun default true): budget (`dailyBudget`|`lifetimeBudget`, `confirmBudgetIncrease` se aumento % alto); targeting (`targetingTemplate`); copy (≥1 campo copy/link); media (`imageUrl`|`imageHash`).
 
