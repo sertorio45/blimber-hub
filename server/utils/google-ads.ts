@@ -1,6 +1,11 @@
 import process from 'node:process'
 
 import { createError } from 'h3'
+import {
+  GOOGLE_ADS_TEST_TOKEN_ACCOUNTS_WARNING,
+  GOOGLE_ADS_TEST_TOKEN_USER_MESSAGE,
+  isGoogleAdsTestAccessLimitation,
+} from '~/constants/google-ads'
 import { decryptSecret } from '~/server/utils/marketing'
 
 /**
@@ -41,14 +46,6 @@ export function resolveGoogleAdsDeveloperToken(config?: Record<string, any> | nu
   if (fromEnv)
     return fromEnv
   return decryptSecret(config?.developer_token_enc)
-}
-
-export function resolveGoogleAdsLoginCustomerId(config?: Record<string, any> | null): string | null {
-  const fromConfig = normalizeGoogleCustomerId(config?.login_customer_id)
-  if (fromConfig)
-    return fromConfig
-  const fromEnv = normalizeGoogleCustomerId(process.env.GOOGLE_ADS_LOGIN_CUSTOMER_ID)
-  return fromEnv || null
 }
 
 export function googleOAuthClientCredentials() {
@@ -105,56 +102,87 @@ export async function getGoogleAccessToken(config: Record<string, any>): Promise
   }
 }
 
+/**
+ * Auth headers for Google Ads REST.
+ * Intentionally omits `login-customer-id` — each tenant uses OAuth + selected
+ * customer_id with direct access (no platform MCC / global manager header).
+ */
 function buildGoogleAdsHeaders(
   accessToken: string,
   developerToken: string,
-  loginCustomerId?: string | null,
 ): Record<string, string> {
-  const headers: Record<string, string> = {
+  return {
     'Authorization': `Bearer ${accessToken}`,
     'developer-token': developerToken,
     'Content-Type': 'application/json',
   }
-  const loginId = normalizeGoogleCustomerId(loginCustomerId)
-  if (loginId)
-    headers['login-customer-id'] = loginId
-  return headers
 }
 
-function extractGoogleAdsErrorMessage(error: any): string {
-  const status = error?.statusCode || error?.status
+/** Flatten Google Ads API error payloads into a single diagnostic string. */
+function collectGoogleAdsErrorTexts(error: any): string {
+  const topMessage
+    = error?.data?.error?.message
+      || error?.data?.message
+      || error?.message
+      || ''
   const details = error?.data?.error?.details
-    || error?.data?.error?.message
-    || error?.data?.message
-    || error?.message
+
+  const texts: string[] = []
+  if (typeof topMessage === 'string' && topMessage.trim())
+    texts.push(topMessage.trim())
+
+  if (typeof details === 'string' && details.trim()) {
+    texts.push(details.trim())
+  }
+  else if (Array.isArray(details)) {
+    for (const detail of details) {
+      const errors = detail?.errors || [detail]
+      for (const entry of errors) {
+        const message = entry?.message || entry?.errorCode || ''
+        if (typeof message === 'string' && message.trim())
+          texts.push(message.trim())
+        else if (message && typeof message === 'object') {
+          // e.g. { authorizationError: "DEVELOPER_TOKEN_NOT_APPROVED" }
+          texts.push(...Object.values(message).map(String).filter(Boolean))
+        }
+        const code = entry?.errorCode
+        if (code && typeof code === 'object')
+          texts.push(...Object.values(code).map(String).filter(Boolean))
+      }
+    }
+  }
+
+  return texts.join('; ')
+}
+
+export function extractGoogleAdsErrorMessage(error: any): string {
+  const status = error?.statusCode || error?.status
+  const raw = collectGoogleAdsErrorTexts(error)
 
   if (
     status === 404
-    || /Not Found/i.test(String(details || ''))
-    || /UNSUPPORTED_VERSION|API_VERSION|version has been sunset/i.test(String(details || ''))
+    || /Not Found/i.test(raw)
+    || /UNSUPPORTED_VERSION|API_VERSION|version has been sunset/i.test(raw)
   ) {
     return `Versão da API do Google Ads indisponível (${GOOGLE_ADS_API_VERSION}). Atualize a integração ou tente novamente mais tarde.`
   }
 
-  if (typeof details === 'string') {
+  if (isGoogleAdsTestAccessLimitation(raw))
+    return GOOGLE_ADS_TEST_TOKEN_USER_MESSAGE
+
+  if (raw) {
     // Avoid dumping raw $fetch URL noise like: [GET] "https://...": 404 Not Found
-    if (/^\[(GET|POST|PUT|PATCH|DELETE)\]\s+"/i.test(details))
+    if (/^\[(GET|POST|PUT|PATCH|DELETE)\]\s+"/i.test(raw))
       return 'Falha ao consultar a API do Google Ads. Verifique a conexão da conta e o developer token.'
-    return details
+    return raw
   }
-  if (Array.isArray(details)) {
-    const texts = details
-      .flatMap((d: any) => d?.errors || [d])
-      .map((e: any) => e?.message || e?.errorCode || '')
-      .filter(Boolean)
-    if (texts.length)
-      return texts.join('; ')
-  }
+
   return 'Falha ao consultar a API do Google Ads'
 }
 
-function isTestAccessLimitation(message: string): boolean {
-  return /TEST_ACCOUNT|only approved for use with test accounts|developer token.*test|TEST_ACCESS|not yet approved/i.test(message)
+function isManagerOnlyAccessError(message: string): boolean {
+  return /login.?customer.?id|CUSTOMER_NOT_ENABLED|USER_PERMISSION_DENIED|NOT_ADS_USER|authorization.?error|PERMISSION_DENIED/i.test(message)
+    && /manager|login.?customer|acting.?user|client.?customer/i.test(message)
 }
 
 export function throwGoogleAdsConfigError(developerToken: string | null): never {
@@ -175,8 +203,7 @@ export type GoogleAdsAccountOption = {
   id: string
   name: string
   is_manager: boolean
-  login_customer_id: string | null
-  /** True when customer.descriptive_name (or customer_client) was resolved. */
+  /** True when customer.descriptive_name was resolved via direct access. */
   has_name: boolean
 }
 
@@ -225,10 +252,9 @@ async function searchGoogleAds(
   customerId: string,
   accessToken: string,
   developerToken: string,
-  loginCustomerId: string | null | undefined,
   query: string,
 ): Promise<{ results?: any[], errorMessage: string | null }> {
-  const headers = buildGoogleAdsHeaders(accessToken, developerToken, loginCustomerId)
+  const headers = buildGoogleAdsHeaders(accessToken, developerToken)
   try {
     const response = await $fetch<{ results?: any[] }>(
       googleAdsApiUrl(`customers/${customerId}/googleAds:search`),
@@ -249,13 +275,11 @@ async function fetchCustomerProfile(
   customerId: string,
   accessToken: string,
   developerToken: string,
-  loginCustomerId?: string | null,
 ): Promise<ProfileAttempt> {
   const { results, errorMessage } = await searchGoogleAds(
     customerId,
     accessToken,
     developerToken,
-    loginCustomerId,
     'SELECT customer.id, customer.descriptive_name, customer.manager FROM customer LIMIT 1',
   )
 
@@ -281,77 +305,18 @@ async function fetchCustomerProfile(
 }
 
 /**
- * One GAQL against an MCC returns every linked client with descriptive_name —
- * avoids O(n) per-customer searches when a manager is available.
- */
-async function fetchCustomerClientsUnderManager(
-  managerId: string,
-  accessToken: string,
-  developerToken: string,
-): Promise<{ clients: CustomerProfile[], errorMessage: string | null }> {
-  const { results, errorMessage } = await searchGoogleAds(
-    managerId,
-    accessToken,
-    developerToken,
-    managerId,
-    `SELECT
-      customer_client.client_customer,
-      customer_client.descriptive_name,
-      customer_client.manager,
-      customer_client.id,
-      customer_client.status
-    FROM customer_client
-    WHERE customer_client.status != 'CANCELED'`,
-  )
-
-  if (!results) {
-    return { clients: [], errorMessage }
-  }
-
-  const clients: CustomerProfile[] = []
-  for (const row of results) {
-    const client = row?.customerClient
-    if (!client)
-      continue
-    const id = normalizeGoogleCustomerId(
-      String(client.id || String(client.clientCustomer || '').split('/').pop() || ''),
-    )
-    if (!id)
-      continue
-    const descriptiveName = String(client.descriptiveName || '').trim()
-    clients.push({
-      id,
-      name: descriptiveName || fallbackAccountName(id),
-      isManager: Boolean(client.manager),
-      hasName: Boolean(descriptiveName),
-    })
-  }
-
-  return { clients, errorMessage: null }
-}
-
-/**
- * Lists OAuth-accessible Google Ads customers and resolves descriptive names.
- * When a client account requires an MCC, attaches the working login-customer-id.
+ * Lists OAuth-accessible Google Ads customers and resolves descriptive names
+ * via direct access only (no login-customer-id / MCC header).
  *
- * Enrichment strategy (keeps ~dozens of accounts in seconds, not O(n²)):
- * 1. Probe each ID with preferred MCC / direct access (concurrency 5)
- * 2. Bulk-pull names via customer_client on each confirmed manager
- * 3. Fill remaining gaps only against known managers (not every peer)
+ * Limitation: client accounts that Google only allows to query through a
+ * manager account will appear in listAccessibleCustomers but may lack names
+ * and fail report GAQL — those setups are not supported without MCC.
  */
 export async function listGoogleAdsAccounts(
   accessToken: string,
   developerToken: string,
-  preferredLoginCustomerId?: string | null,
 ): Promise<GoogleAdsAccountListResult> {
-  const preferredLogin = preferredLoginCustomerId
-    ? normalizeGoogleCustomerId(preferredLoginCustomerId)
-    : null
-  const listHeaders = buildGoogleAdsHeaders(
-    accessToken,
-    developerToken,
-    preferredLogin,
-  )
+  const listHeaders = buildGoogleAdsHeaders(accessToken, developerToken)
 
   if (!developerToken?.trim()) {
     throwGoogleAdsConfigError(null)
@@ -377,6 +342,12 @@ export async function listGoogleAdsAccounts(
         statusMessage: 'Sessão Google expirada. Desconecte e conecte novamente o Google Ads.',
       })
     }
+    if (isGoogleAdsTestAccessLimitation(message)) {
+      throw createError({
+        statusCode: 403,
+        statusMessage: GOOGLE_ADS_TEST_TOKEN_USER_MESSAGE,
+      })
+    }
     if (/DEVELOPER_TOKEN|developer.?token|PERMISSION_DENIED/i.test(message)) {
       throw createError({
         statusCode: 403,
@@ -399,7 +370,6 @@ export async function listGoogleAdsAccounts(
   const ids = resourceNames
     .map(name => normalizeGoogleCustomerId(name.split('/').pop() || name))
     .filter(Boolean)
-  const accessibleIds = new Set(ids)
 
   if (!ids.length)
     return { accounts: [], warning: null }
@@ -407,91 +377,20 @@ export async function listGoogleAdsAccounts(
   const byId = new Map<string, GoogleAdsAccountOption>()
   const enrichmentErrors: string[] = []
 
-  const assign = (
-    id: string,
-    profile: CustomerProfile,
-    loginCustomerId: string | null,
-  ) => {
-    const existing = byId.get(id)
-    // Never overwrite a resolved descriptive name with a fallback.
-    if (existing?.has_name && !profile.hasName)
-      return
-
-    byId.set(id, {
-      id: profile.id,
-      name: profile.name,
-      is_manager: profile.isManager,
-      login_customer_id: loginCustomerId || existing?.login_customer_id || null,
-      has_name: Boolean(existing?.has_name || profile.hasName),
-    })
-  }
-
-  // Phase 1: preferred MCC (if any), then direct access — bounded concurrency.
   await mapWithConcurrency(ids, PROFILE_FETCH_CONCURRENCY, async (id) => {
-    if (preferredLogin) {
-      const withPreferred = await fetchCustomerProfile(id, accessToken, developerToken, preferredLogin)
-      if (withPreferred.profile) {
-        assign(id, withPreferred.profile, preferredLogin)
-        return
-      }
-      if (withPreferred.errorMessage)
-        enrichmentErrors.push(withPreferred.errorMessage)
-    }
-
-    const direct = await fetchCustomerProfile(id, accessToken, developerToken, null)
+    const direct = await fetchCustomerProfile(id, accessToken, developerToken)
     if (direct.profile) {
-      assign(id, direct.profile, null)
+      byId.set(id, {
+        id: direct.profile.id,
+        name: direct.profile.name,
+        is_manager: direct.profile.isManager,
+        has_name: direct.profile.hasName,
+      })
       return
     }
     if (direct.errorMessage)
       enrichmentErrors.push(direct.errorMessage)
   })
-
-  const managerIds = [
-    ...new Set([
-      ...(preferredLogin ? [preferredLogin] : []),
-      ...[...byId.values()].filter(row => row.is_manager).map(row => row.id),
-    ]),
-  ]
-
-  // Phase 2: bulk names from each MCC via customer_client (1 request per manager).
-  await mapWithConcurrency(managerIds, PROFILE_FETCH_CONCURRENCY, async (managerId) => {
-    const { clients, errorMessage } = await fetchCustomerClientsUnderManager(
-      managerId,
-      accessToken,
-      developerToken,
-    )
-    if (errorMessage) {
-      enrichmentErrors.push(errorMessage)
-      return
-    }
-    for (const client of clients) {
-      if (!accessibleIds.has(client.id))
-        continue
-      const loginId = client.isManager && client.id === managerId ? null : managerId
-      assign(client.id, client, loginId)
-    }
-  })
-
-  // Phase 3: still-pending IDs only against confirmed managers (not every peer).
-  for (const managerId of managerIds) {
-    const stillPending = ids.filter((id) => {
-      const row = byId.get(id)
-      return id !== managerId && (!row || !row.has_name)
-    })
-    if (!stillPending.length)
-      break
-
-    await mapWithConcurrency(stillPending, PROFILE_FETCH_CONCURRENCY, async (id) => {
-      const attempt = await fetchCustomerProfile(id, accessToken, developerToken, managerId)
-      if (attempt.profile) {
-        assign(id, attempt.profile, managerId)
-        return
-      }
-      if (attempt.errorMessage)
-        enrichmentErrors.push(attempt.errorMessage)
-    })
-  }
 
   for (const id of ids) {
     if (byId.has(id))
@@ -500,7 +399,6 @@ export async function listGoogleAdsAccounts(
       id,
       name: fallbackAccountName(id),
       is_manager: false,
-      login_customer_id: preferredLogin,
       has_name: false,
     })
   }
@@ -516,20 +414,21 @@ export async function listGoogleAdsAccounts(
   let warning: string | null = null
   if (unnamedCount > 0) {
     const sample = enrichmentErrors.find(Boolean) || ''
-    if (isTestAccessLimitation(sample) || enrichmentErrors.some(isTestAccessLimitation)) {
-      warning
-        = 'Algumas contas aparecem só com ID: o developer token em modo Test só consulta detalhes de contas de teste. '
-          + 'Para ver o nome de contas de produção, use um token Basic/Standard no API Center. '
-          + 'Opcional: defina GOOGLE_ADS_LOGIN_CUSTOMER_ID com o ID do MCC.'
+    const managerOnly = enrichmentErrors.some(isManagerOnlyAccessError)
+      || isManagerOnlyAccessError(sample)
+
+    if (isGoogleAdsTestAccessLimitation(sample) || enrichmentErrors.some(isGoogleAdsTestAccessLimitation)) {
+      warning = GOOGLE_ADS_TEST_TOKEN_ACCOUNTS_WARNING
     }
-    else if (unnamedCount === accounts.length) {
+    else if (managerOnly || unnamedCount === accounts.length) {
       warning
-        = 'Não foi possível obter o nome das contas. Confira o developer token e, se as contas forem de um MCC, '
-          + 'defina GOOGLE_ADS_LOGIN_CUSTOMER_ID (login-customer-id do gerente).'
+        = 'Não foi possível obter o nome de algumas contas com acesso direto. '
+          + 'Contas acessíveis apenas via conta gerente (MCC) não são suportadas neste fluxo — '
+          + 'conecte um usuário Google com acesso direto à conta de anúncios.'
     }
     else {
       warning
-        = `${unnamedCount} conta(s) sem nome descritivo. Se forem clientes de um MCC, configure GOOGLE_ADS_LOGIN_CUSTOMER_ID.`
+        = `${unnamedCount} conta(s) sem nome descritivo. Confira o developer token e o acesso direto do usuário OAuth à conta.`
     }
   }
 
@@ -539,7 +438,6 @@ export async function listGoogleAdsAccounts(
 export function googleAdsSearchHeaders(
   accessToken: string,
   developerToken: string,
-  loginCustomerId?: string | null,
 ) {
-  return buildGoogleAdsHeaders(accessToken, developerToken, loginCustomerId)
+  return buildGoogleAdsHeaders(accessToken, developerToken)
 }

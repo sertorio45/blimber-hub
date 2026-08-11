@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import type { MarketingOverviewPeriod, MetaOverviewBlock, MetaSeriesPoint } from '~/types/marketing'
 import type { MetaReportTemplateId } from '~/types/marketing-reports'
+import type { ReportTableColumn } from '@/components/marketing/ReportInsightTable.vue'
 
 import MetaBrandIcon from '@/components/brand/MetaBrandIcon.vue'
-import MiniSparkline from '@/components/marketing/MiniSparkline.vue'
+import ReportInsightTable from '@/components/marketing/ReportInsightTable.vue'
+import ReportKpiCard from '@/components/marketing/ReportKpiCard.vue'
+import ReportTrendChart from '@/components/marketing/ReportTrendChart.vue'
 import { Switch } from '@/components/ui/switch'
 import {
   detailMetricsOf,
@@ -145,7 +148,7 @@ function valuesFromSeries(key: keyof MetaSeriesPoint | string): number[] {
   }
   const m = displayMetrics.value as Record<string, number | null>
   const fallback = Number(m[key] ?? 0) || 0
-  return [fallback * 0.88, fallback * 0.94, fallback * 0.97, fallback, fallback * 1.02]
+  return fallback > 0 ? [fallback * 0.9, fallback * 0.95, fallback] : []
 }
 
 function trendHalf(values: number[]): number | null {
@@ -160,30 +163,47 @@ function trendHalf(values: number[]): number | null {
   return ((b - a) / base) * 100
 }
 
-function trendVisual(pct: number | null, invert: boolean) {
-  if (pct == null || Number.isNaN(pct))
-    return { icon: null as string | null, label: '' }
-  const effective = invert ? -pct : pct
-  const icon = effective >= 0 ? 'lucide:trending-up' : 'lucide:trending-down'
-  const label = `${effective >= 0 ? '+' : ''}${effective.toFixed(0)}%`
-  return { icon, label }
+function invertKey(key: string) {
+  return key.includes('cost') || key === 'cpc' || key === 'cpm'
 }
 
-function fmt(key: string) {
-  const def = template.value.metrics.find(d => d.key === key)
+function metricValue(key: string) {
   let value = readMetricBag(displayMetrics.value as any, key)
   if (key === 'cost_per_result' && (displayMetrics.value.results || 0) <= 0)
     value = null
   if (key === 'roas' && (value == null || value <= 0))
     value = null
-  return formatReportMetricValue(value, def?.format || 'integer')
+  return value
 }
 
-function primaryTrend(key: string) {
-  const spark = valuesFromSeries(key)
-  const invert = key.includes('cost') || key === 'cpc' || key === 'cpm'
-  return trendVisual(trendHalf(spark), invert)
-}
+const trendData = computed(() =>
+  accountSeries.value.map(p => ({
+    date: p.date,
+    investimento: Number(p.spend.toFixed(2)),
+    resultados: p.results,
+    alcance: p.reach,
+  })),
+)
+
+const campaignRows = computed(() =>
+  campaignSelectOptions.value.map(c => ({
+    ...c,
+    _id: c.id,
+    objective_label: objectivePt(c.objective),
+    status_label: metaStatusPt(c.status),
+  })),
+)
+
+const campaignColumns: ReportTableColumn[] = [
+  { key: 'name', label: 'Campanha', format: 'raw' },
+  { key: 'objective_label', label: 'Objetivo', format: 'raw' },
+  { key: 'spend', label: 'Investimento', align: 'right', format: 'currency' },
+  { key: 'impressions', label: 'Impressões', align: 'right', format: 'integer' },
+  { key: 'clicks', label: 'Cliques', align: 'right', format: 'integer' },
+  { key: 'ctr', label: 'CTR', align: 'right', format: 'percent' },
+  { key: 'results', label: 'Resultados', align: 'right', format: 'decimal' },
+  { key: 'cost_per_result', label: 'Custo / resultado', align: 'right', format: 'currency' },
+]
 
 watch(
   () => campaigns.value.map(c => c.id).join(','),
@@ -227,7 +247,7 @@ watch(activeCampaignsOnly, () => {
             v-if="selectedCampaignId !== 'all' && accountSeries.length"
             class="mt-2 text-xs text-muted-foreground"
           >
-            Os mini gráficos usam dados diários da conta; os números refletem a campanha selecionada.
+            Os gráficos usam dados diários da conta; os números refletem a campanha selecionada.
           </p>
         </div>
 
@@ -291,61 +311,31 @@ watch(activeCampaignsOnly, () => {
     <CardContent class="p-0">
       <div v-if="loading" class="space-y-4 p-4 sm:p-6">
         <div class="grid gap-4 lg:grid-cols-3">
-          <div class="space-y-3 rounded-lg border p-4">
+          <div v-for="n in 3" :key="`meta-skeleton-p-${n}`" class="space-y-3 rounded-lg border p-4">
             <Skeleton class="h-3 w-24" />
             <Skeleton class="h-8 w-32" />
             <Skeleton class="h-10 w-full" />
           </div>
-          <div class="space-y-3 rounded-lg border p-4">
-            <Skeleton class="h-3 w-24" />
-            <Skeleton class="h-8 w-28" />
-            <Skeleton class="h-10 w-full" />
-          </div>
-          <div class="space-y-3 rounded-lg border p-4">
-            <Skeleton class="h-3 w-28" />
-            <Skeleton class="h-8 w-28" />
-            <Skeleton class="h-10 w-full" />
-          </div>
         </div>
-        <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <div v-for="n in 8" :key="`meta-skeleton-metric-${n}`" class="space-y-2 rounded-lg border p-3">
-            <Skeleton class="h-3 w-20" />
-            <Skeleton class="h-6 w-24" />
-            <Skeleton class="h-8 w-full" />
-          </div>
-        </div>
+        <Skeleton class="h-[220px] w-full rounded-lg" />
       </div>
 
       <template v-else>
         <div class="border-b px-4 py-4 sm:px-6">
           <div class="grid gap-4 lg:grid-cols-3">
-            <div
+            <ReportKpiCard
               v-for="item in primaryDefs"
               :key="item.key"
-              class="flex flex-col justify-between gap-3 rounded-lg border bg-card p-4"
-            >
-              <div class="flex items-start justify-between gap-2">
-                <div>
-                  <p class="text-xs font-medium text-muted-foreground">
-                    {{ item.label }}
-                  </p>
-                  <p class="mt-1 text-2xl font-semibold tabular-nums">
-                    {{ fmt(item.key) }}
-                  </p>
-                  <div
-                    v-if="primaryTrend(item.key).icon"
-                    class="mt-1 flex items-center gap-1 text-xs text-muted-foreground"
-                  >
-                    <Icon :name="primaryTrend(item.key).icon!" class="h-3.5 w-3.5" />
-                    {{ primaryTrend(item.key).label }}
-                  </div>
-                </div>
-              </div>
-              <MiniSparkline
-                :tone="item.muted ? 'muted' : 'primary'"
-                :values="valuesFromSeries(item.key)"
-              />
-            </div>
+              :label="item.label"
+              :value="metricValue(item.key)"
+              :format="item.format"
+              :delta="trendHalf(valuesFromSeries(item.key))"
+              :invert-delta="invertKey(item.key)"
+              delta-suffix="tendência"
+              :sparkline="valuesFromSeries(item.key)"
+              :muted="item.muted"
+              size="primary"
+            />
           </div>
         </div>
 
@@ -354,25 +344,67 @@ watch(activeCampaignsOnly, () => {
             Detalhamento
           </p>
           <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <div
+            <ReportKpiCard
               v-for="item in detailDefs"
               :key="item.key"
-              class="flex min-h-[100px] flex-col justify-between gap-2 rounded-lg border bg-card p-3"
-            >
-              <div>
-                <p class="text-xs font-medium text-muted-foreground">
-                  {{ item.label }}
-                </p>
-                <p class="mt-1 text-lg font-semibold tabular-nums">
-                  {{ fmt(item.key) }}
-                </p>
-              </div>
-              <MiniSparkline
-                :tone="item.muted ? 'muted' : 'primary'"
-                :values="valuesFromSeries(item.key)"
-              />
-            </div>
+              :label="item.label"
+              :value="metricValue(item.key)"
+              :format="item.format"
+              :delta="trendHalf(valuesFromSeries(item.key))"
+              :invert-delta="invertKey(item.key)"
+              delta-suffix="tendência"
+              :sparkline="valuesFromSeries(item.key)"
+              :muted="item.muted"
+              size="detail"
+            />
           </div>
+        </div>
+
+        <div v-if="trendData.length" class="border-b px-4 py-4 sm:px-6">
+          <div class="mb-3">
+            <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Investimento vs resultados
+            </p>
+            <p class="mt-0.5 text-sm text-muted-foreground">
+              Evolução diária da conta
+            </p>
+          </div>
+          <ReportTrendChart
+            :data="trendData"
+            index="date"
+            :series="[
+              { key: 'investimento', label: 'Investimento (R$)' },
+              { key: 'resultados', label: 'Resultados' },
+              { key: 'alcance', label: 'Alcance' },
+            ]"
+            :height="240"
+            :y-formatter="(v) => formatReportMetricValue(v, v >= 100 ? 'integer' : 'decimal')"
+          />
+        </div>
+
+        <div class="px-4 py-4 sm:px-6">
+          <p class="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Campanhas
+          </p>
+          <ReportInsightTable
+            :columns="campaignColumns"
+            :rows="campaignRows as any"
+            :max-rows="40"
+            empty-text="Sem campanhas neste modelo/período."
+          >
+            <template #cell-name="{ row }">
+              <button
+                type="button"
+                class="text-left font-medium hover:underline"
+                @click="selectedCampaignId = String(row.id)"
+              >
+                {{ row.name || row.id }}
+              </button>
+              <p v-if="row.status_label" class="text-xs text-muted-foreground">
+                {{ row.status_label }}
+              </p>
+            </template>
+          </ReportInsightTable>
         </div>
       </template>
     </CardContent>

@@ -3,6 +3,7 @@ import process from 'node:process'
 import { createError, defineEventHandler, readBody } from 'h3'
 
 import { normalizeGoogleCustomerId } from '~/server/utils/google-ads'
+import { normalizeGa4PropertyId } from '~/server/utils/marketing-reports'
 import { clearMarketingCampaignCacheForTenant, decryptSecret, encryptSecret } from '~/server/utils/marketing'
 import { recordSocialAudit } from '~/server/utils/social-audit'
 import { requireSocialContext } from '~/server/utils/social-context'
@@ -79,12 +80,29 @@ export default defineEventHandler(async (event) => {
       else
         delete config.customer_id
     }
-    if (incomingConfig.login_customer_id != null) {
-      const loginId = normalizeGoogleCustomerId(incomingConfig.login_customer_id)
-      if (loginId)
-        config.login_customer_id = loginId
-      else
-        delete config.login_customer_id
+    // Platform / tenant MCC (login-customer-id) is not used — strip legacy field.
+    delete config.login_customer_id
+    delete incomingConfig.login_customer_id
+  }
+
+  if (provider === 'google_analytics') {
+    const rawProperty = incomingConfig.property_id ?? incomingConfig.analytics_account_id
+    if (rawProperty != null) {
+      const propertyId = normalizeGa4PropertyId(rawProperty)
+      if (propertyId) {
+        config.property_id = propertyId
+        config.analytics_account_id = propertyId
+      }
+      else if (String(rawProperty || '').trim()) {
+        throw createError({
+          statusCode: 400,
+          statusMessage: 'ID de propriedade GA4 inválido. Selecione uma propriedade numérica da lista (não use Measurement ID G-XXXX).',
+        })
+      }
+      else {
+        delete config.property_id
+        delete config.analytics_account_id
+      }
     }
   }
 

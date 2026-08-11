@@ -287,6 +287,11 @@ export const GOOGLE_ADS_REPORT_TEMPLATES: ReportTemplateDef[] = [
   },
 ]
 
+/**
+ * GA4 Data API metricNames are advisory for the template UI.
+ * Server always fetches a safe core set (≤10) + optional ecommerce in a
+ * separate request. UI key `conversions` maps to API `keyEvents`.
+ */
 export const ANALYTICS_REPORT_TEMPLATES: ReportTemplateDef[] = [
   {
     id: 'overview',
@@ -331,7 +336,7 @@ export const ANALYTICS_REPORT_TEMPLATES: ReportTemplateDef[] = [
       { key: 'screenPageViews', label: 'Visualizações', format: 'integer', primary: true },
       { key: 'newUsers', label: 'Novos usuários', format: 'integer' },
       { key: 'bounceRate', label: 'Taxa de rejeição', format: 'percent', muted: true },
-      { key: 'averageSessionDuration', label: 'Duração média (s)', format: 'decimal' },
+      { key: 'averageSessionDuration', label: 'Duração média', format: 'decimal' },
     ],
     analytics: {
       metricNames: [
@@ -339,9 +344,9 @@ export const ANALYTICS_REPORT_TEMPLATES: ReportTemplateDef[] = [
         'totalUsers',
         'newUsers',
         'screenPageViews',
+        'engagedSessions',
         'bounceRate',
         'averageSessionDuration',
-        'engagedSessions',
         'engagementRate',
       ],
       dimensionNames: ['sessionDefaultChannelGroup'],
@@ -383,17 +388,19 @@ export const ANALYTICS_REPORT_TEMPLATES: ReportTemplateDef[] = [
       { key: 'averageSessionDuration', label: 'Duração média (s)', format: 'decimal', primary: true },
       { key: 'eventCount', label: 'Eventos', format: 'integer' },
       { key: 'sessions', label: 'Sessões', format: 'integer' },
+      { key: 'conversions', label: 'Eventos-chave', format: 'decimal' },
       { key: 'bounceRate', label: 'Taxa de rejeição', format: 'percent', muted: true },
     ],
     analytics: {
       metricNames: [
+        'totalUsers',
         'engagementRate',
         'engagedSessions',
         'averageSessionDuration',
         'eventCount',
+        'conversions',
         'sessions',
         'bounceRate',
-        'totalUsers',
       ],
     },
   },

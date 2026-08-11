@@ -85,13 +85,18 @@ function overviewQuery() {
   return query
 }
 
+const forceRefreshOnce = ref(false)
+
 const { data, pending, showSkeleton, refresh } = useMarketingFetch({
   key: () =>
     `marketing-reports-${tenantId.value}-${source.value}-${metaTemplate.value}-${googleTemplate.value}-${analyticsTemplate.value}-${datePreset.value}-${dateStart.value}-${dateEnd.value}-${metaActiveOnly.value}`,
   handler: async () => {
-    const response = await $fetch<{ data: any }>('/api/marketing/overview', {
-      query: overviewQuery(),
-    })
+    const query = overviewQuery()
+    if (forceRefreshOnce.value) {
+      query.force_refresh = 'true'
+      forceRefreshOnce.value = false
+    }
+    const response = await $fetch<{ data: any }>('/api/marketing/overview', { query })
     return response.data
   },
   default: () => null as any,
@@ -120,19 +125,22 @@ async function refreshMarketing() {
   if (now - lastRefreshAt.value < 1200)
     return
   lastRefreshAt.value = now
+  forceRefreshOnce.value = true
   await refresh()
 }
 </script>
 
 <template>
   <div class="w-full flex flex-col gap-6">
-    <div>
-      <h1 class="text-2xl font-bold">
-        Relatórios de Marketing
-      </h1>
-      <p class="text-muted-foreground">
-        Acompanhe campanhas e resultados de Google Ads, Google Analytics e Meta com modelos por tipo de campanha.
-      </p>
+    <div class="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+      <div>
+        <h1 class="text-2xl font-bold tracking-tight">
+          Relatórios de Marketing
+        </h1>
+        <p class="text-muted-foreground">
+          Visão executiva de Google Ads, Google Analytics e Meta — KPIs, tendências e detalhamento por canal.
+        </p>
+      </div>
     </div>
 
     <MarketingPageSkeleton v-if="showSkeleton" variant="reports" content-only />
@@ -144,7 +152,7 @@ async function refreshMarketing() {
       />
 
       <div class="min-w-0 flex flex-1 flex-col gap-6">
-        <div class="flex flex-col gap-4 lg:flex-row lg:flex-wrap lg:items-start lg:justify-between">
+        <div class="flex flex-col gap-4 rounded-xl border bg-card/50 p-4 lg:flex-row lg:flex-wrap lg:items-end lg:justify-between">
           <div class="flex flex-wrap items-center gap-2">
             <Label class="whitespace-nowrap text-xs text-muted-foreground">
               Período
@@ -192,7 +200,7 @@ async function refreshMarketing() {
             />
 
             <Button variant="outline" :disabled="pending" @click="refreshMarketing">
-              <Icon name="lucide:refresh-cw" class="mr-2 h-4 w-4" />
+              <Icon name="lucide:refresh-cw" class="mr-2 h-4 w-4" :class="pending ? 'animate-spin' : ''" />
               Atualizar
             </Button>
           </div>

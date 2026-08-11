@@ -67,6 +67,12 @@ export default defineEventHandler(async (event) => {
       google_ads_needs_account: row.provider === 'google_ads'
         ? Boolean(token && !config.customer_id)
         : undefined,
+      google_analytics_ready: row.provider === 'google_analytics'
+        ? Boolean(token && (config.property_id || config.analytics_account_id))
+        : undefined,
+      google_analytics_needs_property: row.provider === 'google_analytics'
+        ? Boolean(token && !(config.property_id || config.analytics_account_id))
+        : undefined,
       capi_enabled: Boolean(config.capi_enabled),
       missing_publish_scopes: missingPublishScopes,
       can_publish: row.provider === 'meta'
