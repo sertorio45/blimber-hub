@@ -2,11 +2,11 @@
 name: blimber-meta-ads
 description: >-
   Gestão e insights de Meta Ads no Blimber Hub (campanhas, adsets, ads,
-  insights, status de integração). Uso principal = ChatGPT GPT personalizado +
-  Ações em português (Brasil) — pack primário em gpt/blimber-meta. Em Cursor,
-  use HTTP /api/gpt/meta/* ou MCP stdio opcional. Sempre via tools — nunca SQL
-  direto. Resolva tenantId por nome (searchTenants) se necessário; tools Meta
-  ainda exigem tenantId.
+  insights, status, create, edits e bulk delete com preview). Uso principal =
+  ChatGPT GPT personalizado + Ações em português (Brasil) — pack primário em
+  gpt/blimber-meta. Em Cursor, use HTTP /api/gpt/meta/* ou MCP stdio opcional.
+  Sempre via tools — nunca SQL direto. Resolva tenantId por nome
+  (searchTenants) se necessário; tools Meta ainda exigem tenantId.
 ---
 
 # Blimber Meta Ads
@@ -20,8 +20,11 @@ description: >-
 
 - Relatórios / insights Meta Ads de um tenant
 - Listar campanhas, conjuntos de anúncios (adsets) e anúncios
-- Pausar ou reativar **uma** campanha (com confirmação)
-- Ver se Meta está conectado (`marketing_integrations`)
+- Pausar ou reativar campanha, adset ou anúncio (com confirmação)
+- Criar campanha, adset ou anúncio+criativo link (default PAUSED + dryRun true)
+- Editar budget/targeting do adset; copy/mídia do ad (dryRun default true)
+- Excluir em massa com preview → execute (IDs explícitos; nunca por nome)
+- Ver se Meta está conectado / write-ready (`write_readiness`)
 - Descobrir `tenantId` a partir do nome do cliente (`GET /api/gpt/meta/tenants?q=`)
 
 ## Como operar
@@ -31,22 +34,34 @@ description: >-
 3. Se só houver o **nome** do cliente: `GET /api/gpt/meta/tenants?q=Nome` → pegar `id` → usar como `tenantId`. Vários matches → confirmar. **Nunca** misture tenants.
 4. Tools Meta **sempre** exigem `tenantId` (UUID). Isolamento por tenant mantido.
 5. **Não** peça/revele `access_token`.
-6. Escrita: só `meta_update_campaign_status` / Ação `updateCampaignStatus` com `confirm: true` e `confirmTenantId === tenantId`.
-7. **Idioma:** respostas ao usuário final em **português (Brasil)**.
+6. Escrita: fluxo **mostrar → confirmar → mutar** com `confirm: true` e `confirmTenantId === tenantId`.
+7. Create/edit/delete: default `dryRun: true`; ACTIVE no create exige `confirmActive: true`. Bulk delete: preview → confirmDelete + previewToken + dryRun false. Nunca inventar URLs nem apagar por nome.
+8. **Idioma:** respostas ao usuário final em **português (Brasil)**.
 
 ## Tools
 
 | Tool | Uso |
 |------|-----|
 | `searchTenants` (HTTP) | Nome/slug → `{ tenants: [{ id, name, slug }] }` |
-| `meta_list_integrations` | Status da conexão Meta/Google/etc. |
+| `meta_list_integrations` | Status + `write_readiness` (ads_management / page token) |
 | `meta_list_ad_accounts` | Contas de anúncio do OAuth |
 | `meta_list_campaigns` | Campanhas |
 | `meta_get_campaign` | Detalhe |
+| `meta_create_campaign` | Criar campanha (PAUSED / dryRun default true) |
 | `meta_list_adsets` | Conjuntos de anúncios |
+| `meta_create_adset` | Criar adset (templates BR_* / dryRun default true) |
+| `meta_update_adset_budget` | Budget adset (dryRun default true) |
+| `meta_update_adset_targeting` | Targeting BR_* |
 | `meta_list_ads` | Anúncios |
+| `meta_create_ad` | Criar criativo link/page + anúncio (PAUSED / dryRun default true) |
+| `meta_update_ad_creative_copy` | Copy via novo creative |
+| `meta_update_ad_media` | imageUrl\|imageHash via novo creative |
+| `meta_preview_bulk_delete` | Preview exclusão (IDs + previewToken) |
+| `meta_execute_bulk_delete` | Execute exclusão (confirmações + dryRun false) |
 | `meta_get_insights` | Métricas (level + datePreset) |
 | `meta_update_campaign_status` | ACTIVE / PAUSED |
+| `meta_update_adset_status` | ACTIVE / PAUSED |
+| `meta_update_ad_status` | ACTIVE / PAUSED |
 
 OpenAPI: `gpt/blimber-meta/openapi.yaml`  
 Catálogo: `GET /api/gpt/meta/tools`
@@ -54,13 +69,17 @@ Catálogo: `GET /api/gpt/meta/tools`
 ## Fluxo sugerido
 
 1. `searchTenants` (se não houver UUID) → confirmar cliente  
-2. `meta_list_integrations` → confirmar Meta pronto  
-3. `meta_list_campaigns` ou `meta_get_insights` com `datePreset: last_7d`  
-4. Pausar: `meta_get_campaign` → confirmação → `meta_update_campaign_status`
+2. `meta_list_integrations` → confirmar Meta pronto / write_readiness  
+3. `meta_list_campaigns` / adsets / ads ou `meta_get_insights`  
+4. Pausar/ativar: listar ou detalhar → confirmação → tool de status (`dryRun` opcional)  
+5. Criar/editar: preview (`dryRun` default) → confirmar → `dryRun: false`  
+6. Bulk delete: `meta_preview_bulk_delete` → listar IDs ao usuário → `meta_execute_bulk_delete`
 
 ## Fora de escopo
 
-- Brand Center / geração de imagem
+- Brand Center / geração de imagem por IA
 - Campanhas orgânicas (`social_campaigns`)
 - Meta CAPI (CRM)
-- Exclusão em massa / alteração de budget (não exposto no MVP)
+- Delete por nome/filtro sem lista de IDs
+- Targeting Graph livre / Advantage+ / catálogo
+- video_id / upload binário / carousel

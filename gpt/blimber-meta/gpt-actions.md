@@ -77,10 +77,10 @@ Fluxo esperado: `searchTenants` → `tenantId` → demais Ações Meta.
 
 ## 6. Reimportar OpenAPI (GPT já existente)
 
-Quando o schema mudar (ex.: nova ação `searchTenants`):
+Após mudanças no schema (write create/edit/bulk ou correção YAML), **reimporte o `openapi.yaml` completo** na ação — não edite só um trecho na UI.
 
 1. **Meus GPTs** → **Editar** o GPT → aba **Configurar** → **Ações**
-2. Abra a ação existente → substitua o esquema completo pelo `openapi.yaml` atualizado
+2. Abra a ação existente → substitua o esquema completo pelo `openapi.yaml` atualizado (YAML válido 3.0.3; se o import falhar, confira newline entre `contact.name` e `servers:`)
 3. Confirme `servers.url` = `https://app.blimber.com.br` e **Autenticação** Bearer
 4. Recole **Instruções** de `instructions.md` se o fluxo mudou
 5. Atualize a **Habilidade** / ZIP se necessário

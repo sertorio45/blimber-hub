@@ -9,6 +9,9 @@ export {
 export {
   listMarketingIntegrations,
   resolveMetaCredentials,
+  buildMetaWriteReadiness,
+  hasGrantedMetaScope,
+  type MetaWriteReadiness,
   type SupabaseLike,
 } from './integration'
 export {
@@ -26,8 +29,33 @@ export {
   metaListIntegrations,
   type MetaToolContext,
   type MetaToolName,
+  metaCreateAdset,
+  metaCreateCampaign,
+  metaCreateAd,
+  metaUpdateAdsetBudget,
+  metaUpdateAdsetTargeting,
+  metaUpdateAdCreativeCopy,
+  metaUpdateAdMedia,
+  metaPreviewBulkDelete,
+  metaExecuteBulkDelete,
+  metaUpdateAdsetStatus,
+  metaUpdateAdStatus,
   metaUpdateCampaignStatus,
+  META_CAMPAIGN_OBJECTIVES,
+  META_SPECIAL_AD_CATEGORIES,
+  META_AD_CALL_TO_ACTIONS,
 } from './tools'
+export {
+  META_ADSET_BILLING_EVENTS,
+  META_ADSET_OPTIMIZATION_GOALS,
+  META_ADSET_TARGETING_TEMPLATES,
+  META_ADSET_TARGETING_TEMPLATE_IDS,
+  resolveAdsetTargetingTemplate,
+  type MetaAdsetBillingEvent,
+  type MetaAdsetOptimizationGoal,
+  type MetaAdsetTargetingTemplate,
+  type MetaAdsetTargetingTemplateId,
+} from './targeting-templates'
 export {
   MetaAdsToolError,
   type MetaCampaignStatusUpdate,
@@ -37,3 +65,39 @@ export {
   type MetaIntegrationPublicConfig,
   type ResolvedMetaCredentials,
 } from './types'
+export {
+  META_GPT_AUDIT_ACTOR,
+  logMetaWriteAudit,
+  sanitizeMetaWriteAuditPayload,
+  setMetaWriteAuditSink,
+  type MetaWriteAuditInput,
+  type MetaWriteAuditRecord,
+} from './write-audit'
+export {
+  assertAdAccountOwnership,
+  assertBudgetIncreaseAllowed,
+  assertBulkItemLimit,
+  assertCampaignBudgetWithinLimit,
+  assertConfirmActive,
+  assertConfirmDelete,
+  assertMetaPageCreativeReady,
+  assertWriteConfirmation,
+  metaWriteConfirmationSchema,
+  resolveDryRun,
+  withDryRun,
+  type MetaDryRunPreview,
+} from './write-guards'
+export {
+  getMetaGptBulkMax,
+  getMetaGptBulkPreviewTtlMs,
+  getMetaGptBudgetDailyMaxCents,
+  getMetaGptBudgetIncreaseMaxPercent,
+  getMetaGptWritesPerMinute,
+  getMetaWriteLimits,
+} from './write-limits'
+export {
+  assertBulkDeletePreviewToken,
+  issueBulkDeletePreviewToken,
+  normalizeBulkDeleteIds,
+  type BulkDeleteLevel,
+} from './bulk-delete-preview'

@@ -19,5 +19,6 @@ export default defineEventHandler(async (event) => {
     status: body.status,
     confirmTenantId: body.confirmTenantId,
     confirm: body.confirm,
+    dryRun: body.dryRun,
   })
 })

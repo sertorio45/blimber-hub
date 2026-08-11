@@ -2,11 +2,11 @@ openapi: 3.0.3
 info:
   title: Blimber Meta Ads API
   description: >
-    API HTTP para Custom GPT Actions (Meta Ads no Blimber Hub). Se o usuário der
-    só o nome do cliente, use searchTenants para obter tenantId. Nunca peça
-    access_token. Mutações exigem confirm + confirmTenantId. Textos em português
-    (Brasil).
-  version: 1.1.0
+    API Meta Ads para Custom GPT Actions no Blimber Hub. Use searchTenants se só
+    houver o nome do cliente. Nunca peça access_token. Mutações exigem confirm +
+    confirmTenantId; create/edit/delete usam dryRun default true. Bulk delete:
+    preview → confirmar IDs → execute. Textos em PT-BR.
+  version: 1.7.0
   contact:
     name: Blimber Hub
 servers:
@@ -95,8 +95,8 @@ paths:
       operationId: listIntegrations
       summary: Status das integrações do tenant
       description: >
-        Lista marketing_integrations (Meta/Google/etc.) do tenantId. Use primeiro
-        para confirmar meta conectado. Não retorna tokens.
+        Lista marketing_integrations do tenantId. Confirme meta_ready e
+        write_readiness (ads_management + page token). Sem tokens / sem novos OAuth.
       parameters:
         - name: tenantId
           in: query
@@ -186,6 +186,31 @@ paths:
           description: Não autorizado — API key ausente ou inválida
         "400":
           description: Requisição inválida — erro de validação ou da ferramenta
+    post:
+      operationId: createCampaign
+      summary: Criar campanha (PAUSED)
+      description: >
+        Cria campanha Outcome_*. Default status=PAUSED e dryRun=true (preview).
+        Exige confirm=true e confirmTenantId=tenantId. ACTIVE exige confirmActive=true.
+        Budget opcional com teto META_GPT_BUDGET_DAILY_MAX_CENTS.
+      x-openai-isConsequential: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCampaignBody"
+      responses:
+        "200":
+          description: Campanha criada ou preview dry-run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkToolResponse"
+        "401":
+          description: Não autorizado — API key ausente ou inválida
+        "400":
+          description: Requisição inválida — erro de validação ou da ferramenta
 
   /api/gpt/meta/campaigns/{campaignId}:
     get:
@@ -229,8 +254,8 @@ paths:
       operationId: updateCampaignStatus
       summary: Pausar ou ativar campanha
       description: >
-        Muda status para ACTIVE ou PAUSED. Exige confirm=true e confirmTenantId
-        idêntico a tenantId. Sempre confirme com o usuário antes de chamar.
+        ACTIVE ou PAUSED. Exige confirm=true e confirmTenantId=tenantId.
+        dryRun opcional (default false nesta ação legada) retorna preview sem POST.
       x-openai-isConsequential: true
       parameters:
         - name: campaignId
@@ -300,6 +325,129 @@ paths:
           description: Não autorizado — API key ausente ou inválida
         "400":
           description: Requisição inválida — erro de validação ou da ferramenta
+    post:
+      operationId: createAdset
+      summary: Criar adset (PAUSED)
+      description: >
+        Cria adset com targetingTemplate fechado (BR_*). Default PAUSED + dryRun=true.
+        Exige confirm+confirmTenantId, budget e campaignId da conta do tenant.
+        ACTIVE exige confirmActive. Sem Advantage+/catálogo.
+      x-openai-isConsequential: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAdsetBody"
+      responses:
+        "200":
+          description: Adset criado ou preview dry-run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkToolResponse"
+        "401":
+          description: Não autorizado — API key ausente ou inválida
+        "400":
+          description: Requisição inválida — erro de validação ou da ferramenta
+
+  /api/gpt/meta/adsets/{adsetId}/status:
+    post:
+      operationId: updateAdsetStatus
+      summary: Pausar ou ativar adset
+      description: >
+        ACTIVE ou PAUSED no adset. Exige confirm=true e confirmTenantId=tenantId.
+        dryRun opcional (default false) retorna preview sem POST. Audit em mutação.
+      x-openai-isConsequential: true
+      parameters:
+        - name: adsetId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: ID do conjunto de anúncios (adset) na Meta Graph API.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAdsetStatusBody"
+      responses:
+        "200":
+          description: Status do adset atualizado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkToolResponse"
+        "401":
+          description: Não autorizado — API key ausente ou inválida
+        "400":
+          description: Requisição inválida — erro de validação ou da ferramenta
+
+  /api/gpt/meta/adsets/{adsetId}/budget:
+    post:
+      operationId: updateAdsetBudget
+      summary: Atualizar budget do adset
+      description: >
+        dailyBudget ou lifetimeBudget (centavos). dryRun default true. Teto META_GPT_BUDGET_*.
+        Aumento % alto exige confirmBudgetIncrease. confirm + confirmTenantId obrigatórios.
+      x-openai-isConsequential: true
+      parameters:
+        - name: adsetId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: ID do adset na Meta.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAdsetBudgetBody"
+      responses:
+        "200":
+          description: Budget atualizado ou preview dry-run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkToolResponse"
+        "401":
+          description: Não autorizado — API key ausente ou inválida
+        "400":
+          description: Requisição inválida — erro de validação ou da ferramenta
+
+  /api/gpt/meta/adsets/{adsetId}/targeting:
+    post:
+      operationId: updateAdsetTargeting
+      summary: Atualizar targeting do adset
+      description: >
+        Só templates BR_*. dryRun default true. Sem targeting Graph livre. confirm + confirmTenantId.
+      x-openai-isConsequential: true
+      parameters:
+        - name: adsetId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: ID do adset na Meta.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAdsetTargetingBody"
+      responses:
+        "200":
+          description: Targeting atualizado ou preview dry-run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkToolResponse"
+        "401":
+          description: Não autorizado — API key ausente ou inválida
+        "400":
+          description: Requisição inválida — erro de validação ou da ferramenta
 
   /api/gpt/meta/ads:
     get:
@@ -347,6 +495,184 @@ paths:
       responses:
         "200":
           description: Anúncios
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkToolResponse"
+        "401":
+          description: Não autorizado — API key ausente ou inválida
+        "400":
+          description: Requisição inválida — erro de validação ou da ferramenta
+    post:
+      operationId: createAd
+      summary: Criar anúncio + criativo link/page
+      description: >
+        Cria AdCreative (object_story_spec com page_id) + Ad no adsetId do tenant.
+        Default PAUSED + dryRun=true. Exige confirm+confirmTenantId, page_id/page token.
+        imageUrl|imageHash opcional (HTTPS; nunca inventar). Sem geração de imagem.
+      x-openai-isConsequential: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAdBody"
+      responses:
+        "200":
+          description: Anúncio criado ou preview dry-run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkToolResponse"
+        "401":
+          description: Não autorizado — API key ausente ou inválida
+        "400":
+          description: Requisição inválida — erro de validação ou da ferramenta
+
+  /api/gpt/meta/ads/{adId}/status:
+    post:
+      operationId: updateAdStatus
+      summary: Pausar ou ativar anúncio
+      description: >
+        ACTIVE ou PAUSED no anúncio. Exige confirm=true e confirmTenantId=tenantId.
+        dryRun opcional (default false) retorna preview sem POST. Audit em mutação.
+      x-openai-isConsequential: true
+      parameters:
+        - name: adId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: ID do anúncio na Meta Graph API.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAdStatusBody"
+      responses:
+        "200":
+          description: Status do anúncio atualizado
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkToolResponse"
+        "401":
+          description: Não autorizado — API key ausente ou inválida
+        "400":
+          description: Requisição inválida — erro de validação ou da ferramenta
+
+  /api/gpt/meta/ads/{adId}/creative-copy:
+    post:
+      operationId: updateAdCreativeCopy
+      summary: Atualizar copy do anúncio
+      description: >
+        Novo AdCreative + swap (message/headline/description/CTA/link). dryRun default true.
+        Exige Page. confirm + confirmTenantId. Nunca inventar URLs.
+      x-openai-isConsequential: true
+      parameters:
+        - name: adId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: ID do anúncio na Meta.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAdCreativeCopyBody"
+      responses:
+        "200":
+          description: Copy atualizada ou preview dry-run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkToolResponse"
+        "401":
+          description: Não autorizado — API key ausente ou inválida
+        "400":
+          description: Requisição inválida — erro de validação ou da ferramenta
+
+  /api/gpt/meta/ads/{adId}/media:
+    post:
+      operationId: updateAdMedia
+      summary: Atualizar mídia do anúncio
+      description: >
+        imageUrl ou imageHash via novo AdCreative + swap; preserva copy. dryRun default true.
+        Sem video/upload. confirm + confirmTenantId. Nunca inventar URLs.
+      x-openai-isConsequential: true
+      parameters:
+        - name: adId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: ID do anúncio na Meta.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAdMediaBody"
+      responses:
+        "200":
+          description: Mídia atualizada ou preview dry-run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkToolResponse"
+        "401":
+          description: Não autorizado — API key ausente ou inválida
+        "400":
+          description: Requisição inválida — erro de validação ou da ferramenta
+
+  /api/gpt/meta/bulk-delete/preview:
+    post:
+      operationId: previewBulkDelete
+      summary: Preview exclusão em massa (IDs explícitos)
+      description: >
+        Valida ownership dos IDs (level campaign|adset|ad), retorna tabela
+        nome/status/budget e previewToken (TTL). Sem POST na Graph.
+        NUNCA apague por nome — só IDs explícitos (máx. META_GPT_BULK_MAX).
+      x-openai-isConsequential: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PreviewBulkDeleteBody"
+      responses:
+        "200":
+          description: Preview + previewToken
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkToolResponse"
+        "401":
+          description: Não autorizado — API key ausente ou inválida
+        "400":
+          description: Requisição inválida — erro de validação ou da ferramenta
+
+  /api/gpt/meta/bulk-delete/execute:
+    post:
+      operationId: executeBulkDelete
+      summary: Executar exclusão em massa (após preview)
+      description: >
+        Exige previewToken recente + confirm + confirmTenantId + confirmDelete=true
+        + dryRun=false. Processa sequencialmente (succeeded/failed).
+        Default dryRun=true (sem mutação). Preferir deleteMode=DELETED.
+      x-openai-isConsequential: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExecuteBulkDeleteBody"
+      responses:
+        "200":
+          description: Resultado parcial ou total da exclusão / dry-run
           content:
             application/json:
               schema:
@@ -456,7 +782,7 @@ components:
           type: string
         data:
           type: object
-          additionalProperties: true
+          description: Payload tipado da tool (estrutura varia por operação).
     ToolsCatalogResponse:
       type: object
       properties:
@@ -537,6 +863,487 @@ components:
           type: boolean
           enum: [true]
           description: Deve ser true para aplicar a mutação.
+        dryRun:
+          type: boolean
+          description: >
+            Se true, valida ownership e retorna preview sem POST na Graph.
+            Default false nesta ação (retrocompatível).
+    UpdateAdsetStatusBody:
+      type: object
+      required: [tenantId, status, confirmTenantId, confirm]
+      properties:
+        tenantId:
+          type: string
+          format: uuid
+        adAccountId:
+          type: string
+        status:
+          type: string
+          enum: [ACTIVE, PAUSED]
+        confirmTenantId:
+          type: string
+          format: uuid
+          description: Deve ser idêntico a tenantId.
+        confirm:
+          type: boolean
+          enum: [true]
+          description: Deve ser true para aplicar a mutação.
+        dryRun:
+          type: boolean
+          description: >
+            Se true, valida ownership e retorna preview sem POST na Graph.
+            Default false (espelho da campanha).
+    UpdateAdStatusBody:
+      type: object
+      required: [tenantId, status, confirmTenantId, confirm]
+      properties:
+        tenantId:
+          type: string
+          format: uuid
+        adAccountId:
+          type: string
+        status:
+          type: string
+          enum: [ACTIVE, PAUSED]
+        confirmTenantId:
+          type: string
+          format: uuid
+          description: Deve ser idêntico a tenantId.
+        confirm:
+          type: boolean
+          enum: [true]
+          description: Deve ser true para aplicar a mutação.
+        dryRun:
+          type: boolean
+          description: >
+            Se true, valida ownership e retorna preview sem POST na Graph.
+            Default false (espelho da campanha).
+    CreateCampaignBody:
+      type: object
+      required: [tenantId, name, objective, confirmTenantId, confirm]
+      properties:
+        tenantId:
+          type: string
+          format: uuid
+        adAccountId:
+          type: string
+          description: Conta sem act_. Usa a da integração se omitido.
+        name:
+          type: string
+          minLength: 1
+          maxLength: 400
+          description: Nome da campanha.
+        objective:
+          type: string
+          enum:
+            - OUTCOME_AWARENESS
+            - OUTCOME_ENGAGEMENT
+            - OUTCOME_LEADS
+            - OUTCOME_SALES
+            - OUTCOME_TRAFFIC
+            - OUTCOME_APP_PROMOTION
+          description: Objetivos Outcome_* (legados rejeitados).
+        status:
+          type: string
+          enum: [ACTIVE, PAUSED]
+          default: PAUSED
+          description: Default PAUSED. ACTIVE exige confirmActive=true.
+        dailyBudget:
+          type: integer
+          minimum: 1
+          description: Orçamento diário em centavos (XOR com lifetimeBudget).
+        lifetimeBudget:
+          type: integer
+          minimum: 1
+          description: Orçamento vitalício em centavos (XOR com dailyBudget).
+        specialAdCategories:
+          type: array
+          items:
+            type: string
+            enum:
+              - CREDIT
+              - EMPLOYMENT
+              - HOUSING
+              - ISSUES_ELECTIONS_POLITICS
+              - ONLINE_GAMBLING_AND_GAMING
+              - FINANCIAL_PRODUCTS_SERVICES
+          description: Categorias especiais Meta (vazio = nenhuma).
+        confirmTenantId:
+          type: string
+          format: uuid
+          description: Deve ser idêntico a tenantId.
+        confirm:
+          type: boolean
+          enum: [true]
+          description: Deve ser true para aplicar a mutação.
+        confirmActive:
+          type: boolean
+          enum: [true]
+          description: Obrigatório se status=ACTIVE.
+        dryRun:
+          type: boolean
+          description: >
+            Se true (default), retorna preview sem POST. Envie false para criar.
+    CreateAdsetBody:
+      type: object
+      required:
+        - tenantId
+        - campaignId
+        - name
+        - targetingTemplate
+        - billingEvent
+        - optimizationGoal
+        - confirmTenantId
+        - confirm
+      properties:
+        tenantId:
+          type: string
+          format: uuid
+        adAccountId:
+          type: string
+          description: Conta sem act_. Usa a da integração se omitido.
+        campaignId:
+          type: string
+          description: ID da campanha (mesma ad account do tenant).
+        name:
+          type: string
+          minLength: 1
+          maxLength: 400
+          description: Nome do adset.
+        targetingTemplate:
+          type: string
+          enum: [BR_18_65, BR_25_54, BR_18_34, BR_35_65]
+          description: Template fechado geo+idade (sem targeting Graph livre).
+        billingEvent:
+          type: string
+          enum: [IMPRESSIONS, LINK_CLICKS]
+          description: Evento de cobrança whitelisted.
+        optimizationGoal:
+          type: string
+          enum:
+            - REACH
+            - IMPRESSIONS
+            - LINK_CLICKS
+            - LANDING_PAGE_VIEWS
+            - OFFSITE_CONVERSIONS
+            - LEAD_GENERATION
+            - QUALITY_LEAD
+            - CONVERSATIONS
+            - THRUPLAY
+            - POST_ENGAGEMENT
+          description: Meta de otimização whitelisted.
+        status:
+          type: string
+          enum: [ACTIVE, PAUSED]
+          default: PAUSED
+          description: Default PAUSED. ACTIVE exige confirmActive=true.
+        dailyBudget:
+          type: integer
+          minimum: 1
+          description: Orçamento diário em centavos (XOR com lifetimeBudget).
+        lifetimeBudget:
+          type: integer
+          minimum: 1
+          description: Orçamento vitalício em centavos (exige endTime).
+        startTime:
+          type: string
+          description: Início ISO-8601 opcional.
+        endTime:
+          type: string
+          description: Fim ISO-8601 (obrigatório com lifetimeBudget).
+        confirmTenantId:
+          type: string
+          format: uuid
+          description: Deve ser idêntico a tenantId.
+        confirm:
+          type: boolean
+          enum: [true]
+          description: Deve ser true para aplicar a mutação.
+        confirmActive:
+          type: boolean
+          enum: [true]
+          description: Obrigatório se status=ACTIVE.
+        dryRun:
+          type: boolean
+          description: >
+            Se true (default), retorna preview sem POST. Envie false para criar.
+    CreateAdBody:
+      type: object
+      required:
+        - tenantId
+        - adsetId
+        - name
+        - linkUrl
+        - message
+        - confirmTenantId
+        - confirm
+      properties:
+        tenantId:
+          type: string
+          format: uuid
+        adAccountId:
+          type: string
+          description: Conta sem act_. Usa a da integração se omitido.
+        adsetId:
+          type: string
+          description: ID do adset (mesma ad account do tenant).
+        name:
+          type: string
+          minLength: 1
+          maxLength: 400
+          description: Nome do anúncio.
+        linkUrl:
+          type: string
+          format: uri
+          description: URL https de destino (nunca inventar).
+        message:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          description: Texto principal do criativo (copy explícita).
+        headline:
+          type: string
+          maxLength: 255
+        description:
+          type: string
+          maxLength: 500
+        callToAction:
+          type: string
+          enum:
+            - LEARN_MORE
+            - SHOP_NOW
+            - SIGN_UP
+            - SUBSCRIBE
+            - CONTACT_US
+            - DOWNLOAD
+            - GET_OFFER
+            - BOOK_NOW
+            - BUY_NOW
+            - APPLY_NOW
+            - GET_QUOTE
+            - WHATSAPP_MESSAGE
+          default: LEARN_MORE
+        imageUrl:
+          type: string
+          format: uri
+          description: URL https de imagem hospedada (XOR imageHash). Nunca inventar.
+        imageHash:
+          type: string
+          description: image_hash já na conta (XOR imageUrl).
+        creativeName:
+          type: string
+          maxLength: 400
+        status:
+          type: string
+          enum: [ACTIVE, PAUSED]
+          default: PAUSED
+          description: Default PAUSED. ACTIVE exige confirmActive=true.
+        confirmTenantId:
+          type: string
+          format: uuid
+          description: Deve ser idêntico a tenantId.
+        confirm:
+          type: boolean
+          enum: [true]
+          description: Deve ser true para aplicar a mutação.
+        confirmActive:
+          type: boolean
+          enum: [true]
+          description: Obrigatório se status=ACTIVE.
+        dryRun:
+          type: boolean
+          description: >
+            Se true (default), retorna preview sem POST. Envie false para criar.
+    UpdateAdsetBudgetBody:
+      type: object
+      required: [tenantId, confirmTenantId, confirm]
+      properties:
+        tenantId:
+          type: string
+          format: uuid
+        adAccountId:
+          type: string
+        dailyBudget:
+          type: integer
+          minimum: 1
+          description: Novo daily em centavos (XOR lifetimeBudget).
+        lifetimeBudget:
+          type: integer
+          minimum: 1
+          description: Novo lifetime em centavos (XOR dailyBudget).
+        endTime:
+          type: string
+          description: ISO-8601; obrigatório se lifetime sem end_time atual.
+        confirmBudgetIncrease:
+          type: boolean
+          enum: [true]
+          description: Se aumento % > teto env.
+        confirmTenantId:
+          type: string
+          format: uuid
+        confirm:
+          type: boolean
+          enum: [true]
+        dryRun:
+          type: boolean
+          description: Default true — preview sem POST.
+    UpdateAdsetTargetingBody:
+      type: object
+      required: [tenantId, targetingTemplate, confirmTenantId, confirm]
+      properties:
+        tenantId:
+          type: string
+          format: uuid
+        adAccountId:
+          type: string
+        targetingTemplate:
+          type: string
+          enum: [BR_18_65, BR_25_54, BR_18_34, BR_35_65]
+        confirmTenantId:
+          type: string
+          format: uuid
+        confirm:
+          type: boolean
+          enum: [true]
+        dryRun:
+          type: boolean
+          description: Default true — preview sem POST.
+    UpdateAdCreativeCopyBody:
+      type: object
+      required: [tenantId, confirmTenantId, confirm]
+      properties:
+        tenantId:
+          type: string
+          format: uuid
+        adAccountId:
+          type: string
+        message:
+          type: string
+          maxLength: 2000
+        headline:
+          type: string
+          maxLength: 255
+        description:
+          type: string
+          maxLength: 500
+        callToAction:
+          type: string
+          enum:
+            - LEARN_MORE
+            - SHOP_NOW
+            - SIGN_UP
+            - SUBSCRIBE
+            - CONTACT_US
+            - DOWNLOAD
+            - GET_OFFER
+            - BOOK_NOW
+            - BUY_NOW
+            - APPLY_NOW
+            - GET_QUOTE
+            - WHATSAPP_MESSAGE
+        linkUrl:
+          type: string
+          format: uri
+        creativeName:
+          type: string
+          maxLength: 400
+        confirmTenantId:
+          type: string
+          format: uuid
+        confirm:
+          type: boolean
+          enum: [true]
+        dryRun:
+          type: boolean
+          description: Default true — preview sem POST.
+    UpdateAdMediaBody:
+      type: object
+      required: [tenantId, confirmTenantId, confirm]
+      properties:
+        tenantId:
+          type: string
+          format: uuid
+        adAccountId:
+          type: string
+        imageUrl:
+          type: string
+          format: uri
+          description: HTTPS (XOR imageHash). Nunca inventar.
+        imageHash:
+          type: string
+        creativeName:
+          type: string
+          maxLength: 400
+        confirmTenantId:
+          type: string
+          format: uuid
+        confirm:
+          type: boolean
+          enum: [true]
+        dryRun:
+          type: boolean
+          description: Default true — preview sem POST.
+    PreviewBulkDeleteBody:
+      type: object
+      required: [tenantId, level, ids]
+      properties:
+        tenantId:
+          type: string
+          format: uuid
+        adAccountId:
+          type: string
+        level:
+          type: string
+          enum: [campaign, adset, ad]
+        ids:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items:
+            type: string
+          description: IDs Meta explícitos (nunca por nome). Máx. META_GPT_BULK_MAX.
+        deleteMode:
+          type: string
+          enum: [DELETED, ARCHIVED]
+          default: DELETED
+    ExecuteBulkDeleteBody:
+      type: object
+      required: [tenantId, level, ids, previewToken, confirmTenantId, confirm, confirmDelete]
+      properties:
+        tenantId:
+          type: string
+          format: uuid
+        adAccountId:
+          type: string
+        level:
+          type: string
+          enum: [campaign, adset, ad]
+        ids:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items:
+            type: string
+          description: Mesmos IDs do preview (deletableIds).
+        previewToken:
+          type: string
+          description: Token de meta_preview_bulk_delete (TTL).
+        deleteMode:
+          type: string
+          enum: [DELETED, ARCHIVED]
+          default: DELETED
+        confirmDelete:
+          type: boolean
+          enum: [true]
+        confirmTenantId:
+          type: string
+          format: uuid
+        confirm:
+          type: boolean
+          enum: [true]
+        dryRun:
+          type: boolean
+          description: Default true. Execute real só com false após confirmação.
     InvokeBody:
       type: object
       required: [tool, arguments]
@@ -552,7 +1359,17 @@ components:
             - meta_list_ads
             - meta_get_insights
             - meta_update_campaign_status
+            - meta_update_adset_status
+            - meta_update_ad_status
+            - meta_create_campaign
+            - meta_create_adset
+            - meta_create_ad
+            - meta_update_adset_budget
+            - meta_update_adset_targeting
+            - meta_update_ad_creative_copy
+            - meta_update_ad_media
+            - meta_preview_bulk_delete
+            - meta_execute_bulk_delete
         arguments:
           type: object
-          additionalProperties: true
-          description: Payload da tool (sempre com tenantId).
+          description: Payload da tool (sempre com tenantId; campos livres).

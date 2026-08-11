@@ -63,10 +63,15 @@ Passo a passo numerado, prompts e troubleshooting: **[Tutorial](./gpt-blimber-me
 | GET | `/api/gpt/meta/integrations?tenantId=` | `listIntegrations` |
 | GET | `/api/gpt/meta/ad-accounts?tenantId=` | `listAdAccounts` |
 | GET | `/api/gpt/meta/campaigns?...` | `listCampaigns` |
+| POST | `/api/gpt/meta/campaigns` | `createCampaign` |
 | GET | `/api/gpt/meta/campaigns/{id}?tenantId=` | `getCampaign` |
 | POST | `/api/gpt/meta/campaigns/{id}/status` | `updateCampaignStatus` |
 | GET | `/api/gpt/meta/adsets?...` | `listAdsets` |
+| POST | `/api/gpt/meta/adsets` | `createAdset` |
+| POST | `/api/gpt/meta/adsets/{id}/status` | `updateAdsetStatus` |
 | GET | `/api/gpt/meta/ads?...` | `listAds` |
+| POST | `/api/gpt/meta/ads` | `createAd` |
+| POST | `/api/gpt/meta/ads/{id}/status` | `updateAdStatus` |
 | POST | `/api/gpt/meta/insights` | `getInsights` |
 | POST | `/api/gpt/meta/invoke` | `invokeMetaTool` (fallback) |
 
@@ -79,16 +84,29 @@ Contrato completo: `gpt/blimber-meta/openapi.yaml`.
 - Auth obrigatória; sem chave → 401; sem env → 503  
 - Tokens Meta **nunca** nas respostas  
 - HTTPS público obrigatório para Ações  
-- Confirme mutações com o usuário antes de chamar a ação  
+- Confirme mutações com o usuário antes de chamar a ação (mostrar → confirmar → mutar)  
 
 ## Limitações
 
-- Sem create/delete campaign, budget em massa, CAPI, Brand Center (MVP)  
+- Sem CAPI, Brand Center / geração de imagem  
+- Targeting de adset só via templates fechados (`BR_*`) — sem Graph targeting livre  
+- Create/edit ad: criativo link/page + mídia tipada (`imageUrl`|`imageHash`); exige page token  
+- Sem `video_id` / upload binário / carousel no edit de mídia  
+- Bulk delete: **só IDs explícitos** (nunca por nome); preview + `previewToken` obrigatórios  
 - Timeout ~45s / payloads texto < ~100k (limites OpenAI)  
 - Sempre passe o `tenantId` correto  
+
+Roadmap de escrita (create / edit / bulk delete): [`gpt-blimber-meta-WRITE-PLAN.md`](./gpt-blimber-meta-WRITE-PLAN.md) — **etapas 0–6 concluídas**.  
+**Etapa 0:** [`gpt-blimber-meta-WRITE-ETAPA-0.md`](./gpt-blimber-meta-WRITE-ETAPA-0.md) — guards, dry-run, limites e audit.  
+**Etapa 1:** [`gpt-blimber-meta-WRITE-ETAPA-1.md`](./gpt-blimber-meta-WRITE-ETAPA-1.md) — status adset/ad + `write_readiness`.  
+**Etapa 2:** [`gpt-blimber-meta-WRITE-ETAPA-2.md`](./gpt-blimber-meta-WRITE-ETAPA-2.md) — `meta_create_campaign` (PAUSED / dryRun default true).  
+**Etapa 3:** [`gpt-blimber-meta-WRITE-ETAPA-3.md`](./gpt-blimber-meta-WRITE-ETAPA-3.md) — `meta_create_adset` (templates BR_*).  
+**Etapa 4:** [`gpt-blimber-meta-WRITE-ETAPA-4.md`](./gpt-blimber-meta-WRITE-ETAPA-4.md) — `meta_create_ad` (AdCreative link/page + Ad).  
+**Etapa 5:** [`gpt-blimber-meta-WRITE-ETAPA-5.md`](./gpt-blimber-meta-WRITE-ETAPA-5.md) — edits budget / targeting / copy / media.  
+**Etapa 6:** [`gpt-blimber-meta-WRITE-ETAPA-6.md`](./gpt-blimber-meta-WRITE-ETAPA-6.md) — bulk delete (preview → execute).
 
 ## Testes
 
 ```bash
-pnpm test tests/meta-ads-tools.test.ts tests/gpt-meta-openapi.test.ts
+pnpm test tests/meta-ads-tools.test.ts tests/meta-write-guards.test.ts tests/gpt-meta-openapi.test.ts
 ```
