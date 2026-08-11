@@ -1,4 +1,7 @@
 <script setup lang="ts">
+/**
+ * Analytics board under Ads product (paid / performance), not Marketing editorial.
+ */
 import MarketingReportsPanel from '@/components/marketing/MarketingReportsPanel.vue'
 
 definePageMeta({

@@ -211,12 +211,14 @@ describe('matchesNavAudience', () => {
       '/ads/google',
       '/ads/analytics',
       '/ads/campaigns',
+      '/ads/creatives',
       '/ads/reports',
       '/ads/integrations',
     ])
     expect(isClientPortalAdsLink('/ads')).toBe(true)
     expect(isClientPortalAdsLink('/ads/')).toBe(true)
     expect(isClientPortalAdsLink('/ads/meta')).toBe(true)
+    expect(isClientPortalAdsLink('/ads/creatives')).toBe(true)
     expect(isClientPortalAdsLink('/ads/reports')).toBe(true)
     expect(isClientPortalAdsLink('/marketing/reports')).toBe(false)
   })

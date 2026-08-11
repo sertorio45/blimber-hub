@@ -2,11 +2,10 @@ openapi: 3.0.3
 info:
   title: Blimber Meta Ads API
   description: >
-    API HTTP para Custom GPT Actions no ChatGPT. Gerencia Meta Ads do Blimber Hub
-    via marketing_integrations (OAuth já conectado). Se o usuário der só o nome do
-    cliente, use searchTenants para obter o tenantId; depois use tenantId nas
-    demais ações. Nunca peça ou exponha access_token. Mutações exigem confirm +
-    confirmTenantId. Respostas e textos de ajuda desta API estão em português (Brasil).
+    API HTTP para Custom GPT Actions (Meta Ads no Blimber Hub). Se o usuário der
+    só o nome do cliente, use searchTenants para obter tenantId. Nunca peça
+    access_token. Mutações exigem confirm + confirmTenantId. Textos em português
+    (Brasil).
   version: 1.1.0
   contact:
     name: Blimber Hub
@@ -21,12 +20,10 @@ paths:
       operationId: searchTenants
       summary: Buscar cliente (tenant) pelo nome
       description: >
-        Busca administrativa por nome/slug do tenant (ilike, match parcial).
-        Use quando o usuário informar só o nome do cliente (ex.: Farmaestetica)
-        e ainda não tiver o tenantId (UUID). Se houver vários matches, pergunte
-        qual. Só campos públicos (id, name, slug) — nunca tokens Meta.
-        A API key Bearer é global de serviço; com organizationId opcional, limita
-        ao portfólio em organization_tenants.
+        Busca tenant por nome/slug (match parcial). Use quando o usuário der só
+        o nome do cliente e faltar o tenantId (UUID). Se houver vários matches,
+        pergunte qual. Retorna id, name, slug — sem tokens. organizationId
+        opcional limita ao portfólio.
       parameters:
         - name: q
           in: query

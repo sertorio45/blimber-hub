@@ -1,8 +1,13 @@
 <script setup lang="ts">
 /**
  * Ads product home — reuses `/api/marketing/overview` (no fake metrics).
- * Paid surfaces live under `/ads/*`; editorial Marketing stays separate.
+ *
+ * Domain (see `constants/ads-domain.ts`):
+ * - Paid: live Meta/Google APIs (+ `marketing_campaigns` / cache) → `/ads/*`
+ * - Editorial: `social_campaigns` → `/marketing/campaigns` (never listed here)
+ * - Brand Context peek: `useAdsBrandContext` → Brand Center of active tenant
  */
+import AdsBrandContextCard from '@/components/ads/AdsBrandContextCard.vue'
 import GoogleAdsBrandIcon from '@/components/brand/GoogleAdsBrandIcon.vue'
 import GoogleAnalyticsBrandIcon from '@/components/brand/GoogleAnalyticsBrandIcon.vue'
 import MetaBrandIcon from '@/components/brand/MetaBrandIcon.vue'
@@ -193,6 +198,8 @@ const channels = [
       </CardContent>
     </Card>
 
+    <AdsBrandContextCard />
+
     <div class="grid gap-4 lg:grid-cols-3 sm:grid-cols-2">
       <Card>
         <CardHeader>
@@ -200,13 +207,17 @@ const channels = [
             Campanhas pagas
           </CardTitle>
           <CardDescription>
-            Lista unificada Meta + Google Ads (não é editorial).
+            Lista unificada Meta + Google Ads — não é editorial
+            (<code class="rounded bg-muted px-1 text-xs">social_campaigns</code>).
           </CardDescription>
         </CardHeader>
-        <CardContent>
-          <Button variant="outline" class="w-full" @click="navigateTo('/ads/campaigns')">
+        <CardContent class="flex flex-wrap gap-2">
+          <Button variant="outline" class="flex-1" @click="navigateTo('/ads/campaigns')">
             Ver campanhas
             <Icon name="lucide:arrow-right" class="ml-2 h-4 w-4" />
+          </Button>
+          <Button variant="ghost" @click="navigateTo('/ads/creatives')">
+            Criativos
           </Button>
         </CardContent>
       </Card>

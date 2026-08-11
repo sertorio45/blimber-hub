@@ -28,6 +28,7 @@ export const CLIENT_PORTAL_ADS_LINKS = [
   '/ads/google',
   '/ads/analytics',
   '/ads/campaigns',
+  '/ads/creatives',
   '/ads/reports',
   '/ads/integrations',
 ] as const

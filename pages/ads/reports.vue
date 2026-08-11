@@ -1,4 +1,7 @@
 <script setup lang="ts">
+/**
+ * Paid media + analytics reports. Editorial campaigns stay in Marketing.
+ */
 import MarketingReportsPanel from '@/components/marketing/MarketingReportsPanel.vue'
 
 definePageMeta({

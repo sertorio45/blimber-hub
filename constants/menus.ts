@@ -183,6 +183,13 @@ export const navMenu: NavMenu[] = [
             capability: 'marketing.social.reports',
           },
           {
+            // Architecture placeholder — Brand Context bridge; no AI generation yet.
+            title: 'Criativos',
+            icon: 'i-lucide-sparkles',
+            link: '/ads/creatives',
+            capability: 'marketing.social.brand_guide.read',
+          },
+          {
             title: 'Relatórios',
             icon: 'i-lucide-bar-chart-3',
             link: '/ads/reports',
