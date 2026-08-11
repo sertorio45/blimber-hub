@@ -193,9 +193,9 @@ async function onUpload(event: Event) {
     commitSelection(selection, { uploaded: true })
 
     if (queue.length === 1)
-      toast.success('Logo enviado e vinculado. Salvando…')
+      toast.success('Logo enviado e vinculado')
     else
-      toast.success(`${queue.length} arquivos enviados e vinculados. Salvando…`)
+      toast.success(`${queue.length} arquivos enviados e vinculados`)
 
     if (files.length > remaining)
       toast.info(`Apenas ${remaining} arquivo(s) foram adicionados (limite de ${props.max}).`)

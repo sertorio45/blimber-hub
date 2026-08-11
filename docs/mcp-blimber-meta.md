@@ -1,8 +1,8 @@
 # MCP Blimber Meta Ads (opcional / legado)
 
-> **Uso principal do produto:** Custom GPT no ChatGPT.  
+> **Uso principal do produto:** GPT personalizado no ChatGPT (**Ações** + **Habilidade**).  
 > Guia completo: [`docs/gpt-blimber-meta.md`](./gpt-blimber-meta.md)  
-> Pack: [`gpt/blimber-meta/`](../gpt/blimber-meta/) (OpenAPI + Instructions + Skill)
+> Pack: [`gpt/blimber-meta/`](../gpt/blimber-meta/) (OpenAPI + Instruções + Skill)
 
 Este documento cobre apenas o **MCP stdio** e o bridge HTTP interno — úteis para Cursor/Claude Desktop ou scripts, **não** para o usuário final do ChatGPT.
 
@@ -26,7 +26,7 @@ Agente local (opcional)
 
 ## Auth
 
-Mesma chave das Actions GPT:
+Mesma chave das Ações do GPT:
 
 ```bash
 BLIMBER_MCP_API_KEY=

@@ -1,21 +1,81 @@
-openapi: 3.1.0
+openapi: 3.0.3
 info:
   title: Blimber Meta Ads API
   description: >
     API HTTP para Custom GPT Actions no ChatGPT. Gerencia Meta Ads do Blimber Hub
-    via marketing_integrations (OAuth já conectado). Sempre informe tenantId.
-    Nunca peça ou exponha access_token. Mutações exigem confirm + confirmTenantId.
-  version: 1.0.0
+    via marketing_integrations (OAuth já conectado). Se o usuário der só o nome do
+    cliente, use searchTenants para obter o tenantId; depois use tenantId nas
+    demais ações. Nunca peça ou exponha access_token. Mutações exigem confirm +
+    confirmTenantId. Respostas e textos de ajuda desta API estão em português (Brasil).
+  version: 1.1.0
   contact:
     name: Blimber Hub
 servers:
   - url: https://app.blimber.com.br
-    description: Produção Blimber Hub (substitua se o deploy tiver outro host HTTPS)
-  - url: https://YOUR_PUBLIC_HTTPS_HOST
-    description: Placeholder — troque pela URL pública HTTPS do seu Blimber
+    description: Produção Blimber Hub
 security:
   - BearerAuth: []
 paths:
+  /api/gpt/meta/tenants:
+    get:
+      operationId: searchTenants
+      summary: Buscar cliente (tenant) pelo nome
+      description: >
+        Busca administrativa por nome/slug do tenant (ilike, match parcial).
+        Use quando o usuário informar só o nome do cliente (ex.: Farmaestetica)
+        e ainda não tiver o tenantId (UUID). Se houver vários matches, pergunte
+        qual. Só campos públicos (id, name, slug) — nunca tokens Meta.
+        A API key Bearer é global de serviço; com organizationId opcional, limita
+        ao portfólio em organization_tenants.
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 2
+          description: >
+            Trecho do nome (ou slug) do cliente. Ex.: Farmaestetica.
+            (Alias HTTP name também é aceito pelo servidor se q estiver ausente.)
+        - name: name
+          in: query
+          required: false
+          schema:
+            type: string
+            minLength: 2
+          description: Alias de q (mesmo efeito). Prefira q.
+        - name: organizationId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: >
+            Opcional. Se informado, restringe aos tenants ativos vinculados à
+            organização/agência em organization_tenants.
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+          description: Máximo de resultados (1–50).
+      responses:
+        "200":
+          description: Lista de tenants (id, name, slug)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantSearchResponse"
+        "400":
+          description: Requisição inválida — q/name ausente ou curto demais
+        "401":
+          description: Não autorizado — API key ausente ou inválida
+        "503":
+          description: Serviço indisponível — BLIMBER_MCP_API_KEY não configurado no servidor
+
   /api/gpt/meta/tools:
     get:
       operationId: listMetaTools
@@ -29,9 +89,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/ToolsCatalogResponse"
         "401":
-          $ref: "#/components/responses/Unauthorized"
+          description: Não autorizado — API key ausente ou inválida
         "503":
-          $ref: "#/components/responses/ServiceUnavailable"
+          description: Serviço indisponível — BLIMBER_MCP_API_KEY não configurado no servidor
 
   /api/gpt/meta/integrations:
     get:
@@ -41,7 +101,13 @@ paths:
         Lista marketing_integrations (Meta/Google/etc.) do tenantId. Use primeiro
         para confirmar meta conectado. Não retorna tokens.
       parameters:
-        - $ref: "#/components/parameters/TenantIdQuery"
+        - name: tenantId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: UUID do tenant (empresa) no Blimber. Obrigatório — nunca misture tenants.
       responses:
         "200":
           description: Integrações (sem tokens)
@@ -50,37 +116,54 @@ paths:
               schema:
                 $ref: "#/components/schemas/OkToolResponse"
         "401":
-          $ref: "#/components/responses/Unauthorized"
+          description: Não autorizado — API key ausente ou inválida
         "400":
-          $ref: "#/components/responses/BadRequest"
+          description: Requisição inválida — erro de validação ou da ferramenta
 
   /api/gpt/meta/ad-accounts:
     get:
       operationId: listAdAccounts
-      summary: Listar ad accounts Meta
+      summary: Listar contas de anúncio Meta
       description: Lista contas de anúncio acessíveis pelo OAuth Meta do tenant.
       parameters:
-        - $ref: "#/components/parameters/TenantIdQuery"
+        - name: tenantId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: UUID do tenant (empresa) no Blimber. Obrigatório — nunca misture tenants.
       responses:
         "200":
-          description: Ad accounts
+          description: Contas de anúncio
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/OkToolResponse"
         "401":
-          $ref: "#/components/responses/Unauthorized"
+          description: Não autorizado — API key ausente ou inválida
         "400":
-          $ref: "#/components/responses/BadRequest"
+          description: Requisição inválida — erro de validação ou da ferramenta
 
   /api/gpt/meta/campaigns:
     get:
       operationId: listCampaigns
       summary: Listar campanhas Meta
-      description: Lista campanhas da ad account do tenant (leitura). Filtre por status se necessário.
+      description: Lista campanhas da conta de anúncio do tenant (leitura). Filtre por status se necessário.
       parameters:
-        - $ref: "#/components/parameters/TenantIdQuery"
-        - $ref: "#/components/parameters/AdAccountIdQuery"
+        - name: tenantId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: UUID do tenant (empresa) no Blimber. Obrigatório — nunca misture tenants.
+        - name: adAccountId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Conta de anúncios sem prefixo act_. Usa a da integração se omitido.
         - name: limit
           in: query
           schema:
@@ -103,19 +186,35 @@ paths:
               schema:
                 $ref: "#/components/schemas/OkToolResponse"
         "401":
-          $ref: "#/components/responses/Unauthorized"
+          description: Não autorizado — API key ausente ou inválida
         "400":
-          $ref: "#/components/responses/BadRequest"
+          description: Requisição inválida — erro de validação ou da ferramenta
 
   /api/gpt/meta/campaigns/{campaignId}:
     get:
       operationId: getCampaign
       summary: Detalhe de uma campanha
-      description: Obtém detalhe da campanha e valida ownership na ad account do tenant.
+      description: Obtém o detalhe da campanha e valida se ela pertence à conta de anúncio do tenant.
       parameters:
-        - $ref: "#/components/parameters/CampaignIdPath"
-        - $ref: "#/components/parameters/TenantIdQuery"
-        - $ref: "#/components/parameters/AdAccountIdQuery"
+        - name: campaignId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: ID da campanha na Meta Graph API.
+        - name: tenantId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: UUID do tenant (empresa) no Blimber. Obrigatório — nunca misture tenants.
+        - name: adAccountId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Conta de anúncios sem prefixo act_. Usa a da integração se omitido.
       responses:
         "200":
           description: Campanha
@@ -124,9 +223,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/OkToolResponse"
         "401":
-          $ref: "#/components/responses/Unauthorized"
+          description: Não autorizado — API key ausente ou inválida
         "400":
-          $ref: "#/components/responses/BadRequest"
+          description: Requisição inválida — erro de validação ou da ferramenta
 
   /api/gpt/meta/campaigns/{campaignId}/status:
     post:
@@ -137,7 +236,12 @@ paths:
         idêntico a tenantId. Sempre confirme com o usuário antes de chamar.
       x-openai-isConsequential: true
       parameters:
-        - $ref: "#/components/parameters/CampaignIdPath"
+        - name: campaignId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: ID da campanha na Meta Graph API.
       requestBody:
         required: true
         content:
@@ -152,23 +256,34 @@ paths:
               schema:
                 $ref: "#/components/schemas/OkToolResponse"
         "401":
-          $ref: "#/components/responses/Unauthorized"
+          description: Não autorizado — API key ausente ou inválida
         "400":
-          $ref: "#/components/responses/BadRequest"
+          description: Requisição inválida — erro de validação ou da ferramenta
 
   /api/gpt/meta/adsets:
     get:
       operationId: listAdsets
-      summary: Listar adsets
+      summary: Listar conjuntos de anúncios (adsets)
       description: Lista conjuntos de anúncios da conta ou filtrados por campanha.
       parameters:
-        - $ref: "#/components/parameters/TenantIdQuery"
-        - $ref: "#/components/parameters/AdAccountIdQuery"
+        - name: tenantId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: UUID do tenant (empresa) no Blimber. Obrigatório — nunca misture tenants.
+        - name: adAccountId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Conta de anúncios sem prefixo act_. Usa a da integração se omitido.
         - name: campaignId
           in: query
           schema:
             type: string
-          description: Filtrar adsets desta campanha.
+          description: Filtrar conjuntos de anúncios desta campanha.
         - name: limit
           in: query
           schema:
@@ -176,18 +291,18 @@ paths:
             minimum: 1
             maximum: 200
             default: 50
-          description: Máximo de adsets (1–200).
+          description: Máximo de conjuntos de anúncios (1–200).
       responses:
         "200":
-          description: Adsets
+          description: Conjuntos de anúncios
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/OkToolResponse"
         "401":
-          $ref: "#/components/responses/Unauthorized"
+          description: Não autorizado — API key ausente ou inválida
         "400":
-          $ref: "#/components/responses/BadRequest"
+          description: Requisição inválida — erro de validação ou da ferramenta
 
   /api/gpt/meta/ads:
     get:
@@ -195,8 +310,19 @@ paths:
       summary: Listar anúncios
       description: Lista anúncios da conta, campanha ou adset.
       parameters:
-        - $ref: "#/components/parameters/TenantIdQuery"
-        - $ref: "#/components/parameters/AdAccountIdQuery"
+        - name: tenantId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: UUID do tenant (empresa) no Blimber. Obrigatório — nunca misture tenants.
+        - name: adAccountId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Conta de anúncios sem prefixo act_. Usa a da integração se omitido.
         - name: campaignId
           in: query
           schema:
@@ -206,7 +332,7 @@ paths:
           in: query
           schema:
             type: string
-          description: Filtrar por adset.
+          description: Filtrar por conjunto de anúncios (adset).
         - name: activeOnly
           in: query
           schema:
@@ -229,9 +355,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/OkToolResponse"
         "401":
-          $ref: "#/components/responses/Unauthorized"
+          description: Não autorizado — API key ausente ou inválida
         "400":
-          $ref: "#/components/responses/BadRequest"
+          description: Requisição inválida — erro de validação ou da ferramenta
 
   /api/gpt/meta/insights:
     post:
@@ -248,22 +374,22 @@ paths:
               $ref: "#/components/schemas/InsightsBody"
       responses:
         "200":
-          description: Insights
+          description: Métricas (insights)
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/OkToolResponse"
         "401":
-          $ref: "#/components/responses/Unauthorized"
+          description: Não autorizado — API key ausente ou inválida
         "400":
-          $ref: "#/components/responses/BadRequest"
+          description: Requisição inválida — erro de validação ou da ferramenta
 
   /api/gpt/meta/invoke:
     post:
       operationId: invokeMetaTool
-      summary: Invoke genérico (fallback)
+      summary: Invocação genérica (alternativa)
       description: >
-        Fallback tipado por nome de tool. Prefira as rotas REST acima no Custom GPT.
+        Invoca uma tool pelo nome (alternativa tipada). Prefira as rotas REST acima no Custom GPT.
       x-openai-isConsequential: true
       requestBody:
         required: true
@@ -279,9 +405,9 @@ paths:
               schema:
                 $ref: "#/components/schemas/OkToolResponse"
         "401":
-          $ref: "#/components/responses/Unauthorized"
+          description: Não autorizado — API key ausente ou inválida
         "400":
-          $ref: "#/components/responses/BadRequest"
+          description: Requisição inválida — erro de validação ou da ferramenta
 
 components:
   securitySchemes:
@@ -289,34 +415,40 @@ components:
       type: http
       scheme: bearer
       description: >
-        No Custom GPT → Authentication → API Key → Auth Type Bearer.
-        Cole o valor de BLIMBER_MCP_API_KEY (sem prefixo Bearer no campo do ChatGPT).
-
-  parameters:
-    TenantIdQuery:
-      name: tenantId
-      in: query
-      required: true
-      schema:
-        type: string
-        format: uuid
-      description: UUID do tenant (empresa) no Blimber. Obrigatório — nunca misture tenants.
-    AdAccountIdQuery:
-      name: adAccountId
-      in: query
-      required: false
-      schema:
-        type: string
-      description: Conta de anúncios sem prefixo act_. Usa a da integração se omitido.
-    CampaignIdPath:
-      name: campaignId
-      in: path
-      required: true
-      schema:
-        type: string
-      description: ID da campanha na Meta Graph API.
+        No GPT → Autenticação → Chave de API → Bearer.
+        Cole o valor de BLIMBER_MCP_API_KEY (sem digitar o prefixo Bearer no campo do ChatGPT).
 
   schemas:
+    TenantSearchResponse:
+      type: object
+      required: [ok, query, tenants]
+      properties:
+        ok:
+          type: boolean
+          example: true
+        query:
+          type: string
+          description: Texto de busca normalizado usado na consulta.
+        organizationId:
+          type: string
+          format: uuid
+          description: Presente quando a busca foi limitada a uma organização.
+        tenants:
+          type: array
+          items:
+            type: object
+            required: [id, name, slug]
+            properties:
+              id:
+                type: string
+                format: uuid
+                description: UUID do tenant — use como tenantId nas outras ações.
+              name:
+                type: string
+                description: Nome do cliente/empresa.
+              slug:
+                type: string
+                description: Slug público do tenant.
     OkToolResponse:
       type: object
       properties:
@@ -360,7 +492,7 @@ components:
           description: UUID do tenant.
         adAccountId:
           type: string
-          description: Ad account opcional (sem act_).
+          description: Conta de anúncio opcional (sem prefixo act_).
         level:
           type: string
           enum: [account, campaign, adset, ad]
@@ -379,10 +511,10 @@ components:
           type: array
           items:
             type: string
-          description: Campos Graph opcionais; padrão inclui spend, clicks, impressions.
+          description: Campos Graph opcionais; o padrão inclui spend, clicks e impressions.
         objectId:
           type: string
-          description: ID de campanha/adset/ad para insights do nó.
+          description: ID de campanha, conjunto ou anúncio para insights desse nó.
         limit:
           type: integer
           minimum: 1
@@ -427,26 +559,3 @@ components:
           type: object
           additionalProperties: true
           description: Payload da tool (sempre com tenantId).
-
-  responses:
-    Unauthorized:
-      description: API key ausente ou inválida
-      content:
-        application/json:
-          schema:
-            type: object
-            additionalProperties: true
-    BadRequest:
-      description: Validação / tool error
-      content:
-        application/json:
-          schema:
-            type: object
-            additionalProperties: true
-    ServiceUnavailable:
-      description: BLIMBER_MCP_API_KEY não configurado no servidor
-      content:
-        application/json:
-          schema:
-            type: object
-            additionalProperties: true

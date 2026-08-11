@@ -7,6 +7,12 @@ import {
   optionalString,
 } from '../server/utils/meta-gpt-api'
 import { resolveMetaGptApiSecret } from '../server/utils/meta-gpt-auth'
+import {
+  buildTenantNameSearchPattern,
+  clampTenantSearchLimit,
+  escapeIlikePattern,
+  normalizeTenantSearchQuery,
+} from '../server/utils/meta-gpt-tenants'
 
 const ROOT = join(import.meta.dirname, '..')
 const OPENAPI_PATH = join(ROOT, 'gpt/blimber-meta/openapi.yaml')
@@ -14,6 +20,7 @@ const SKILL_PATH = join(ROOT, 'gpt/blimber-meta/skills/blimber-meta-ads/SKILL.md
 
 /** Maps OpenAPI path templates to Nuxt server route files under server/api. */
 const EXPECTED_ROUTE_FILES: Record<string, string[]> = {
+  '/api/gpt/meta/tenants': ['server/api/gpt/meta/tenants.get.ts'],
   '/api/gpt/meta/tools': ['server/api/gpt/meta/tools.get.ts'],
   '/api/gpt/meta/integrations': ['server/api/gpt/meta/integrations.get.ts'],
   '/api/gpt/meta/ad-accounts': ['server/api/gpt/meta/ad-accounts.get.ts'],
@@ -42,12 +49,18 @@ describe('gpt/blimber-meta OpenAPI pack', () => {
   it('OpenAPI exists and declares Bearer auth + consequential mutation', () => {
     expect(existsSync(OPENAPI_PATH)).toBe(true)
     const yaml = readFileSync(OPENAPI_PATH, 'utf8')
-    expect(yaml).toContain('openapi: 3.1.0')
+    expect(yaml).toContain('openapi: 3.0.3')
+    expect(yaml).toContain('servers:')
+    expect(yaml).toContain('https://app.blimber.com.br')
+    expect(yaml).not.toContain('YOUR_PUBLIC_HTTPS_HOST')
+    expect(yaml).not.toMatch(/parameters:\s*\n\s*-\s*\$ref:/)
     expect(yaml).toContain('BearerAuth:')
     expect(yaml).toContain('scheme: bearer')
     expect(yaml).toContain('x-openai-isConsequential: true')
     expect(yaml).toContain('operationId: updateCampaignStatus')
     expect(yaml).toContain('operationId: getInsights')
+    expect(yaml).toContain('operationId: searchTenants')
+    expect(yaml).toContain('/api/gpt/meta/tenants')
   })
 
   it('every OpenAPI path maps to an existing Nuxt server route file', () => {
@@ -71,6 +84,7 @@ describe('gpt/blimber-meta OpenAPI pack', () => {
     expect(skill).toMatch(/^name:\s*blimber-meta-ads/m)
     expect(skill).toMatch(/^description:/m)
     expect(skill.toLowerCase()).toContain('tenantid')
+    expect(skill).toContain('searchTenants')
     expect(existsSync(join(ROOT, 'gpt/blimber-meta/instructions.md'))).toBe(true)
     expect(existsSync(join(ROOT, 'gpt/blimber-meta/gpt-actions.md'))).toBe(true)
 
@@ -103,5 +117,21 @@ describe('meta-gpt query helpers', () => {
     expect(resolveMetaGptApiSecret()).toBe('test-key-gpt')
     process.env.BLIMBER_MCP_API_KEY = prev
     process.env.MARKETING_WORKER_SECRET = prevWorker
+  })
+})
+
+describe('meta-gpt tenant search helpers', () => {
+  it('escapes ILIKE wildcards and builds partial pattern', () => {
+    expect(escapeIlikePattern('a%b_c')).toBe('a\\%b\\_c')
+    expect(buildTenantNameSearchPattern('  Farma  Estetica ')).toBe('%Farma Estetica%')
+    expect(buildTenantNameSearchPattern('100%_off')).toBe('%100\\%\\_off%')
+  })
+
+  it('normalizes query and clamps limit', () => {
+    expect(normalizeTenantSearchQuery('a')).toBeNull()
+    expect(normalizeTenantSearchQuery('  ab  ')).toBe('ab')
+    expect(clampTenantSearchLimit(undefined)).toBe(20)
+    expect(clampTenantSearchLimit(999)).toBe(50)
+    expect(clampTenantSearchLimit(0)).toBe(1)
   })
 })

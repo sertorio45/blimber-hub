@@ -1,10 +1,19 @@
 # Blimber Meta Ads no ChatGPT
 
-Experiência **primária**: Custom GPT + **Actions** (OpenAPI) + **Skill** OpenAI.  
+Experiência **primária**: GPT personalizado + **Ações** (Actions / OpenAPI) + **Habilidade** (Skill) OpenAI.  
 MCP stdio (Cursor / Claude Desktop) é **opcional** — ver [`mcp-blimber-meta.md`](./mcp-blimber-meta.md).
 
-> O plugin clássico ChatGPT (`ai-plugin.json` / `.well-known`) está **deprecated**.  
-> Use Custom GPT Actions + arquivo de Skill (`SKILL.md`).
+> **Tutorial completo (passo a passo, prompts, troubleshooting):**  
+> [`gpt-blimber-meta-TUTORIAL.md`](./gpt-blimber-meta-TUTORIAL.md)
+
+> O plugin clássico ChatGPT (`ai-plugin.json` / `.well-known`) está **descontinuado**.  
+> Use **Ações** do GPT + arquivo de Habilidade (`SKILL.md`).
+
+## Onde achar na interface (PT)
+
+**Explorar GPTs** → **Criar** (ou **Meus GPTs** → **Editar GPT**) → aba **Configurar** → **Instruções** + **Ações** (**Criar nova ação**) + **Conhecimento** / **Habilidades** → **Criar** ou **Atualizar**.
+
+Detalhes: [Tutorial — Onde achar na interface (PT)](./gpt-blimber-meta-TUTORIAL.md#onde-achar-na-interface-pt).
 
 ## Arquitetura
 
@@ -12,8 +21,8 @@ MCP stdio (Cursor / Claude Desktop) é **opcional** — ver [`mcp-blimber-meta.m
 Usuário no ChatGPT
     │
     ▼
-Custom GPT (Instructions + Skill)
-    │  Actions (OpenAPI)
+GPT personalizado (Instruções + Habilidade)
+    │  Ações (OpenAPI)
     ▼
 HTTPS POST/GET  /api/gpt/meta/*
 Authorization: Bearer BLIMBER_MCP_API_KEY
@@ -29,79 +38,27 @@ Pack importável: [`gpt/blimber-meta/`](../gpt/blimber-meta/)
 
 | Artefato | Caminho |
 |----------|---------|
-| OpenAPI 3.1 | `gpt/blimber-meta/openapi.yaml` |
-| Instructions | `gpt/blimber-meta/instructions.md` |
+| **Tutorial** | `docs/gpt-blimber-meta-TUTORIAL.md` |
+| OpenAPI 3.0.3 | `gpt/blimber-meta/openapi.yaml` |
+| Instruções (colar na UI) | `gpt/blimber-meta/instructions.md` |
 | Skill | `gpt/blimber-meta/skills/blimber-meta-ads/SKILL.md` |
-| Setup Actions | `gpt/blimber-meta/gpt-actions.md` |
+| Setup Ações | `gpt/blimber-meta/gpt-actions.md` |
 
-## Passo a passo
+## Setup rápido
 
-### 1. Deploy / URL pública
+1. Deploy HTTPS público + `BLIMBER_MCP_API_KEY` (ver `.env.example`)
+2. **Criar** GPT → colar `instructions.md` em **Instruções**
+3. **Ações** → **Criar nova ação** → importar `openapi.yaml` → `servers.url` → **Autenticação**: **Chave de API** + **Bearer**
+4. Anexar Habilidade em **Conhecimento** / **Habilidades** (`skills/blimber-meta-ads` ou ZIP)
+5. Testar: nome do cliente → `searchTenants` → insights / campanhas (ou `tenantId` direto)
 
-O ChatGPT exige **HTTPS público** (TLS 1.2+). Localhost não serve para Actions.
-
-Exemplo: `https://app.blimber.com.br`
-
-### 2. Configurar API key
-
-```bash
-# .env / secrets do deploy
-BLIMBER_MCP_API_KEY=uma-chave-longa-e-aleatoria
-```
-
-Também necessários (já do Hub):
-
-```bash
-SUPABASE_URL=
-SUPABASE_SERVICE_KEY=          # ou SUPABASE_SERVICE_ROLE_KEY
-MARKETING_ENCRYPTION_SECRET=   # decrypt de access_token_enc
-META_GRAPH_VERSION=v20.0       # opcional
-```
-
-Fallback de auth: se `BLIMBER_MCP_API_KEY` estiver vazio, aceita `MARKETING_WORKER_SECRET`.
-
-Headers aceitos:
-
-- `Authorization: Bearer <chave>` ← **use no Custom GPT** (único scheme OpenAPI)
-- `x-blimber-mcp-key: <chave>` ← scripts / bridge legado
-
-### 3. Criar Custom GPT → Import Actions
-
-1. ChatGPT → Create a GPT  
-2. Cole [`instructions.md`](../gpt/blimber-meta/instructions.md) em **Instructions**  
-3. Em **Actions**, importe [`openapi.yaml`](../gpt/blimber-meta/openapi.yaml)  
-4. Ajuste `servers.url` se o host for outro  
-5. Authentication → **API Key** → **Bearer** → cole `BLIMBER_MCP_API_KEY`
-
-### 4. Skill
-
-Anexe a pasta `gpt/blimber-meta/skills/blimber-meta-ads` ou gere o ZIP:
-
-```bash
-cd gpt/blimber-meta/skills
-zip -r ../blimber-meta-ads.skill.zip blimber-meta-ads
-```
-
-Upload via ChatGPT Skills / Knowledge, conforme o fluxo da sua conta OpenAI.
-
-### 5. Testar com tenantId real
-
-```
-Liste as integrações do tenant <TENANT_UUID> e diga se Meta está pronto.
-```
-
-```
-Spend last_7d level=campaign do tenant <TENANT_UUID>.
-```
-
-```
-Pause a campanha <CAMPAIGN_ID> do tenant <TENANT_UUID> (só depois da minha confirmação).
-```
+Passo a passo numerado, prompts e troubleshooting: **[Tutorial](./gpt-blimber-meta-TUTORIAL.md)**.
 
 ## Endpoints REST (`/api/gpt/meta`)
 
 | Método | Path | operationId |
 |--------|------|-------------|
+| GET | `/api/gpt/meta/tenants?q=` | `searchTenants` |
 | GET | `/api/gpt/meta/tools` | `listMetaTools` |
 | GET | `/api/gpt/meta/integrations?tenantId=` | `listIntegrations` |
 | GET | `/api/gpt/meta/ad-accounts?tenantId=` | `listAdAccounts` |
@@ -113,31 +70,22 @@ Pause a campanha <CAMPAIGN_ID> do tenant <TENANT_UUID> (só depois da minha conf
 | POST | `/api/gpt/meta/insights` | `getInsights` |
 | POST | `/api/gpt/meta/invoke` | `invokeMetaTool` (fallback) |
 
-Todas (exceto documentação) exigem API key. Mutações exigem `confirm: true` + `confirmTenantId === tenantId`.  
-`updateCampaignStatus` marca `x-openai-isConsequential: true`.
+`searchTenants` resolve nome → `tenantId` (só id/name/slug; busca administrativa com a API key global).  
+Todas as Ações Meta ainda exigem `tenantId`. Mutações exigem `confirm: true` + `confirmTenantId === tenantId`.  
+Contrato completo: `gpt/blimber-meta/openapi.yaml`.
 
-## Segurança
+## Segurança (resumo)
 
 - Auth obrigatória; sem chave → 401; sem env → 503  
-- Tokens Meta **nunca** saem nas respostas das tools  
-- URL precisa ser pública HTTPS  
-- ChatGPT Actions: um único security scheme (Bearer) — não dependa de headers custom no schema  
-- Confirme mutações com o usuário antes de chamar a Action
-
-## Opcional (não é o caminho do usuário)
-
-| Modo | Quando |
-|------|--------|
-| stdio MCP `pnpm mcp:meta` | Dev local Cursor/Claude |
-| `POST /api/internal/mcp/meta/invoke` | Bridge legado de agents |
-| Skill Cursor `.agents/skills/blimber-meta-ads` | Legacy — aponta para este fluxo GPT |
+- Tokens Meta **nunca** nas respostas  
+- HTTPS público obrigatório para Ações  
+- Confirme mutações com o usuário antes de chamar a ação  
 
 ## Limitações
 
-- HTTPS público obrigatório para Actions  
+- Sem create/delete campaign, budget em massa, CAPI, Brand Center (MVP)  
 - Timeout ~45s / payloads texto < ~100k (limites OpenAI)  
-- MVP sem create/delete campaign, budget em massa, CAPI, Brand Center  
-- O GPT assume trust da API key: **sempre** passe o `tenantId` correto
+- Sempre passe o `tenantId` correto  
 
 ## Testes
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  applyBrandLogoSelection,
   computeBrandCompleteness,
   createEmptyAiPreferences,
   createEmptyBrandGuide,
@@ -139,5 +140,29 @@ describe('brand-guide utils', () => {
     expect(input.metadata?.visualDirection?.preferredElements).toEqual(['vidro'])
     expect(input.metadata?.visualDirection?.visualReferenceAssetIds).toHaveLength(1)
     expect(input.metadata?.aiPreferences).toBeTruthy()
+  })
+
+  it('applies logo selection atomically so save payload keeps logoAssetIds', () => {
+    const guide = createEmptyBrandGuide('tenant')
+    const logoId = '33333333-3333-3333-3333-333333333333'
+    const logoAssets = [{
+      id: logoId,
+      name: 'logo.png',
+      mimeType: 'image/png',
+      previewUrl: 'https://example.com/logo.png',
+      objectPath: 'tenant/logo.png',
+    }]
+
+    // Stale dual-patch: assets present, ids wiped — save must still persist ids.
+    const onlyAssets = { ...guide, logoAssets }
+    expect(toBrandGuideInput(onlyAssets).logoAssetIds).toEqual([logoId])
+
+    const linked = applyBrandLogoSelection(guide, {
+      logoAssetIds: [logoId],
+      logoAssets,
+    })
+    expect(linked.logoAssetIds).toEqual([logoId])
+    expect(linked.logoAssets).toHaveLength(1)
+    expect(toBrandGuideInput(linked).logoAssetIds).toEqual([logoId])
   })
 })

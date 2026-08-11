@@ -452,6 +452,11 @@ export function toBrandGuideInput(guide: BrandGuide): BrandGuideInput {
   const visualDirection = guide.metadata.visualDirection || createEmptyVisualDirection()
   const aiPreferences = guide.metadata.aiPreferences || createEmptyAiPreferences()
 
+  // Prefer explicit ids; fall back to logoAssets when a stale dual-patch wiped ids.
+  const logoAssetIds = guide.logoAssetIds.length
+    ? guide.logoAssetIds
+    : guide.logoAssets.map(asset => asset.id).filter(Boolean)
+
   return {
     toneOfVoice: guide.toneOfVoice,
     audience: audienceSummary,
@@ -465,7 +470,7 @@ export function toBrandGuideInput(guide: BrandGuide): BrandGuideInput {
     competitors: guide.competitors.filter(item => hasText(item.name)),
     restrictions: guide.restrictions,
     legalNotes: guide.legalNotes,
-    logoAssetIds: guide.logoAssetIds,
+    logoAssetIds,
     metadata: {
       ...guide.metadata,
       audienceProfile: {
