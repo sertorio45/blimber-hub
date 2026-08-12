@@ -46,20 +46,32 @@ async function save(input: SocialPostInput) {
 
 <template>
   <MarketingPageSkeleton v-if="!formReady" variant="detail" />
-  <div v-else class="mx-auto max-w-5xl space-y-6">
-    <div>
-      <Button variant="ghost" class="mb-2 -ml-3" @click="navigateTo('/marketing/content')">
-        <Icon name="lucide:arrow-left" class="mr-2 h-4 w-4" />
-        {{ isClientExperience ? 'Voltar para publicações' : 'Voltar para conteúdos' }}
+  <div v-else class="mx-auto max-w-6xl px-4 py-6 lg:px-8">
+    <div class="mb-8">
+      <Button
+        variant="ghost"
+        size="sm"
+        class="mb-3 -ml-2 text-muted-foreground transition-colors hover:text-foreground"
+        @click="navigateTo('/marketing/content')"
+      >
+        <Icon name="lucide:arrow-left" class="mr-1.5 h-4 w-4" />
+        {{ isClientExperience ? 'Publicações' : 'Conteúdos' }}
       </Button>
-      <h1 class="text-2xl font-bold tracking-tight">
-        {{ isClientExperience ? 'Criar post' : 'Novo conteúdo' }}
-      </h1>
-      <p class="mt-1 text-muted-foreground">
-        {{ isClientExperience
-          ? 'Escreva a legenda, escolha os canais e veja a pré-visualização antes de publicar.'
-          : 'Título, legenda, variantes por rede, anexos, campanha e responsáveis.' }}
-      </p>
+      <div class="flex items-center gap-3">
+        <div class="h-10 w-10 flex shrink-0 items-center justify-center rounded-xl bg-primary/10">
+          <Icon name="lucide:pen-square" class="h-5 w-5 text-primary" />
+        </div>
+        <div>
+          <h1 class="text-2xl font-semibold tracking-tight">
+            {{ isClientExperience ? 'Criar post' : 'Novo conteúdo' }}
+          </h1>
+          <p class="text-sm text-muted-foreground">
+            {{ isClientExperience
+              ? 'Escreva a legenda, escolha os canais e veja a pré-visualização antes de publicar.'
+              : 'Título, legenda, variantes por rede, anexos, campanha e responsáveis.' }}
+          </p>
+        </div>
+      </div>
     </div>
 
     <ContentEditor :initial-value="initialValue" :saving="saving" @save="save" />

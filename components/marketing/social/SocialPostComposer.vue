@@ -17,7 +17,7 @@ const props = withDefaults(defineProps<{
   textareaClass?: HTMLAttributes['class']
 }>(), {
   hashtags: () => [],
-  placeholder: 'Escreva a legenda que será publicada nas redes sociais',
+  placeholder: 'Escreva a legenda que será publicada nas redes sociais...',
   maxlength: 10000,
   suggestedHashtags: () => [],
   disabled: false,
@@ -34,11 +34,23 @@ const emojiOpen = ref(false)
 const hashtagOpen = ref(false)
 const formatOpen = ref(false)
 const hashtagQuery = ref('')
+const isFocused = ref(false)
 
 const characterCount = computed(() => {
   const tags = formatHashtagsInline(props.hashtags)
   return `${props.modelValue}${tags ? ` ${tags}` : ''}`.length
 })
+
+const characterPercent = computed(() => Math.min(100, (characterCount.value / props.maxlength) * 100))
+
+const characterColor = computed(() => {
+  if (characterPercent.value > 95) return 'text-destructive'
+  if (characterPercent.value > 80) return 'text-orange-500'
+  return 'text-muted-foreground'
+})
+
+const ringCircumference = 62.83
+const ringOffset = computed(() => ringCircumference - (characterPercent.value / 100) * ringCircumference)
 
 const filteredSuggestions = computed(() => {
   const query = hashtagQuery.value.trim().replace(/^#/, '').toLowerCase()
@@ -171,7 +183,10 @@ function onToolbarAction(action: 'emoji' | 'location' | 'link') {
 
 <template>
   <div class="space-y-2">
-    <div class="relative overflow-hidden border rounded-xl bg-background transition-shadow focus-within:ring-2 focus-within:ring-primary/20">
+    <div
+      class="relative overflow-hidden border rounded-xl bg-background transition-all duration-200"
+      :class="isFocused ? 'ring-2 ring-primary/20 border-primary/40 shadow-sm' : 'hover:border-border/80'"
+    >
       <textarea
         id="social-content"
         ref="textareaRef"
@@ -180,21 +195,23 @@ function onToolbarAction(action: 'emoji' | 'location' | 'link') {
         :maxlength="maxlength"
         :placeholder="placeholder"
         :class="cn(
-          'flex min-h-44 w-full resize-none border-0 bg-transparent px-3 py-2 pb-12 text-sm shadow-none outline-none placeholder:text-muted-foreground focus-visible:ring-0 disabled:cursor-not-allowed disabled:opacity-50',
+          'flex min-h-52 w-full resize-none border-0 bg-transparent px-4 py-3 pb-14 text-sm leading-relaxed shadow-none outline-none placeholder:text-muted-foreground/60 focus-visible:ring-0 disabled:cursor-not-allowed disabled:opacity-50',
           textareaClass,
         )"
         @input="emit('update:modelValue', ($event.target as HTMLTextAreaElement).value.slice(0, maxlength))"
+        @focus="isFocused = true"
+        @blur="isFocused = false"
       />
 
       <div
         v-if="hashtags.length"
-        class="flex flex-wrap items-center gap-x-1.5 gap-y-1 border-t border-dashed px-3 py-2"
+        class="flex flex-wrap items-center gap-x-1.5 gap-y-1 border-t border-dashed px-4 py-2.5"
       >
         <button
           v-for="tag in hashtags"
           :key="tag"
           type="button"
-          class="inline-flex items-center gap-1 rounded-full bg-primary/8 px-2 py-0.5 text-xs text-primary transition-colors hover:bg-primary/15"
+          class="inline-flex items-center gap-1 rounded-full bg-primary/8 px-2.5 py-0.5 text-xs text-primary transition-all hover:bg-primary/15 hover:shadow-sm active:scale-95"
           :disabled="disabled"
           @click="removeHashtag(tag)"
         >
@@ -203,7 +220,8 @@ function onToolbarAction(action: 'emoji' | 'location' | 'link') {
         </button>
       </div>
 
-      <div class="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-between px-2 pb-2">
+      <!-- Toolbar inside textarea -->
+      <div class="pointer-events-none absolute inset-x-0 bottom-0 flex items-center justify-between px-3 pb-2.5">
         <div class="pointer-events-auto flex items-center gap-0.5">
           <Popover v-model:open="formatOpen">
             <PopoverTrigger as-child>
@@ -284,7 +302,7 @@ function onToolbarAction(action: 'emoji' | 'location' | 'link') {
                   v-for="tag in filteredSuggestions"
                   :key="tag"
                   type="button"
-                  class="w-full rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted"
+                  class="w-full rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-muted"
                   @click="insertHashtag(tag)"
                 >
                   {{ tag }}
@@ -328,7 +346,7 @@ function onToolbarAction(action: 'emoji' | 'location' | 'link') {
                     v-for="emoji in group.emojis"
                     :key="emoji"
                     type="button"
-                    class="h-9 rounded-md text-lg hover:bg-muted"
+                    class="h-9 rounded-md text-lg transition-transform hover:bg-muted hover:scale-110 active:scale-95"
                     @click="insertEmoji(emoji)"
                   >
                     {{ emoji }}
@@ -341,54 +359,100 @@ function onToolbarAction(action: 'emoji' | 'location' | 'link') {
       </div>
     </div>
 
-    <div class="flex items-center gap-1 border rounded-lg bg-muted/30 px-2 py-1.5">
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        class="h-8 w-8 text-muted-foreground"
-        :disabled="disabled"
-        aria-label="Emoji"
-        @click="onToolbarAction('emoji')"
-      >
-        <Icon name="lucide:smile" class="h-4 w-4" />
-      </Button>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        class="h-8 w-8 text-muted-foreground"
-        :disabled="disabled"
-        aria-label="Localização"
-        @click="onToolbarAction('location')"
-      >
-        <Icon name="lucide:map-pin" class="h-4 w-4" />
-      </Button>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        class="h-8 w-8 text-muted-foreground"
-        :disabled="disabled"
-        aria-label="Link"
-        @click="onToolbarAction('link')"
-      >
-        <Icon name="lucide:link" class="h-4 w-4" />
-      </Button>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        class="h-8 w-8 text-muted-foreground"
-        :disabled="disabled"
-        aria-label="Hashtag"
-        @click="hashtagOpen = true"
-      >
-        <Icon name="lucide:hash" class="h-4 w-4" />
-      </Button>
-      <span class="ml-auto text-xs text-muted-foreground">
-        {{ characterCount }}/{{ maxlength.toLocaleString('pt-BR') }}
-      </span>
+    <!-- Enhanced toolbar with character ring -->
+    <div class="flex items-center gap-1.5 rounded-lg bg-muted/30 px-2 py-1.5">
+      <TooltipProvider :delay-duration="300">
+        <Tooltip>
+          <TooltipTrigger as-child>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              class="h-8 w-8 text-muted-foreground hover:text-foreground"
+              :disabled="disabled"
+              @click="onToolbarAction('emoji')"
+            >
+              <Icon name="lucide:smile" class="h-4 w-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top">Emoji</TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger as-child>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              class="h-8 w-8 text-muted-foreground hover:text-foreground"
+              :disabled="disabled"
+              @click="onToolbarAction('location')"
+            >
+              <Icon name="lucide:map-pin" class="h-4 w-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top">Localização</TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger as-child>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              class="h-8 w-8 text-muted-foreground hover:text-foreground"
+              :disabled="disabled"
+              @click="onToolbarAction('link')"
+            >
+              <Icon name="lucide:link" class="h-4 w-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top">Link</TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger as-child>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              class="h-8 w-8 text-muted-foreground hover:text-foreground"
+              :disabled="disabled"
+              @click="hashtagOpen = true"
+            >
+              <Icon name="lucide:hash" class="h-4 w-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top">Hashtag</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+
+      <div class="ml-auto flex items-center gap-2">
+        <!-- SVG progress ring -->
+        <svg class="h-5 w-5 -rotate-90" viewBox="0 0 24 24">
+          <circle
+            cx="12" cy="12" r="10"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            class="text-muted/50"
+          />
+          <circle
+            cx="12" cy="12" r="10"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            :stroke-dasharray="ringCircumference"
+            :stroke-dashoffset="ringOffset"
+            :class="characterColor"
+            class="transition-all duration-300"
+          />
+        </svg>
+        <span :class="characterColor" class="text-xs tabular-nums transition-colors">
+          {{ characterCount.toLocaleString('pt-BR') }}
+        </span>
+      </div>
     </div>
 
     <p class="sr-only">

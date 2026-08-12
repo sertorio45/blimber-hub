@@ -78,12 +78,16 @@ const publicationLink = ref(props.initialValue?.variants?.[0]?.linkUrl || '')
 const publicationAssetIds = ref<string[]>(props.initialValue?.variants?.[0]?.assetIds || [])
 const referenceAssetIds = ref(props.initialValue?.referenceAssetIds || [])
 const uploading = ref(false)
+const slideDirection = ref<'left' | 'right'>('left')
+
 const steps = [
-  { step: 1, title: 'Conteúdo', description: 'Título e legenda' },
-  { step: 2, title: 'Redes', description: 'Canais e formato' },
-  { step: 3, title: 'Planejamento', description: 'Mídia e agenda' },
-  { step: 4, title: 'Revisão', description: 'Conferir e salvar' },
+  { step: 1, title: 'Conteúdo', description: 'Título e legenda', icon: 'lucide:pen-line' },
+  { step: 2, title: 'Redes', description: 'Canais e formato', icon: 'lucide:share-2' },
+  { step: 3, title: 'Planejamento', description: 'Mídia e agenda', icon: 'lucide:calendar-clock' },
+  { step: 4, title: 'Revisão', description: 'Conferir e salvar', icon: 'lucide:check-circle-2' },
 ]
+
+const stepProgress = computed(() => ((currentStep.value - 1) / (steps.length - 1)) * 100)
 
 const { data: accounts, pending: accountsPending, refresh: refreshAccounts } = useMarketingFetch({
   key: () => `marketing-social-form-accounts-${social.tenantId.value}`,
@@ -419,12 +423,22 @@ function nextStep() {
       : 'Selecione uma peça final para continuar.'
     return
   }
+  slideDirection.value = 'left'
   currentStep.value = Math.min(4, currentStep.value + 1)
 }
 
 function previousStep() {
   formError.value = ''
+  slideDirection.value = 'right'
   currentStep.value = Math.max(1, currentStep.value - 1)
+}
+
+function goToStep(step: number) {
+  if (step >= currentStep.value)
+    return
+  formError.value = ''
+  slideDirection.value = step < currentStep.value ? 'right' : 'left'
+  currentStep.value = step
 }
 
 function formatScheduledDate() {
@@ -534,614 +548,744 @@ function submit() {
     <Skeleton class="h-40 w-full" />
     <Skeleton class="h-10 w-2/3" />
   </div>
-  <form v-else class="space-y-6" @submit.prevent="submit">
-    <Stepper :model-value="currentStep" class="w-full items-start gap-0">
-      <StepperItem
-        v-for="item in steps"
-        :key="item.step"
-        :step="item.step"
-        class="relative flex flex-1 flex-col items-center"
-      >
-        <StepperIndicator class="z-10 border bg-background">
-          <Icon v-if="currentStep > item.step" name="lucide:check" class="h-4 w-4" />
-          <span v-else>{{ item.step }}</span>
-        </StepperIndicator>
-        <StepperTitle class="mt-2 text-center text-xs sm:text-sm">
-          {{ item.title }}
-        </StepperTitle>
-        <StepperDescription class="hidden text-center lg:block">
-          {{ item.description }}
-        </StepperDescription>
-        <StepperSeparator
-          v-if="item.step < steps.length"
-          class="absolute left-1/2 top-4 h-0.5 w-full bg-muted group-data-[state=completed]:bg-primary"
+  <form v-else class="space-y-8" @submit.prevent="submit">
+    <!-- Premium stepper with icons and progress bar -->
+    <div class="relative">
+      <div class="absolute left-0 right-0 top-5 z-0 mx-auto h-0.5 bg-muted" style="width: calc(100% - 8rem);">
+        <div
+          class="h-full bg-primary transition-all duration-500 ease-out"
+          :style="{ width: `${stepProgress}%` }"
         />
-      </StepperItem>
-    </Stepper>
-
-    <div v-if="currentStep === 1" class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
-      <Card class="border-muted/80 shadow-sm">
-        <CardHeader class="pb-4">
-          <CardTitle class="text-lg">
-            Detalhes do post
-          </CardTitle>
-          <CardDescription>
-            Escreva a legenda, adicione hashtags e configure o conteúdo base da publicação.
-          </CardDescription>
-        </CardHeader>
-        <CardContent class="space-y-5">
-          <div class="space-y-2">
-            <Label for="social-title">Título interno</Label>
-            <Input
-              id="social-title"
-              v-model="title"
-              maxlength="180"
-              placeholder="Ex.: Campanha de inverno — lançamento"
-            />
-            <p class="text-xs text-muted-foreground">
-              Usado apenas para organização interna.
+      </div>
+      <div class="relative z-10 flex items-start justify-between">
+        <button
+          v-for="item in steps"
+          :key="item.step"
+          type="button"
+          class="group flex flex-col items-center gap-2"
+          :class="item.step <= currentStep ? 'cursor-pointer' : 'cursor-default'"
+          @click="goToStep(item.step)"
+        >
+          <div
+            class="h-10 w-10 flex items-center justify-center rounded-full border-2 transition-all duration-300"
+            :class="[
+              currentStep === item.step
+                ? 'border-primary bg-primary text-primary-foreground shadow-md shadow-primary/25 scale-110'
+                : currentStep > item.step
+                  ? 'border-primary bg-primary/10 text-primary'
+                  : 'border-muted bg-background text-muted-foreground',
+              item.step < currentStep ? 'group-hover:border-primary/70' : '',
+            ]"
+          >
+            <Icon v-if="currentStep > item.step" name="lucide:check" class="h-4.5 w-4.5" />
+            <Icon v-else :name="item.icon" class="h-4.5 w-4.5" />
+          </div>
+          <div class="text-center">
+            <p
+              class="text-xs font-medium transition-colors sm:text-sm"
+              :class="currentStep >= item.step ? 'text-foreground' : 'text-muted-foreground'"
+            >
+              {{ item.title }}
+            </p>
+            <p class="hidden text-xs text-muted-foreground lg:block">
+              {{ item.description }}
             </p>
           </div>
-
-          <div class="space-y-2">
-            <Label for="social-content">Legenda da publicação</Label>
-            <SocialPostComposer
-              v-model="content"
-              v-model:hashtags="hashtags"
-              :suggested-hashtags="suggestedHashtags"
-              @insert-link="showLinkField = true"
-            />
-          </div>
-
-          <div v-if="showLinkField" class="space-y-2">
-            <Label for="publication-link-step1">Link opcional</Label>
-            <Input
-              id="publication-link-step1"
-              v-model="publicationLink"
-              type="url"
-              placeholder="https://..."
-            />
-          </div>
-
-          <div class="flex items-center justify-between gap-4 border rounded-xl bg-muted/20 px-4 py-3">
-            <div class="min-w-0">
-              <p class="text-sm font-medium">
-                Personalizar post por rede
-              </p>
-              <p class="text-xs text-muted-foreground">
-                Adapte legenda, hashtags, CTA e texto da arte para cada canal.
-              </p>
-            </div>
-            <Switch
-              :checked="customizeVariants"
-              :disabled="!variants.length"
-              @update:checked="customizeVariants = $event"
-            />
-          </div>
-
-          <div class="grid gap-4 md:grid-cols-2">
-            <div class="space-y-2">
-              <Label for="social-art-text">Texto da arte</Label>
-              <Textarea
-                id="social-art-text"
-                v-model="artText"
-                class="min-h-24"
-                maxlength="2000"
-                placeholder="Texto que aparece na peça visual (opcional)"
-              />
-            </div>
-            <div class="space-y-2">
-              <Label for="social-cta">CTA</Label>
-              <Input
-                id="social-cta"
-                v-model="cta"
-                maxlength="240"
-                placeholder="Ex.: Saiba mais, Compre agora"
-              />
-            </div>
-          </div>
-
-          <div class="grid gap-4 md:grid-cols-2">
-            <div class="space-y-2">
-              <Label>Campanha</Label>
-              <Select v-model="campaignId">
-                <SelectTrigger>
-                  <SelectValue placeholder="Vincular campanha" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">
-                    Sem campanha
-                  </SelectItem>
-                  <SelectItem
-                    v-for="campaign in campaigns"
-                    :key="campaign.id"
-                    :value="campaign.id"
-                  >
-                    {{ campaign.name }}
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div v-if="!isClientExperience" class="space-y-2">
-              <Label>Responsável</Label>
-              <Select v-model="assignedTo">
-                <SelectTrigger>
-                  <SelectValue placeholder="Atribuir responsável" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">
-                    Sem responsável
-                  </SelectItem>
-                  <SelectItem
-                    v-for="member in members"
-                    :key="member.userId"
-                    :value="member.userId"
-                  >
-                    {{ member.name }}
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <div class="lg:sticky lg:top-6 lg:self-start">
-        <SocialPostPreviewPanel
-          :caption="content"
-          :hashtags="hashtags"
-          :platform="previewAccount.platform"
-          :account-name="previewAccount.name"
-          :media-url="previewMedia.url"
-          :media-type="previewMedia.type"
-          :link-url="publicationLink || null"
-        />
+        </button>
       </div>
     </div>
 
-    <Card v-else-if="currentStep === 2">
-      <CardHeader>
-        <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <CardTitle>Redes e formato</CardTitle>
-            <CardDescription>
-              Selecione um canal, vários canais ou todos de uma vez.
-            </CardDescription>
-          </div>
-          <div class="flex gap-2">
-            <Button type="button" variant="outline" size="sm" @click="refreshAccounts()">
-              <Icon name="lucide:refresh-cw" class="mr-2 h-4 w-4" />
-              Atualizar
-            </Button>
-            <Button
-              v-if="accounts?.length"
-              type="button"
-              :variant="allAccountsSelected ? 'secondary' : 'outline'"
-              size="sm"
-              @click="toggleAllAccounts"
-            >
-              <Icon :name="allAccountsSelected ? 'lucide:x' : 'lucide:check-check'" class="mr-2 h-4 w-4" />
-              {{ allAccountsSelected ? 'Limpar seleção' : 'Selecionar todos' }}
-            </Button>
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent class="space-y-6">
-        <div v-if="accounts?.length" class="grid gap-3 sm:grid-cols-3">
-          <button
-            v-for="account in accounts"
-            :key="account.id"
-            type="button"
-            class="flex items-center gap-3 border rounded-xl p-4 text-left transition-colors hover:bg-muted/40"
-            :class="{ 'border-primary bg-primary/5 ring-1 ring-primary': accountSelected(account.id) }"
-            @click="toggleAccount(account)"
-          >
-            <span class="h-10 w-10 flex items-center justify-center rounded-full bg-muted">
-              <Icon
-                :name="account.platform === 'linkedin' ? 'lucide:linkedin' : account.platform === 'instagram' ? 'lucide:instagram' : 'lucide:facebook'"
-                class="h-5 w-5"
-              />
-            </span>
-            <span class="min-w-0 flex-1">
-              <span class="block font-medium">{{ platformLabel(account.platform) }}</span>
-              <span class="block truncate text-xs text-muted-foreground">
-                {{ account.name }}
-              </span>
-            </span>
-            <Icon
-              :name="accountSelected(account.id) ? 'lucide:circle-check' : 'lucide:circle'"
-              class="h-5 w-5"
-              :class="accountSelected(account.id) ? 'text-primary' : 'text-muted-foreground'"
-            />
-          </button>
-        </div>
-        <Alert v-else>
-          <Icon name="lucide:plug" class="h-4 w-4" />
-          <AlertTitle>Nenhuma conta social conectada</AlertTitle>
-          <AlertDescription>
-            Conecte Meta ou LinkedIn antes de continuar.
-            <Button type="button" variant="link" class="h-auto p-0" @click="navigateTo('/settings/integrations')">
-              Abrir integrações
-            </Button>
-          </AlertDescription>
-        </Alert>
-
-        <Separator />
-
-        <div class="grid gap-4 md:grid-cols-2">
-          <div class="space-y-2">
-            <Label>Formato da publicação</Label>
-            <Select :model-value="publicationFormat" @update:model-value="changeFormat">
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="static">
-                  Post estático
-                </SelectItem>
-                <SelectItem value="carousel">
-                  Carrossel
-                </SelectItem>
-                <SelectItem value="video">
-                  Vídeo
-                </SelectItem>
-                <SelectItem value="story">
-                  Stories
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div class="space-y-2">
-            <Label for="publication-link">Link opcional</Label>
-            <Input id="publication-link" v-model="publicationLink" type="url" placeholder="https://..." />
-          </div>
-        </div>
-
-        <Alert v-if="hasFormatConflict" variant="destructive">
-          <Icon name="lucide:triangle-alert" class="h-4 w-4" />
-          <AlertTitle>
-            {{ publicationFormat === 'story' ? 'Stories indisponível no LinkedIn' : 'Formato indisponível no LinkedIn' }}
-          </AlertTitle>
-          <AlertDescription>
-            {{ publicationFormat === 'story'
-              ? 'Stories funciona só no Facebook e Instagram. Desmarque o LinkedIn.'
-              : 'Escolha post estático ou carrossel, ou desmarque o LinkedIn.' }}
-          </AlertDescription>
-        </Alert>
-        <Alert v-else-if="publicationFormat === 'story'">
-          <Icon name="lucide:smartphone" class="h-4 w-4" />
-          <AlertTitle>Posicionamento: Stories</AlertTitle>
-          <AlertDescription>
-            Use uma imagem ou vídeo vertical (9:16). No Facebook, a Meta exige um upload novo da peça — não reutiliza o mesmo arquivo já publicado no feed.
-          </AlertDescription>
-        </Alert>
-
-        <Separator />
-
-        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p class="text-sm font-medium">
-              Variantes por plataforma
-            </p>
-            <p class="text-xs text-muted-foreground">
-              Opcional: adapte legenda, hashtags, CTA e texto da arte por rede.
-            </p>
-          </div>
-          <Button
-            type="button"
-            size="sm"
-            :variant="customizeVariants ? 'secondary' : 'outline'"
-            :disabled="!variants.length"
-            @click="customizeVariants = !customizeVariants"
-          >
-            <Icon :name="customizeVariants ? 'lucide:check' : 'lucide:sliders-horizontal'" class="mr-2 h-4 w-4" />
-            {{ customizeVariants ? 'Adaptando por rede' : 'Adaptar por rede' }}
-          </Button>
-        </div>
-
-        <div v-if="customizeVariants && variants.length" class="space-y-4">
-          <Card
-            v-for="variant in variants"
-            :key="variant.accountId"
-            class="border-dashed"
-          >
-            <CardHeader class="pb-3">
-              <CardTitle class="text-base">
-                {{ platformLabel(variant.platform) }}
-              </CardTitle>
+    <!-- Step content with transitions -->
+    <Transition
+      :name="slideDirection === 'left' ? 'slide-left' : 'slide-right'"
+      mode="out-in"
+    >
+      <!-- Step 1: Content -->
+      <div v-if="currentStep === 1" :key="1" class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+        <div class="space-y-6">
+          <Card class="border-border/60 shadow-sm">
+            <CardHeader class="pb-4">
+              <div class="flex items-center gap-2">
+                <div class="h-8 w-8 flex items-center justify-center rounded-lg bg-primary/10">
+                  <Icon name="lucide:pen-line" class="h-4 w-4 text-primary" />
+                </div>
+                <div>
+                  <CardTitle class="text-lg">
+                    Detalhes do post
+                  </CardTitle>
+                  <CardDescription>
+                    Escreva a legenda, adicione hashtags e configure o conteúdo base.
+                  </CardDescription>
+                </div>
+              </div>
             </CardHeader>
-            <CardContent class="space-y-3">
+            <CardContent class="space-y-5">
               <div class="space-y-2">
-                <Label>Legenda</Label>
-                <Textarea
-                  :model-value="variant.caption"
-                  class="min-h-24"
-                  @update:model-value="updateVariantField(variant.accountId, 'caption', String($event))"
+                <Label for="social-title" class="text-sm font-medium">
+                  Título interno
+                </Label>
+                <Input
+                  id="social-title"
+                  v-model="title"
+                  maxlength="180"
+                  placeholder="Ex.: Campanha de inverno — lançamento"
+                  class="h-11"
+                />
+                <p class="text-xs text-muted-foreground">
+                  Usado apenas para organização interna.
+                </p>
+              </div>
+
+              <div class="space-y-2">
+                <Label for="social-content" class="text-sm font-medium">
+                  Legenda da publicação
+                </Label>
+                <SocialPostComposer
+                  v-model="content"
+                  v-model:hashtags="hashtags"
+                  :suggested-hashtags="suggestedHashtags"
+                  @insert-link="showLinkField = true"
                 />
               </div>
-              <div class="grid gap-3 md:grid-cols-2">
-                <div class="space-y-2">
-                  <Label>Hashtags</Label>
-                  <Input
-                    :model-value="variantHashtagsText(variant)"
-                    placeholder="#marca"
-                    @update:model-value="updateVariantField(variant.accountId, 'hashtagsText', String($event))"
-                  />
-                </div>
-                <div class="space-y-2">
-                  <Label>CTA</Label>
-                  <Input
-                    :model-value="String(variant.platformConfig?.cta || '')"
-                    @update:model-value="updateVariantField(variant.accountId, 'cta', String($event))"
-                  />
-                </div>
-              </div>
-              <div class="space-y-2">
-                <Label>Texto da arte</Label>
+
+              <div v-if="showLinkField" class="space-y-2">
+                <Label for="publication-link-step1">Link opcional</Label>
                 <Input
-                  :model-value="String(variant.platformConfig?.artText || '')"
-                  @update:model-value="updateVariantField(variant.accountId, 'artText', String($event))"
+                  id="publication-link-step1"
+                  v-model="publicationLink"
+                  type="url"
+                  placeholder="https://..."
+                  class="h-11"
+                />
+              </div>
+
+              <div class="flex items-center justify-between gap-4 border rounded-xl bg-muted/20 px-4 py-3 transition-colors hover:bg-muted/30">
+                <div class="min-w-0">
+                  <p class="text-sm font-medium">
+                    Personalizar post por rede
+                  </p>
+                  <p class="text-xs text-muted-foreground">
+                    Adapte legenda, hashtags, CTA e texto da arte para cada canal.
+                  </p>
+                </div>
+                <Switch
+                  :checked="customizeVariants"
+                  :disabled="!variants.length"
+                  @update:checked="customizeVariants = $event"
                 />
               </div>
             </CardContent>
           </Card>
-        </div>
-      </CardContent>
-    </Card>
 
-    <div v-else-if="currentStep === 3" class="space-y-6">
-      <Card>
-        <CardHeader>
-          <CardTitle>Peças finais</CardTitle>
-          <CardDescription>
-            {{ publicationFormat === 'carousel' ? 'Selecione de 2 a 10 imagens na ordem desejada.' : publicationFormat === 'video' ? 'Selecione um vídeo.' : 'Selecione uma imagem.' }}
-          </CardDescription>
-        </CardHeader>
-        <CardContent class="space-y-5">
-          <label class="min-h-28 flex flex-col cursor-pointer items-center justify-center border rounded-xl border-dashed p-5 text-center hover:bg-muted/40">
-            <Icon name="lucide:upload-cloud" class="mb-2 h-6 w-6 text-primary" />
-            <span class="text-sm font-medium">{{ uploading ? 'Enviando...' : 'Enviar novas peças' }}</span>
-            <span class="mt-1 text-xs text-muted-foreground">Imagens e vídeos de até 100 MB</span>
-            <input
-              type="file"
-              multiple
-              accept="image/*,video/mp4,video/quicktime"
-              class="hidden"
-              :disabled="uploading"
-              @change="uploadFiles($event, 'publication')"
-            >
-          </label>
-          <div class="grid grid-cols-2 gap-3 lg:grid-cols-6 sm:grid-cols-3">
-            <button
-              v-for="asset in compatiblePublicationAssets()"
-              :key="asset.id"
-              type="button"
-              class="relative aspect-square overflow-hidden border rounded-xl bg-muted"
-              :class="{ 'ring-2 ring-primary': publicationAssetIds.includes(asset.id) }"
-              @click="toggleAsset(asset.id)"
-            >
-              <img
-                v-if="asset.mimeType?.startsWith('image/') || (asset as any).mime_type?.startsWith('image/')"
-                :src="asset.previewUrl || (asset as any).preview_url || ''"
-                :alt="asset.name"
-                class="h-full w-full object-cover"
-              >
-              <div v-else class="h-full flex items-center justify-center">
-                <Icon name="lucide:file-video" class="h-8 w-8 text-muted-foreground" />
+          <!-- Collapsed sections for secondary fields -->
+          <Card class="border-border/60 shadow-sm">
+            <CardHeader class="pb-4">
+              <div class="flex items-center gap-2">
+                <div class="h-8 w-8 flex items-center justify-center rounded-lg bg-orange-500/10">
+                  <Icon name="lucide:settings-2" class="h-4 w-4 text-orange-500" />
+                </div>
+                <div>
+                  <CardTitle class="text-lg">
+                    Configurações adicionais
+                  </CardTitle>
+                  <CardDescription>
+                    Texto da arte, CTA, campanha e responsável.
+                  </CardDescription>
+                </div>
               </div>
-              <span class="absolute inset-x-0 bottom-0 truncate bg-background/90 px-2 py-1 text-xs">
-                {{ asset.name }}
-              </span>
-              <span
-                v-if="publicationAssetIds.includes(asset.id)"
-                class="absolute right-2 top-2 h-6 w-6 flex items-center justify-center rounded-full bg-primary text-primary-foreground"
-              >
-                <Icon name="lucide:check" class="h-3.5 w-3.5" />
-              </span>
-            </button>
-          </div>
-        </CardContent>
-      </Card>
+            </CardHeader>
+            <CardContent class="space-y-5">
+              <div class="grid gap-4 md:grid-cols-2">
+                <div class="space-y-2">
+                  <Label for="social-art-text">Texto da arte</Label>
+                  <Textarea
+                    id="social-art-text"
+                    v-model="artText"
+                    class="min-h-24"
+                    maxlength="2000"
+                    placeholder="Texto que aparece na peça visual (opcional)"
+                  />
+                </div>
+                <div class="space-y-2">
+                  <Label for="social-cta">CTA</Label>
+                  <Input
+                    id="social-cta"
+                    v-model="cta"
+                    maxlength="240"
+                    placeholder="Ex.: Saiba mais, Compre agora"
+                    class="h-11"
+                  />
+                </div>
+              </div>
 
-      <Card>
+              <div class="grid gap-4 md:grid-cols-2">
+                <div class="space-y-2">
+                  <Label>Campanha</Label>
+                  <Select v-model="campaignId">
+                    <SelectTrigger class="h-11">
+                      <SelectValue placeholder="Vincular campanha" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">
+                        Sem campanha
+                      </SelectItem>
+                      <SelectItem
+                        v-for="campaign in campaigns"
+                        :key="campaign.id"
+                        :value="campaign.id"
+                      >
+                        {{ campaign.name }}
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div v-if="!isClientExperience" class="space-y-2">
+                  <Label>Responsável</Label>
+                  <Select v-model="assignedTo">
+                    <SelectTrigger class="h-11">
+                      <SelectValue placeholder="Atribuir responsável" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">
+                        Sem responsável
+                      </SelectItem>
+                      <SelectItem
+                        v-for="member in members"
+                        :key="member.userId"
+                        :value="member.userId"
+                      >
+                        {{ member.name }}
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div class="lg:sticky lg:top-6 lg:self-start space-y-4">
+          <SocialPostPreviewPanel
+            :caption="content"
+            :hashtags="hashtags"
+            :platform="previewAccount.platform"
+            :account-name="previewAccount.name"
+            :media-url="previewMedia.url"
+            :media-type="previewMedia.type"
+            :link-url="publicationLink || null"
+          />
+        </div>
+      </div>
+
+      <!-- Step 2: Networks -->
+      <Card v-else-if="currentStep === 2" :key="2" class="border-border/60 shadow-sm">
         <CardHeader>
-          <CardTitle>Referências e planejamento</CardTitle>
-          <CardDescription>
-            Referências não serão publicadas; servem apenas para orientar a equipe e os aprovadores.
-          </CardDescription>
+          <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div class="flex items-center gap-2">
+              <div class="h-8 w-8 flex items-center justify-center rounded-lg bg-blue-500/10">
+                <Icon name="lucide:share-2" class="h-4 w-4 text-blue-500" />
+              </div>
+              <div>
+                <CardTitle>Redes e formato</CardTitle>
+                <CardDescription>
+                  Selecione um canal, vários canais ou todos de uma vez.
+                </CardDescription>
+              </div>
+            </div>
+            <div class="flex gap-2">
+              <Button type="button" variant="outline" size="sm" @click="refreshAccounts()">
+                <Icon name="lucide:refresh-cw" class="mr-2 h-4 w-4" />
+                Atualizar
+              </Button>
+              <Button
+                v-if="accounts?.length"
+                type="button"
+                :variant="allAccountsSelected ? 'secondary' : 'outline'"
+                size="sm"
+                @click="toggleAllAccounts"
+              >
+                <Icon :name="allAccountsSelected ? 'lucide:x' : 'lucide:check-check'" class="mr-2 h-4 w-4" />
+                {{ allAccountsSelected ? 'Limpar seleção' : 'Selecionar todos' }}
+              </Button>
+            </div>
+          </div>
         </CardHeader>
         <CardContent class="space-y-6">
-          <label class="min-h-24 flex cursor-pointer items-center justify-center gap-3 border rounded-xl border-dashed p-4 hover:bg-muted/40">
-            <Icon name="lucide:paperclip" class="h-5 w-5 text-muted-foreground" />
-            <span class="text-sm font-medium">{{ uploading ? 'Enviando...' : 'Adicionar referências' }}</span>
-            <input
-              type="file"
-              multiple
-              accept="image/*,video/mp4,video/quicktime,application/pdf"
-              class="hidden"
-              :disabled="uploading"
-              @change="uploadFiles($event, 'reference')"
-            >
-          </label>
-          <div v-if="referenceAssets.length" class="grid grid-cols-2 gap-3 lg:grid-cols-6 sm:grid-cols-4">
+          <div v-if="accounts?.length" class="grid gap-3 sm:grid-cols-3">
             <button
-              v-for="asset in referenceAssets"
-              :key="asset.id"
+              v-for="account in accounts"
+              :key="account.id"
               type="button"
-              class="relative aspect-square overflow-hidden border rounded-xl bg-muted"
-              :class="{ 'ring-2 ring-primary': referenceAssetIds.includes(asset.id) }"
-              @click="toggleReference(asset.id)"
+              class="group flex items-center gap-3 border rounded-xl p-4 text-left transition-all duration-200 hover:bg-muted/40 hover:shadow-sm"
+              :class="accountSelected(account.id)
+                ? 'border-primary bg-primary/5 ring-1 ring-primary shadow-sm'
+                : 'border-border/60'"
+              @click="toggleAccount(account)"
             >
-              <img
-                v-if="asset.mimeType?.startsWith('image/') || (asset as any).mime_type?.startsWith('image/')"
-                :src="asset.previewUrl || (asset as any).preview_url || ''"
-                :alt="asset.name"
-                class="h-full w-full object-cover"
-              >
-              <div v-else class="h-full flex items-center justify-center">
-                <Icon name="lucide:file" class="h-8 w-8 text-muted-foreground" />
-              </div>
               <span
-                v-if="referenceAssetIds.includes(asset.id)"
-                class="absolute right-2 top-2 h-6 w-6 flex items-center justify-center rounded-full bg-primary text-primary-foreground"
+                class="h-10 w-10 flex items-center justify-center rounded-full transition-colors"
+                :class="accountSelected(account.id) ? 'bg-primary/15' : 'bg-muted'"
               >
-                <Icon name="lucide:check" class="h-3.5 w-3.5" />
+                <Icon
+                  :name="account.platform === 'linkedin' ? 'lucide:linkedin' : account.platform === 'instagram' ? 'lucide:instagram' : 'lucide:facebook'"
+                  class="h-5 w-5"
+                  :class="accountSelected(account.id) ? 'text-primary' : 'text-muted-foreground'"
+                />
               </span>
+              <span class="min-w-0 flex-1">
+                <span class="block font-medium">{{ platformLabel(account.platform) }}</span>
+                <span class="block truncate text-xs text-muted-foreground">
+                  {{ account.name }}
+                </span>
+              </span>
+              <div
+                class="h-5 w-5 flex items-center justify-center rounded-full transition-all duration-200"
+                :class="accountSelected(account.id) ? 'bg-primary text-primary-foreground' : 'border border-muted-foreground/30'"
+              >
+                <Icon
+                  v-if="accountSelected(account.id)"
+                  name="lucide:check"
+                  class="h-3 w-3"
+                />
+              </div>
             </button>
           </div>
+          <Alert v-else>
+            <Icon name="lucide:plug" class="h-4 w-4" />
+            <AlertTitle>Nenhuma conta social conectada</AlertTitle>
+            <AlertDescription>
+              Conecte Meta ou LinkedIn antes de continuar.
+              <Button type="button" variant="link" class="h-auto p-0" @click="navigateTo('/settings/integrations')">
+                Abrir integrações
+              </Button>
+            </AlertDescription>
+          </Alert>
 
           <Separator />
 
-          <ScheduleSlotsEditor
-            v-model="schedules"
-            :variants="variants"
-          />
-
-          <ProductionMetaFields
-            v-if="!isClientExperience"
-            v-model:copy-owner-id="copyOwnerId"
-            v-model:design-owner-id="designOwnerId"
-            v-model:publish-owner-id="publishOwnerId"
-            v-model:production-priority="productionPriority"
-            v-model:production-due-at="productionDueAt"
-            :members="members || []"
-          />
-
-          <div v-if="!isClientExperience" class="space-y-2">
-            <Label>Política de aprovação</Label>
-            <Select v-model="approvalPolicy">
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="any">
-                  Uma aprovação
-                </SelectItem>
-                <SelectItem value="all">
-                  Todos devem aprovar
-                </SelectItem>
-                <SelectItem value="minimum">
-                  Quantidade mínima
-                </SelectItem>
-              </SelectContent>
-            </Select>
-            <Input
-              v-if="approvalPolicy === 'minimum'"
-              v-model.number="minimumApprovals"
-              type="number"
-              min="1"
-              max="100"
-              aria-label="Mínimo de aprovações"
-            />
+          <div class="grid gap-4 md:grid-cols-2">
+            <div class="space-y-2">
+              <Label>Formato da publicação</Label>
+              <Select :model-value="publicationFormat" @update:model-value="changeFormat">
+                <SelectTrigger class="h-11"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="static">
+                    Post estático
+                  </SelectItem>
+                  <SelectItem value="carousel">
+                    Carrossel
+                  </SelectItem>
+                  <SelectItem value="video">
+                    Vídeo
+                  </SelectItem>
+                  <SelectItem value="story">
+                    Stories
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div class="space-y-2">
+              <Label for="publication-link">Link opcional</Label>
+              <Input id="publication-link" v-model="publicationLink" type="url" placeholder="https://..." class="h-11" />
+            </div>
           </div>
-          <div v-else class="border rounded-lg border-dashed p-4 text-sm text-muted-foreground space-y-2">
-            Sem fluxo de aprovação — você agenda ou publica direto.
+
+          <Alert v-if="hasFormatConflict" variant="destructive">
+            <Icon name="lucide:triangle-alert" class="h-4 w-4" />
+            <AlertTitle>
+              {{ publicationFormat === 'story' ? 'Stories indisponível no LinkedIn' : 'Formato indisponível no LinkedIn' }}
+            </AlertTitle>
+            <AlertDescription>
+              {{ publicationFormat === 'story'
+                ? 'Stories funciona só no Facebook e Instagram. Desmarque o LinkedIn.'
+                : 'Escolha post estático ou carrossel, ou desmarque o LinkedIn.' }}
+            </AlertDescription>
+          </Alert>
+          <Alert v-else-if="publicationFormat === 'story'">
+            <Icon name="lucide:smartphone" class="h-4 w-4" />
+            <AlertTitle>Posicionamento: Stories</AlertTitle>
+            <AlertDescription>
+              Use uma imagem ou vídeo vertical (9:16). No Facebook, a Meta exige um upload novo da peça — não reutiliza o mesmo arquivo já publicado no feed.
+            </AlertDescription>
+          </Alert>
+
+          <Separator />
+
+          <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p class="text-sm font-medium">
+                Variantes por plataforma
+              </p>
+              <p class="text-xs text-muted-foreground">
+                Opcional: adapte legenda, hashtags, CTA e texto da arte por rede.
+              </p>
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              :variant="customizeVariants ? 'secondary' : 'outline'"
+              :disabled="!variants.length"
+              @click="customizeVariants = !customizeVariants"
+            >
+              <Icon :name="customizeVariants ? 'lucide:check' : 'lucide:sliders-horizontal'" class="mr-2 h-4 w-4" />
+              {{ customizeVariants ? 'Adaptando por rede' : 'Adaptar por rede' }}
+            </Button>
+          </div>
+
+          <div v-if="customizeVariants && variants.length" class="space-y-4">
+            <Card
+              v-for="variant in variants"
+              :key="variant.accountId"
+              class="border-dashed"
+            >
+              <CardHeader class="pb-3">
+                <CardTitle class="text-base">
+                  {{ platformLabel(variant.platform) }}
+                </CardTitle>
+              </CardHeader>
+              <CardContent class="space-y-3">
+                <div class="space-y-2">
+                  <Label>Legenda</Label>
+                  <Textarea
+                    :model-value="variant.caption"
+                    class="min-h-24"
+                    @update:model-value="updateVariantField(variant.accountId, 'caption', String($event))"
+                  />
+                </div>
+                <div class="grid gap-3 md:grid-cols-2">
+                  <div class="space-y-2">
+                    <Label>Hashtags</Label>
+                    <Input
+                      :model-value="variantHashtagsText(variant)"
+                      placeholder="#marca"
+                      @update:model-value="updateVariantField(variant.accountId, 'hashtagsText', String($event))"
+                    />
+                  </div>
+                  <div class="space-y-2">
+                    <Label>CTA</Label>
+                    <Input
+                      :model-value="String(variant.platformConfig?.cta || '')"
+                      @update:model-value="updateVariantField(variant.accountId, 'cta', String($event))"
+                    />
+                  </div>
+                </div>
+                <div class="space-y-2">
+                  <Label>Texto da arte</Label>
+                  <Input
+                    :model-value="String(variant.platformConfig?.artText || '')"
+                    @update:model-value="updateVariantField(variant.accountId, 'artText', String($event))"
+                  />
+                </div>
+              </CardContent>
+            </Card>
           </div>
         </CardContent>
       </Card>
-    </div>
 
-    <Card v-else>
-      <CardHeader>
-        <CardTitle>Revise antes de salvar</CardTitle>
-        <CardDescription>
-          Confira canais, mídia e planejamento. O conteúdo será salvo inicialmente como rascunho.
-        </CardDescription>
-      </CardHeader>
-      <CardContent class="space-y-6">
-        <div class="border rounded-xl p-4">
-          <p class="text-xs text-muted-foreground">
-            Título interno
-          </p>
-          <p class="mt-1 font-semibold">
-            {{ title }}
-          </p>
-          <p class="mt-3 whitespace-pre-wrap text-sm text-muted-foreground">
-            {{ composedCaptionPreview || 'Sem legenda' }}
-          </p>
-          <p v-if="artText" class="mt-2 text-sm">
-            <span class="text-muted-foreground">Arte:</span> {{ artText }}
-          </p>
-          <p v-if="cta" class="mt-1 text-sm">
-            <span class="text-muted-foreground">CTA:</span> {{ cta }}
-          </p>
-          <div class="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
-            <Badge variant="outline">
-              {{ selectedCampaignName }}
-            </Badge>
-            <Badge v-if="!isClientExperience" variant="outline">
-              {{ selectedAssigneeName }}
-            </Badge>
-            <Badge v-if="customizeVariants" variant="secondary">
-              Variantes por rede
-            </Badge>
+      <!-- Step 3: Planning -->
+      <div v-else-if="currentStep === 3" :key="3" class="space-y-6">
+        <Card class="border-border/60 shadow-sm">
+          <CardHeader>
+            <div class="flex items-center gap-2">
+              <div class="h-8 w-8 flex items-center justify-center rounded-lg bg-violet-500/10">
+                <Icon name="lucide:image" class="h-4 w-4 text-violet-500" />
+              </div>
+              <div>
+                <CardTitle>Peças finais</CardTitle>
+                <CardDescription>
+                  {{ publicationFormat === 'carousel' ? 'Selecione de 2 a 10 imagens na ordem desejada.' : publicationFormat === 'video' ? 'Selecione um vídeo.' : 'Selecione uma imagem.' }}
+                </CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent class="space-y-5">
+            <label
+              class="group min-h-32 flex flex-col cursor-pointer items-center justify-center border-2 rounded-xl border-dashed p-6 text-center transition-all hover:border-primary/50 hover:bg-primary/5"
+              :class="uploading ? 'border-primary/50 bg-primary/5' : 'border-border'"
+            >
+              <div
+                class="mb-3 h-12 w-12 flex items-center justify-center rounded-full bg-primary/10 transition-transform group-hover:scale-110"
+              >
+                <Icon :name="uploading ? 'lucide:loader-circle' : 'lucide:upload-cloud'" class="h-6 w-6 text-primary" :class="{ 'animate-spin': uploading }" />
+              </div>
+              <span class="text-sm font-medium">{{ uploading ? 'Enviando...' : 'Arraste ou clique para enviar' }}</span>
+              <span class="mt-1 text-xs text-muted-foreground">Imagens e vídeos de até 100 MB</span>
+              <input
+                type="file"
+                multiple
+                accept="image/*,video/mp4,video/quicktime"
+                class="hidden"
+                :disabled="uploading"
+                @change="uploadFiles($event, 'publication')"
+              >
+            </label>
+            <div class="grid grid-cols-2 gap-3 lg:grid-cols-6 sm:grid-cols-3">
+              <button
+                v-for="asset in compatiblePublicationAssets()"
+                :key="asset.id"
+                type="button"
+                class="group relative aspect-square overflow-hidden border rounded-xl bg-muted transition-all duration-200 hover:shadow-md"
+                :class="publicationAssetIds.includes(asset.id)
+                  ? 'ring-2 ring-primary ring-offset-2 ring-offset-background'
+                  : 'hover:ring-1 hover:ring-border'"
+                @click="toggleAsset(asset.id)"
+              >
+                <img
+                  v-if="asset.mimeType?.startsWith('image/') || (asset as any).mime_type?.startsWith('image/')"
+                  :src="asset.previewUrl || (asset as any).preview_url || ''"
+                  :alt="asset.name"
+                  class="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105"
+                >
+                <div v-else class="h-full flex items-center justify-center">
+                  <Icon name="lucide:file-video" class="h-8 w-8 text-muted-foreground" />
+                </div>
+                <span class="absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/60 to-transparent px-2 pb-1.5 pt-4 text-xs text-white">
+                  {{ asset.name }}
+                </span>
+                <span
+                  v-if="publicationAssetIds.includes(asset.id)"
+                  class="absolute right-2 top-2 h-6 w-6 flex items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm"
+                >
+                  <Icon name="lucide:check" class="h-3.5 w-3.5" />
+                </span>
+              </button>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card class="border-border/60 shadow-sm">
+          <CardHeader>
+            <div class="flex items-center gap-2">
+              <div class="h-8 w-8 flex items-center justify-center rounded-lg bg-emerald-500/10">
+                <Icon name="lucide:calendar-clock" class="h-4 w-4 text-emerald-500" />
+              </div>
+              <div>
+                <CardTitle>Referências e planejamento</CardTitle>
+                <CardDescription>
+                  Referências não serão publicadas; servem apenas para orientar a equipe e os aprovadores.
+                </CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent class="space-y-6">
+            <label
+              class="group min-h-24 flex cursor-pointer items-center justify-center gap-3 border-2 rounded-xl border-dashed p-4 transition-all hover:border-primary/50 hover:bg-primary/5"
+            >
+              <Icon name="lucide:paperclip" class="h-5 w-5 text-muted-foreground transition-colors group-hover:text-primary" />
+              <span class="text-sm font-medium">{{ uploading ? 'Enviando...' : 'Adicionar referências' }}</span>
+              <input
+                type="file"
+                multiple
+                accept="image/*,video/mp4,video/quicktime,application/pdf"
+                class="hidden"
+                :disabled="uploading"
+                @change="uploadFiles($event, 'reference')"
+              >
+            </label>
+            <div v-if="referenceAssets.length" class="grid grid-cols-2 gap-3 lg:grid-cols-6 sm:grid-cols-4">
+              <button
+                v-for="asset in referenceAssets"
+                :key="asset.id"
+                type="button"
+                class="group relative aspect-square overflow-hidden border rounded-xl bg-muted transition-all duration-200 hover:shadow-md"
+                :class="referenceAssetIds.includes(asset.id)
+                  ? 'ring-2 ring-primary ring-offset-2 ring-offset-background'
+                  : 'hover:ring-1 hover:ring-border'"
+                @click="toggleReference(asset.id)"
+              >
+                <img
+                  v-if="asset.mimeType?.startsWith('image/') || (asset as any).mime_type?.startsWith('image/')"
+                  :src="asset.previewUrl || (asset as any).preview_url || ''"
+                  :alt="asset.name"
+                  class="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105"
+                >
+                <div v-else class="h-full flex items-center justify-center">
+                  <Icon name="lucide:file" class="h-8 w-8 text-muted-foreground" />
+                </div>
+                <span
+                  v-if="referenceAssetIds.includes(asset.id)"
+                  class="absolute right-2 top-2 h-6 w-6 flex items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm"
+                >
+                  <Icon name="lucide:check" class="h-3.5 w-3.5" />
+                </span>
+              </button>
+            </div>
+
+            <Separator />
+
+            <ScheduleSlotsEditor
+              v-model="schedules"
+              :variants="variants"
+            />
+
+            <ProductionMetaFields
+              v-if="!isClientExperience"
+              v-model:copy-owner-id="copyOwnerId"
+              v-model:design-owner-id="designOwnerId"
+              v-model:publish-owner-id="publishOwnerId"
+              v-model:production-priority="productionPriority"
+              v-model:production-due-at="productionDueAt"
+              :members="members || []"
+            />
+
+            <div v-if="!isClientExperience" class="space-y-2">
+              <Label>Política de aprovação</Label>
+              <Select v-model="approvalPolicy">
+                <SelectTrigger class="h-11"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="any">
+                    Uma aprovação
+                  </SelectItem>
+                  <SelectItem value="all">
+                    Todos devem aprovar
+                  </SelectItem>
+                  <SelectItem value="minimum">
+                    Quantidade mínima
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              <Input
+                v-if="approvalPolicy === 'minimum'"
+                v-model.number="minimumApprovals"
+                type="number"
+                min="1"
+                max="100"
+                aria-label="Mínimo de aprovações"
+              />
+            </div>
+            <div v-else class="border rounded-lg border-dashed p-4 text-sm text-muted-foreground space-y-2">
+              Sem fluxo de aprovação — você agenda ou publica direto.
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <!-- Step 4: Review -->
+      <Card v-else :key="4" class="border-border/60 shadow-sm">
+        <CardHeader>
+          <div class="flex items-center gap-2">
+            <div class="h-8 w-8 flex items-center justify-center rounded-lg bg-green-500/10">
+              <Icon name="lucide:check-circle-2" class="h-4 w-4 text-green-500" />
+            </div>
+            <div>
+              <CardTitle>Revise antes de salvar</CardTitle>
+              <CardDescription>
+                Confira canais, mídia e planejamento. O conteúdo será salvo inicialmente como rascunho.
+              </CardDescription>
+            </div>
           </div>
-        </div>
-
-        <div class="grid gap-4 md:grid-cols-3">
-          <div class="border rounded-xl p-4">
-            <p class="text-xs text-muted-foreground">
-              Canais
+        </CardHeader>
+        <CardContent class="space-y-6">
+          <div class="border rounded-xl bg-muted/20 p-5">
+            <p class="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+              Título interno
             </p>
-            <div class="mt-2 flex flex-wrap gap-1">
-              <Badge v-for="variant in variants" :key="variant.accountId" variant="secondary">
-                {{ platformLabel(variant.platform) }}
+            <p class="mt-1.5 text-lg font-semibold">
+              {{ title }}
+            </p>
+            <p class="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">
+              {{ composedCaptionPreview || 'Sem legenda' }}
+            </p>
+            <p v-if="artText" class="mt-2 text-sm">
+              <span class="text-muted-foreground">Arte:</span> {{ artText }}
+            </p>
+            <p v-if="cta" class="mt-1 text-sm">
+              <span class="text-muted-foreground">CTA:</span> {{ cta }}
+            </p>
+            <div class="mt-4 flex flex-wrap gap-2 text-xs text-muted-foreground">
+              <Badge variant="outline">
+                {{ selectedCampaignName }}
+              </Badge>
+              <Badge v-if="!isClientExperience" variant="outline">
+                {{ selectedAssigneeName }}
+              </Badge>
+              <Badge v-if="customizeVariants" variant="secondary">
+                Variantes por rede
               </Badge>
             </div>
           </div>
-          <div class="border rounded-xl p-4">
-            <p class="text-xs text-muted-foreground">
-              Formato
-            </p>
-            <p class="mt-2 font-medium">
-              {{ formatLabel }}
-            </p>
-            <p class="text-xs text-muted-foreground">
-              {{ publicationAssetIds.length }} peça(s)
-            </p>
-          </div>
-          <div class="border rounded-xl p-4">
-            <p class="text-xs text-muted-foreground">
-              {{ isClientExperience ? 'Agenda' : 'Aprovação' }}
-            </p>
-            <p class="mt-2 font-medium">
-              {{ isClientExperience ? (formatScheduledDate() || 'Sem horário') : approvalLabel }}
-            </p>
-            <p v-if="!isClientExperience" class="text-xs text-muted-foreground">
-              {{ formatScheduledDate() }}
-            </p>
-            <p v-else class="text-xs text-muted-foreground">
-              Publique agora ou agende quando quiser
-            </p>
-          </div>
-        </div>
 
-        <div class="grid grid-cols-2 gap-3 lg:grid-cols-6 sm:grid-cols-4">
-          <div
-            v-for="assetId in publicationAssetIds"
-            :key="assetId"
-            class="aspect-square overflow-hidden border rounded-xl bg-muted"
-          >
-            <img
-              v-if="publicationAssetById(assetId)?.mime_type?.startsWith('image/') || publicationAssetById(assetId)?.mimeType?.startsWith('image/')"
-              :src="publicationAssetById(assetId)?.preview_url || publicationAssetById(assetId)?.previewUrl"
-              alt="Prévia da peça"
-              class="h-full w-full object-cover"
-            >
-            <div v-else class="h-full flex items-center justify-center">
-              <Icon name="lucide:play-circle" class="h-8 w-8 text-muted-foreground" />
+          <div class="grid gap-4 md:grid-cols-3">
+            <div class="border rounded-xl bg-muted/10 p-4 transition-colors hover:bg-muted/20">
+              <p class="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                Canais
+              </p>
+              <div class="mt-2 flex flex-wrap gap-1">
+                <Badge v-for="variant in variants" :key="variant.accountId" variant="secondary">
+                  {{ platformLabel(variant.platform) }}
+                </Badge>
+              </div>
+            </div>
+            <div class="border rounded-xl bg-muted/10 p-4 transition-colors hover:bg-muted/20">
+              <p class="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                Formato
+              </p>
+              <p class="mt-2 font-medium">
+                {{ formatLabel }}
+              </p>
+              <p class="text-xs text-muted-foreground">
+                {{ publicationAssetIds.length }} peça(s)
+              </p>
+            </div>
+            <div class="border rounded-xl bg-muted/10 p-4 transition-colors hover:bg-muted/20">
+              <p class="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                {{ isClientExperience ? 'Agenda' : 'Aprovação' }}
+              </p>
+              <p class="mt-2 font-medium">
+                {{ isClientExperience ? (formatScheduledDate() || 'Sem horário') : approvalLabel }}
+              </p>
+              <p v-if="!isClientExperience" class="text-xs text-muted-foreground">
+                {{ formatScheduledDate() }}
+              </p>
+              <p v-else class="text-xs text-muted-foreground">
+                Publique agora ou agende quando quiser
+              </p>
             </div>
           </div>
-        </div>
-      </CardContent>
-    </Card>
 
+          <div v-if="publicationAssetIds.length" class="grid grid-cols-2 gap-3 lg:grid-cols-6 sm:grid-cols-4">
+            <div
+              v-for="assetId in publicationAssetIds"
+              :key="assetId"
+              class="aspect-square overflow-hidden border rounded-xl bg-muted"
+            >
+              <img
+                v-if="publicationAssetById(assetId)?.mime_type?.startsWith('image/') || publicationAssetById(assetId)?.mimeType?.startsWith('image/')"
+                :src="publicationAssetById(assetId)?.preview_url || publicationAssetById(assetId)?.previewUrl"
+                alt="Prévia da peça"
+                class="h-full w-full object-cover"
+              >
+              <div v-else class="h-full flex items-center justify-center">
+                <Icon name="lucide:play-circle" class="h-8 w-8 text-muted-foreground" />
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </Transition>
+
+    <!-- Error alert -->
     <Alert v-if="formError" variant="destructive">
       <Icon name="lucide:circle-alert" class="h-4 w-4" />
       <AlertTitle>Revise esta etapa</AlertTitle>
       <AlertDescription>{{ formError }}</AlertDescription>
     </Alert>
 
-    <div class="sticky bottom-4 z-20 flex items-center justify-between gap-3 border rounded-xl bg-background/95 p-3 shadow-lg backdrop-blur">
-      <p class="hidden text-xs text-muted-foreground sm:block">
-        Etapa {{ currentStep }} de {{ steps.length }}
-      </p>
+    <!-- Premium sticky bottom bar -->
+    <div class="sticky bottom-4 z-20 flex items-center justify-between gap-3 border rounded-2xl bg-background/95 p-3 shadow-lg ring-1 ring-border/50 backdrop-blur-md">
+      <div class="hidden items-center gap-3 sm:flex">
+        <div class="flex gap-1">
+          <div
+            v-for="item in steps"
+            :key="item.step"
+            class="h-1.5 w-6 rounded-full transition-all duration-300"
+            :class="currentStep >= item.step ? 'bg-primary' : 'bg-muted'"
+          />
+        </div>
+        <p class="text-xs text-muted-foreground">
+          Etapa {{ currentStep }} de {{ steps.length }}
+        </p>
+      </div>
       <div class="ml-auto flex gap-2">
         <Button
           v-if="currentStep === 1"
@@ -1159,7 +1303,7 @@ function submit() {
           Continuar
           <Icon name="lucide:arrow-right" class="ml-2 h-4 w-4" />
         </Button>
-        <Button v-else type="submit" :disabled="saving">
+        <Button v-else type="submit" :disabled="saving" class="min-w-32">
           <Icon :name="saving ? 'lucide:loader-circle' : 'lucide:save'" class="mr-2 h-4 w-4" :class="{ 'animate-spin': saving }" />
           {{ saving ? 'Salvando...' : 'Salvar rascunho' }}
         </Button>
@@ -1167,3 +1311,30 @@ function submit() {
     </div>
   </form>
 </template>
+
+<style scoped>
+.slide-left-enter-active,
+.slide-left-leave-active,
+.slide-right-enter-active,
+.slide-right-leave-active {
+  transition: all 0.25s ease-out;
+}
+
+.slide-left-enter-from {
+  opacity: 0;
+  transform: translateX(20px);
+}
+.slide-left-leave-to {
+  opacity: 0;
+  transform: translateX(-20px);
+}
+
+.slide-right-enter-from {
+  opacity: 0;
+  transform: translateX(-20px);
+}
+.slide-right-leave-to {
+  opacity: 0;
+  transform: translateX(20px);
+}
+</style>
