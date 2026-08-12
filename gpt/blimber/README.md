@@ -11,10 +11,12 @@ O ChatGPT aceita **no máximo 30 operations por Ação** e **recusa o mesmo host
 | Índice (**não importe**) | `openapi.yaml` |
 | Instruções | `instructions.md` |
 | Setup 2 Ações + DNS | `docs/gpt-blimber-ACTIONS.md` |
-| Skill (platform) | `skills/blimber-platform/SKILL.md` |
-| Skill (hub espelho) | `skills/blimber-hub/SKILL.md` |
+| Skill | `skills/blimber-platform/SKILL.md` |
+| Plugin MCP (ChatGPT Dev Mode) | `docs/gpt-blimber-MCP-PLUGIN.md` → `https://app.blimber.com.br/api/mcp` |
 
 ## Setup
+
+### Opção A — GPT Actions (2 OpenAPI)
 
 1. GPT → colar `instructions.md` (a partir de “Você é o assistente…”)
 2. **Ações → duas Ações:**
@@ -24,6 +26,17 @@ O ChatGPT aceita **no máximo 30 operations por Ação** e **recusa o mesmo host
 4. Ads no ChatGPT = `openapi-ads.yaml`. Pack standalone `gpt/blimber-meta/` **removido**.
 5. Env: `BLIMBER_MCP_API_KEY` + `BLIMBER_MCP_ACTOR_USER_ID` (staff/sistema; só exigido no execute, não no preview)
 6. Domínio alias: adicione `ads.blimber.com.br` no Vercel (mesmo projeto). Ver `docs/gpt-blimber-ACTIONS.md`.
+
+### Opção B — Plugin MCP (Developer Mode)
+
+Uma conexão com **todas** as tools (~35), mesmo backend `/api/gpt/*`:
+
+1. ChatGPT → Developer Mode → **Novo plugin**
+2. URL: `https://app.blimber.com.br/api/mcp`
+3. Auth: API Key Bearer → `BLIMBER_MCP_API_KEY`
+4. Detalhes: `docs/gpt-blimber-MCP-PLUGIN.md`
+
+Local / túnel: `pnpm mcp:blimber` → `http://127.0.0.1:8787/mcp`
 
 Docs: `docs/mcp-blimber-platform.md`, `docs/gpt-blimber-MARKETING.md`, `docs/gpt-blimber-UNIFIED-PLAN.md`.
 

@@ -32,10 +32,13 @@ Plano por etapas a partir da fundação em `docs/mcp-blimber-platform.md`.
 - Stub no registry → list contacts / deals (read) → writes com confirmação
 - **Não** implementar CRM writes antes do contrato de domínio CRM estável
 
-## Fase 4 — Transporte MCP stdio
+## Fase 4 — Transporte MCP remoto ✅
 
-- `mcp/blimber` registrando tools do registry (marketing + ads.meta via invoke)
-- Manter HTTP GPT como primário
+- [x] `lib/blimber-mcp/create-server.ts` — tools unificadas (marketing + meta + platform)
+- [x] `server/api/mcp.ts` — Streamable HTTP stateless (ChatGPT plugin)
+- [x] `mcp/blimber/` — servidor local para túnel
+- [x] `docs/gpt-blimber-MCP-PLUGIN.md`
+- Manter HTTP GPT Actions como alternativa primária para GPT clássico
 
 ## Fora de escopo (explícito)
 

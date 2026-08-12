@@ -1,0 +1,4 @@
+{
+  "extends": "../blimber-meta/tsconfig.json",
+  "include": ["src/**/*.ts"]
+}

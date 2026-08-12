@@ -44,7 +44,8 @@
     "test": "vitest run",
     "lint": "eslint .",
     "format": "eslint --fix .",
-    "mcp:meta": "pnpm --dir mcp/blimber-meta start"
+    "mcp:meta": "pnpm --dir mcp/blimber-meta start",
+    "mcp:blimber": "tsx mcp/blimber/src/index.ts"
   },
   "dependencies": {
     "@emotion/cache": "^11.14.0",
@@ -53,6 +54,7 @@
     "@iconify/vue": "^5.0.0",
     "@internationalized/date": "^3.7.0",
     "@juggle/resize-observer": "^3.4.0",
+    "@modelcontextprotocol/sdk": "^1.12.1",
     "@number-flow/vue": "^0.4.5",
     "@nuxt/image": "^1.10.0",
     "@nuxt/schema": "^3.17.3",
@@ -127,6 +129,6 @@
     "vue-router": "^4.5.0",
     "vue-sonner": "^1.3.0",
     "vue-tsc": "^2.2.8",
-    "zod": "^3.24.2"
+    "zod": "^3.25.76"
   }
 }

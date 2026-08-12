@@ -67,7 +67,7 @@ Keep vs drop: [`gpt/blimber/README.md`](../gpt/blimber/README.md).
 1. **Fase 1 (esta):** fundação + Marketing editorial MVP + OpenAPI em 2 Ações (hosts app.* + ads.*)  
 2. **Fase 2:** Google Ads (OAuth + tools read)  
 3. **Fase 3:** CRM stubs → reads → writes com as mesmas confirmações  
-4. **Fase 4:** MCP stdio unificado opcional (`mcp/blimber`)
+4. **Fase 4:** MCP remoto Streamable HTTP (`/api/mcp`) + stdio Meta (`mcp/blimber-meta`) — ver [`gpt-blimber-MCP-PLUGIN.md`](./gpt-blimber-MCP-PLUGIN.md)
 
 Ver [`mcp-blimber-platform-PLAN.md`](./mcp-blimber-platform-PLAN.md).
 
