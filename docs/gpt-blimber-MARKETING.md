@@ -3,7 +3,9 @@
 Como usar as tools de **Marketing** do hub unificado (`gpt/blimber/`).
 
 > **Não é Meta Ads.** Campanhas aqui são `social_campaigns` (editorial).  
-> Ads pagos: pack [`gpt/blimber-meta`](../gpt/blimber-meta/) — ver [gpt-blimber-meta.md](./gpt-blimber-meta.md).
+> Ads pagos: no GPT unificado use as operations `/api/gpt/meta/*` do **mesmo** `gpt/blimber/openapi.yaml` (uma Ação).  
+> Pack [`gpt/blimber-meta`](../gpt/blimber-meta/) = GPT **separado** só de Ads — ver [gpt-blimber-meta.md](./gpt-blimber-meta.md).  
+> Não importe os dois YAMLs no mesmo GPT (erro de domínio duplicado).
 
 ## Pré-requisitos
 
@@ -65,7 +67,7 @@ Sem actor, creates retornam `503 ACTOR_REQUIRED` (ou envie `actorUserId` no body
 |-------------|----------|------|
 | “Campanha de maio / calendário” | `social_campaigns` | `*EditorialCampaign*` |
 | “Post / conteúdo / peça” | `social_posts` | `*Post*` |
-| “Campanha de anúncio / Ads / tráfego pago” | Meta Graph | pack Meta |
+| “Campanha de anúncio / Ads / tráfego pago” | Meta Graph | `listCampaigns` / `createCampaign` (mesmo OpenAPI) |
 | “Biblioteca / arte” | `media_assets` | `listMediaAssets` |
 
 Plano geral: [gpt-blimber-UNIFIED-PLAN.md](./gpt-blimber-UNIFIED-PLAN.md).

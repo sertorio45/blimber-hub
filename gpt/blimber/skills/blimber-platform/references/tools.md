@@ -1,5 +1,7 @@
 # Referência rápida — tools Blimber Platform
 
+Uma Ação = `gpt/blimber/openapi.yaml` (marketing + meta). Pack `gpt/blimber-meta` é GPT separado.
+
 ## Platform
 - `GET /api/gpt/tenants?q=` — searchTenants
 - `GET /api/gpt/tools` — catálogo
@@ -14,7 +16,7 @@
 - `GET /api/gpt/marketing/accounts?tenantId=`
 
 ## Ads
-- Meta: `/api/gpt/meta/*` (pack `gpt/blimber-meta`) + `GET /api/gpt/ads/meta/tools`
+- Meta (neste spec): `/api/gpt/meta/*` + `GET /api/gpt/ads/meta/tools`
 - Google: `GET /api/gpt/ads/google/status` (stub)
 
 ## Auth

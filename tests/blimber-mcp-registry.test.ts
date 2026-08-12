@@ -81,6 +81,51 @@ const EXPECTED_ROUTE_FILES: Record<string, string[]> = {
   '/api/gpt/ads/meta/tools': ['server/api/gpt/ads/meta/tools.get.ts'],
   '/api/gpt/ads/google/status': ['server/api/gpt/ads/google/status.get.ts'],
   '/api/gpt/meta/tenants': ['server/api/gpt/meta/tenants.get.ts'],
+  '/api/gpt/meta/tools': ['server/api/gpt/meta/tools.get.ts'],
+  '/api/gpt/meta/integrations': ['server/api/gpt/meta/integrations.get.ts'],
+  '/api/gpt/meta/ad-accounts': ['server/api/gpt/meta/ad-accounts.get.ts'],
+  '/api/gpt/meta/campaigns': [
+    'server/api/gpt/meta/campaigns/index.get.ts',
+    'server/api/gpt/meta/campaigns/index.post.ts',
+  ],
+  '/api/gpt/meta/campaigns/{campaignId}': ['server/api/gpt/meta/campaigns/[campaignId].get.ts'],
+  '/api/gpt/meta/campaigns/{campaignId}/status': [
+    'server/api/gpt/meta/campaigns/[campaignId]/status.post.ts',
+  ],
+  '/api/gpt/meta/adsets': [
+    'server/api/gpt/meta/adsets.get.ts',
+    'server/api/gpt/meta/adsets.post.ts',
+  ],
+  '/api/gpt/meta/adsets/{adsetId}/status': [
+    'server/api/gpt/meta/adsets/[adsetId]/status.post.ts',
+  ],
+  '/api/gpt/meta/adsets/{adsetId}/budget': [
+    'server/api/gpt/meta/adsets/[adsetId]/budget.post.ts',
+  ],
+  '/api/gpt/meta/adsets/{adsetId}/targeting': [
+    'server/api/gpt/meta/adsets/[adsetId]/targeting.post.ts',
+  ],
+  '/api/gpt/meta/ads': [
+    'server/api/gpt/meta/ads.get.ts',
+    'server/api/gpt/meta/ads.post.ts',
+  ],
+  '/api/gpt/meta/ads/{adId}/status': [
+    'server/api/gpt/meta/ads/[adId]/status.post.ts',
+  ],
+  '/api/gpt/meta/ads/{adId}/creative-copy': [
+    'server/api/gpt/meta/ads/[adId]/creative-copy.post.ts',
+  ],
+  '/api/gpt/meta/ads/{adId}/media': [
+    'server/api/gpt/meta/ads/[adId]/media.post.ts',
+  ],
+  '/api/gpt/meta/bulk-delete/preview': [
+    'server/api/gpt/meta/bulk-delete/preview.post.ts',
+  ],
+  '/api/gpt/meta/bulk-delete/execute': [
+    'server/api/gpt/meta/bulk-delete/execute.post.ts',
+  ],
+  '/api/gpt/meta/insights': ['server/api/gpt/meta/insights.post.ts'],
+  '/api/gpt/meta/invoke': ['server/api/gpt/meta/invoke.post.ts'],
 }
 
 describe('blimber unified MCP registry + openapi', () => {
@@ -115,39 +160,82 @@ describe('blimber unified MCP registry + openapi', () => {
     }
   })
 
-  it('unified openapi exists with expected paths and short descriptions', () => {
+  it('unified openapi is ChatGPT-Actions friendly (1 server, unique ids, short descriptions)', () => {
     expect(existsSync(OPENAPI_PATH)).toBe(true)
     const yaml = readFileSync(OPENAPI_PATH, 'utf8')
+    expect(yaml).not.toContain('Hubservers')
+    expect(yaml).toMatch(/^ {4}name: Blimber Hub\s*$/m)
+    expect(yaml).toMatch(/^servers:\s*$/m)
+    expect(yaml.match(/^servers:\s*$/gm)?.length ?? 0).toBe(1)
     expect(yaml).toContain('openapi: 3.0.3')
     expect(yaml).toContain('https://app.blimber.com.br')
+    expect(yaml).not.toContain('YOUR_PUBLIC_HTTPS_HOST')
     expect(yaml).toContain('BearerAuth')
+    expect(yaml).not.toContain('additionalProperties:')
     expect(yaml).not.toMatch(/parameters:\s*\n\s*-\s*\$ref:/)
     expect(yaml).not.toMatch(/^\s+nullable:/m)
     expect(yaml).not.toMatch(/^\s+(oneOf|anyOf|allOf):/m)
 
+    const serverUrls = [...yaml.matchAll(/^\s+-\s+url:\s+(\S+)\s*$/gm)].map(m => m[1]!)
+    expect(serverUrls).toEqual(['https://app.blimber.com.br'])
+
+    const longDescriptions = extractDescriptionLengths(yaml).filter(item => item.length > 300)
+    expect(
+      longDescriptions,
+      `descriptions >300 chars (ChatGPT import): ${JSON.stringify(longDescriptions)}`,
+    ).toEqual([])
+
+    const operationIds = [...yaml.matchAll(/^\s+operationId:\s*(\S+)\s*$/gm)].map(m => m[1]!)
+    expect(operationIds.length).toBeGreaterThanOrEqual(35)
+    expect(new Set(operationIds).size).toBe(operationIds.length)
+  })
+
+  it('unified openapi covers marketing + meta paths mapped to Nuxt routes', () => {
+    const yaml = readFileSync(OPENAPI_PATH, 'utf8')
     const paths = extractOpenApiPaths(yaml)
     for (const path of Object.keys(EXPECTED_ROUTE_FILES))
       expect(paths, path).toContain(path)
+
+    expect(paths.some(p => p.startsWith('/api/gpt/marketing/'))).toBe(true)
+    expect(paths.some(p => p.startsWith('/api/gpt/meta/'))).toBe(true)
+    expect(paths).toContain('/api/gpt/marketing/posts')
+    expect(paths).toContain('/api/gpt/meta/campaigns')
+    expect(paths).toContain('/api/gpt/meta/bulk-delete/preview')
 
     for (const [path, files] of Object.entries(EXPECTED_ROUTE_FILES)) {
       for (const file of files)
         expect(existsSync(join(ROOT, file)), `${path} → ${file}`).toBe(true)
     }
 
-    const lengths = extractDescriptionLengths(yaml)
-    for (const item of lengths) {
-      expect(item.length, item.preview).toBeLessThanOrEqual(300)
-    }
-
     const operationIds = [...yaml.matchAll(/^\s+operationId:\s*(\S+)\s*$/gm)].map(m => m[1]!)
-    expect(new Set(operationIds).size).toBe(operationIds.length)
+    expect(operationIds).toContain('searchTenants')
+    expect(operationIds).toContain('searchTenantsMetaCompat')
     expect(operationIds).toContain('createPost')
     expect(operationIds).toContain('createEditorialCampaign')
     expect(operationIds).toContain('listAdsMetaTools')
+    expect(operationIds).toContain('listCampaigns')
+    expect(operationIds).toContain('createCampaign')
+    expect(operationIds).toContain('createAdset')
+    expect(operationIds).toContain('createAd')
+    expect(operationIds).toContain('getInsights')
+    expect(operationIds).toContain('previewBulkDelete')
+    expect(operationIds).toContain('executeBulkDelete')
+    expect(operationIds).toContain('updateCampaignStatus')
+    expect(yaml).toContain('x-openai-isConsequential: true')
+    expect(yaml).toContain('CreateCampaignBody')
+    expect(yaml).toContain('destinationType')
+    expect(yaml).toContain('WHATSAPP')
   })
 
-  it('keeps Meta pack openapi intact on disk', () => {
-    expect(existsSync(join(ROOT, 'gpt/blimber-meta/openapi.yaml'))).toBe(true)
+  it('keeps Meta pack openapi intact as standalone GPT (not a 2nd Action)', () => {
+    const metaPath = join(ROOT, 'gpt/blimber-meta/openapi.yaml')
+    expect(existsSync(metaPath)).toBe(true)
     expect(existsSync(join(ROOT, 'server/api/gpt/meta/campaigns/index.get.ts'))).toBe(true)
+    const meta = readFileSync(metaPath, 'utf8')
+    expect(meta).toContain('https://app.blimber.com.br')
+    expect(meta).toContain('operationId: searchTenants')
+    expect(meta).toContain('/api/gpt/meta/campaigns')
+    const unified = readFileSync(OPENAPI_PATH, 'utf8')
+    expect(unified).toContain('domínio duplicado')
   })
 })

@@ -3,12 +3,10 @@
 Experiência **primária**: GPT personalizado + **Ações** (Actions / OpenAPI) + **Habilidade** (Skill) OpenAI.  
 MCP stdio (Cursor / Claude Desktop) é **opcional** — ver [`mcp-blimber-meta.md`](./mcp-blimber-meta.md).
 
-> **Hub unificado (Marketing + Ads):** [`mcp-blimber-platform.md`](./mcp-blimber-platform.md) e pack `gpt/blimber/`.  
-> Este doc e o pack `gpt/blimber-meta/` continuam válidos para Meta Ads.
+> **Hub unificado (Marketing + Meta Ads):** [`mcp-blimber-platform.md`](./mcp-blimber-platform.md) e pack `gpt/blimber/` — **uma Ação** (`gpt/blimber/openapi.yaml` já inclui `/api/gpt/meta/*`).  
+> Este pack `gpt/blimber-meta/` é um **GPT separado** só de Ads. **Não** importe os dois OpenAPI no mesmo GPT: o ChatGPT recusa *«domínios duplicados — app.blimber.com.br»*.
 
-> **Hub unificado (Marketing editorial + ponte Meta):**  
-> [`gpt-blimber-UNIFIED-PLAN.md`](./gpt-blimber-UNIFIED-PLAN.md) · pack [`gpt/blimber/`](../gpt/blimber/) · marketing [`gpt-blimber-MARKETING.md`](./gpt-blimber-MARKETING.md)  
-> Este pack Meta **continua válido** para Ads pagos; no GPT unificado, importe-o como **2ª Ação**.
+> Plano: [`gpt-blimber-UNIFIED-PLAN.md`](./gpt-blimber-UNIFIED-PLAN.md) · marketing [`gpt-blimber-MARKETING.md`](./gpt-blimber-MARKETING.md)
 
 > **Tutorial completo (passo a passo, prompts, troubleshooting):**  
 > [`gpt-blimber-meta-TUTORIAL.md`](./gpt-blimber-meta-TUTORIAL.md)

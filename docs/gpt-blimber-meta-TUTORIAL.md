@@ -4,7 +4,8 @@ Guia operacional completo para configurar e usar a integração **Meta Ads** do 
 
 > Resumo técnico e arquitetura: [`gpt-blimber-meta.md`](./gpt-blimber-meta.md)  
 > Pack de arquivos: [`gpt/blimber-meta/`](../gpt/blimber-meta/)  
-> OpenAPI (fonte das tools): [`gpt/blimber-meta/openapi.yaml`](../gpt/blimber-meta/openapi.yaml)
+> OpenAPI (fonte das tools deste GPT só Ads): [`gpt/blimber-meta/openapi.yaml`](../gpt/blimber-meta/openapi.yaml)  
+> **GPT unificado (Marketing + Meta):** importe só [`gpt/blimber/openapi.yaml`](../gpt/blimber/openapi.yaml) — **não** adicione este pack como 2ª Ação.
 
 ---
 
@@ -327,6 +328,7 @@ Nunca misture dados de empresas diferentes na mesma conversa sem deixar o client
 | **localhost não funciona** | ChatGPT não alcança sua máquina | Use deploy / túnel **HTTPS público**. |
 | Meta “não conectado” / erro de ownership | Tenant sem OAuth ou UUID errado | Reconecte Meta em Integrações no Hub; confira o `tenantId`. |
 | Ação não aparece / esquema inválido | YAML quebrado, paths inválidos, security mal definido, `$ref` em parameters, múltiplos `servers` | Reimporte `openapi.yaml` (3.0.3, parameters inline, um único `https://app.blimber.com.br`); um scheme Bearer só. |
+| **Domínios duplicados** (`app.blimber.com.br já existe em outra ação`) | Duas Ações com o mesmo `servers.url` (ex.: `gpt/blimber/openapi.yaml` **e** `gpt/blimber-meta/openapi.yaml` no mesmo GPT) | Fique com **uma Ação**. GPT unificado = só `gpt/blimber/openapi.yaml` (já tem marketing + meta). Pack meta = **outro GPT**, não 2ª Ação. |
 | Habilidade “não carregada” | Upload incompleto / ZIP sem `SKILL.md` | Reenvie a pasta `blimber-meta-ads` ou regenere o ZIP a partir de `skills/blimber-meta-ads`. |
 | Mutação recusada | Falta `confirm` / `confirmTenantId` diferente | Confirme no chat; o GPT deve enviar `confirm: true` e IDs iguais. |
 | Timeout / resposta cortada | Insights muito grandes ou Meta lenta | Reduza `limit`, período ou `level`; repita em fatias. |

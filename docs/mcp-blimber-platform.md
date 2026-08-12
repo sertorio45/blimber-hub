@@ -41,34 +41,37 @@ lib/meta-ads/                # Graph write/read (reutilizado)
 
 Toda tool de domínio exige `tenantId`. Busca administrativa: `searchTenants` (também espelhada em `/api/gpt/meta/tenants` para o pack legado).
 
-### Custom GPT: OpenAPI único vs multi-packs
+### Custom GPT: uma Ação por GPT (domínio único)
 
-| Abordagem | Quando |
-|-----------|--------|
-| **Pack unificado** `gpt/blimber/` | Marketing + ponte Meta + roadmap |
-| **Pack Meta** `gpt/blimber-meta/` | GPT só Ads (write completo no OpenAPI Meta) |
-| **Dois Actions no mesmo GPT** | Unificado + Meta full write no mesmo assistente |
+O ChatGPT **não permite** duas Ações com o mesmo `servers.url`. Importar `gpt/blimber/openapi.yaml` **e** `gpt/blimber-meta/openapi.yaml` no **mesmo** GPT falha com:
 
-Ambos usam a **mesma** Bearer key e o **mesmo** servidor `https://app.blimber.com.br`.
+> Conjuntos de ações não podem ter domínios duplicados — app.blimber.com.br já existe em outra ação
+
+| Abordagem | Quando | Como |
+|-----------|--------|------|
+| **Pack unificado** `gpt/blimber/openapi.yaml` | Marketing + Meta Ads no **mesmo** assistente | **Uma Ação só** — o YAML já inclui `/api/gpt/marketing/*` e `/api/gpt/meta/*` |
+| **Pack Meta** `gpt/blimber-meta/openapi.yaml` | GPT **separado** só de Ads | Outro GPT, não uma 2ª Ação no unificado |
+
+Ambos usam a **mesma** Bearer key (`BLIMBER_MCP_API_KEY`) e o **mesmo** host `https://app.blimber.com.br` — por isso não podem coexistir como duas Ações.
 
 ## Roadmap
+
+1. **Fase 1 (esta):** fundação + Marketing editorial MVP + OpenAPI unificado (1 Ação)  
+2. **Fase 2:** Google Ads (OAuth + tools read)  
+3. **Fase 3:** CRM stubs → reads → writes com as mesmas confirmações  
+4. **Fase 4:** MCP stdio unificado opcional (`mcp/blimber`)
+
+Ver [`mcp-blimber-platform-PLAN.md`](./mcp-blimber-platform-PLAN.md).
 
 ## Relacionados
 
 - Plano / ponte GPT Meta: [`gpt-blimber-UNIFIED-PLAN.md`](./gpt-blimber-UNIFIED-PLAN.md)
 - Tutorial Marketing editorial: [`gpt-blimber-MARKETING.md`](./gpt-blimber-MARKETING.md)
-- Pack Meta Ads (write): [`gpt-blimber-meta.md`](./gpt-blimber-meta.md)
-
-Ver [`mcp-blimber-platform-PLAN.md`](./mcp-blimber-platform-PLAN.md).
-
-
-1. **Fase 1 (esta):** fundação + Marketing editorial MVP + aliases Meta  
-2. **Fase 2:** Google Ads (OAuth + tools read)  
-3. **Fase 3:** CRM stubs → reads → writes com as mesmas confirmações  
-4. **Fase 4:** MCP stdio unificado opcional (`mcp/blimber`)
+- Pack Meta Ads (GPT separado): [`gpt-blimber-meta.md`](./gpt-blimber-meta.md)
+- Tutorial Meta + erro de domínio duplicado: [`gpt-blimber-meta-TUTORIAL.md`](./gpt-blimber-meta-TUTORIAL.md)
 
 ## Compatibilidade
 
-- **Não quebrar** `gpt/blimber-meta` nem `/api/gpt/meta/*`
+- **Não quebrar** `gpt/blimber-meta` nem `/api/gpt/meta/*` (pack standalone para GPT só Ads)
 - Registry lista tools Meta (`meta_*`) e aliases (`ads_meta_*`)
 - Docs Meta antigos continuam válidos; este doc é o hub da plataforma

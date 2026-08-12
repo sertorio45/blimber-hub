@@ -20,13 +20,15 @@ Este arquivo resume a visão módulos **Marketing → Ads → CRM** para o hub G
 ## Entrega atual (MVP)
 
 - Pack `gpt/blimber/` + rotas `/api/gpt/marketing/*` + `/api/gpt/tenants` + registry
-- Meta Ads **não duplicado** — pack `gpt/blimber-meta/` coexiste (2ª Ação)
-- Auth: `BLIMBER_MCP_API_KEY` + actor `BLIMBER_MCP_ACTOR_USER_ID` para creates
+- OpenAPI unificado (`gpt/blimber/openapi.yaml`) inclui **todas** as operations Meta (`/api/gpt/meta/*`) — **uma Ação** no GPT
+- Pack `gpt/blimber-meta/` permanece **standalone** (GPT só Ads). **Não** importe os dois YAMLs no mesmo GPT (domínio `app.blimber.com.br` duplicado)
+- Auth: `BLIMBER_MCP_API_KEY` + actor `BLIMBER_MCP_ACTOR_USER_ID` para creates editoriais
+- Backend Meta **não duplicado** — mesmas rotas `server/api/gpt/meta/*`
 
 ## Roadmap curto
 
 1. Marketing editorial (feito)
-2. Merge OpenAPI Meta+unificado / soft-publish posts
+2. OpenAPI unificado Marketing + Meta (feito) / soft-publish posts
 3. Google Ads read
 4. CRM read → write com confirm
 
