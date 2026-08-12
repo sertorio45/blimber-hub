@@ -5,10 +5,38 @@ let sharpModulePromise: Promise<SharpModule> | null = null
 
 /** Lazy-load sharp so Nitro cold start does not crash unrelated API routes. */
 async function loadSharp(): Promise<SharpModule['default']> {
-  if (!sharpModulePromise)
-    sharpModulePromise = import('sharp')
+  if (!sharpModulePromise) {
+    sharpModulePromise = import('sharp').catch((error) => {
+      // Allow a later request to retry if the native binary becomes available.
+      sharpModulePromise = null
+      throw error
+    })
+  }
   const mod = await sharpModulePromise
   return mod.default
+}
+
+function originalImageFallback(
+  buffer: Buffer,
+  inputMime: string,
+  width: number | null = null,
+  height: number | null = null,
+): CompressedImageResult {
+  const fallbackMime = isBucketAllowedImageMime(inputMime)
+    ? inputMime
+    : inferImageMimeType(inputMime, undefined)
+
+  if (!isBucketAllowedImageMime(fallbackMime))
+    throw new Error('Unsupported image format')
+
+  return {
+    data: buffer,
+    mimeType: fallbackMime,
+    width,
+    height,
+    format: 'original',
+    compressed: false,
+  }
 }
 
 export const IMAGE_UPLOAD_PRESETS = {
@@ -86,7 +114,14 @@ export async function compressImageForUpload(
     formatHint?: ImageUploadFormatHint
   },
 ): Promise<CompressedImageResult> {
-  const sharp = await loadSharp()
+  let sharp: SharpModule['default']
+  try {
+    sharp = await loadSharp()
+  }
+  catch {
+    // Missing native binary (e.g. linux-x64 on Vercel) — keep original bytes.
+    return originalImageFallback(buffer, input.inputMime)
+  }
 
   try {
     const metadata = await sharp(buffer).metadata()
@@ -129,13 +164,6 @@ export async function compressImageForUpload(
     }
   }
   catch {
-    const fallbackMime = isBucketAllowedImageMime(input.inputMime)
-      ? input.inputMime
-      : inferImageMimeType(input.inputMime, undefined)
-
-    if (!isBucketAllowedImageMime(fallbackMime))
-      throw new Error('Unsupported image format')
-
     let width: number | null = null
     let height: number | null = null
     try {
@@ -147,13 +175,6 @@ export async function compressImageForUpload(
       // Keep original bytes even when metadata cannot be parsed.
     }
 
-    return {
-      data: buffer,
-      mimeType: fallbackMime,
-      width,
-      height,
-      format: 'original',
-      compressed: false,
-    }
+    return originalImageFallback(buffer, input.inputMime, width, height)
   }
 }

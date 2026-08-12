@@ -367,8 +367,10 @@ export function useMarketingSocial() {
       catch (error: any) {
         const status = Number(error?.statusCode || error?.status || 0)
         const message = String(error?.data?.statusMessage || error?.statusMessage || error?.message || '')
+        // Soft-fail compression/runtime issues (incl. missing sharp linux-x64 on Vercel).
         const canFallback = status === 413
-          || /compressão|unsupported image|body.*limit|payload too large/i.test(message)
+          || status === 500
+          || /compressão|unsupported image|body.*limit|payload too large|could not load the ["']?sharp["']? module|linux-x64|sharp/i.test(message)
         if (!canFallback)
           throw error
         console.warn('[marketing] Server compression failed, falling back to direct upload:', error)

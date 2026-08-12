@@ -1,5 +1,5 @@
 import sharp from 'sharp'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import {
   compressImageForUpload,
@@ -161,6 +161,27 @@ describe('upload asset compression', () => {
       expect(result.compressed).toBe(false)
       expect(result.format).toBe('original')
       expect(result.data.equals(input)).toBe(true)
+    })
+
+    it('falls back to original bytes when sharp module fails to load', async () => {
+      const input = await createTestImage(400, 400)
+      vi.resetModules()
+      vi.doMock('sharp', () => {
+        throw new Error('Could not load the "sharp" module using the linux-x64 runtime')
+      })
+
+      const { compressImageForUpload: compressWithBrokenSharp } = await import('~/server/utils/media-upload-image')
+      const result = await compressWithBrokenSharp(input, {
+        inputMime: 'image/jpeg',
+      })
+
+      expect(result.compressed).toBe(false)
+      expect(result.format).toBe('original')
+      expect(result.data.equals(input)).toBe(true)
+      expect(result.mimeType).toBe('image/jpeg')
+
+      vi.doUnmock('sharp')
+      vi.resetModules()
     })
   })
 })

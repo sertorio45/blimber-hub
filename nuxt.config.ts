@@ -56,12 +56,14 @@ export default defineNuxtConfig({
 
   nitro: {
     // Native modules must stay external; trace platform binaries for Vercel linux-x64.
-    serverExternalPackages: ['sharp', '@modelcontextprotocol/sdk'],
+    serverExternalPackages: ['sharp', '@img/sharp-linux-x64', '@img/sharp-libvips-linux-x64', '@modelcontextprotocol/sdk'],
     externals: {
-      external: ['sharp', '@modelcontextprotocol/sdk'],
+      external: ['sharp', '@img/sharp-linux-x64', '@img/sharp-libvips-linux-x64', '@modelcontextprotocol/sdk'],
       traceInclude: [
         'node_modules/sharp/**',
         'node_modules/@img/**',
+        'node_modules/@img/sharp-linux-x64/**',
+        'node_modules/@img/sharp-libvips-linux-x64/**',
       ],
     },
     routeRules: {
