@@ -33,14 +33,24 @@ export default defineConfig({
     animation: {
       keyframes: {
         'spin-slow': '{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}',
+        'shimmer': '{0%{background-position:-200% 0}100%{background-position:200% 0}}',
       },
       counts: {
         'spin-slow': 'infinite',
+        'shimmer': 'infinite',
       },
       durations: {
         'spin-slow': '3s',
+        'shimmer': '1.6s',
+      },
+      timingFns: {
+        shimmer: 'ease-in-out',
       },
     },
+  },
+  shortcuts: {
+    'media-skeleton-shimmer':
+      'bg-muted bg-[linear-gradient(90deg,hsl(var(--muted))_0%,hsl(var(--muted-foreground)/0.14)_50%,hsl(var(--muted))_100%)] bg-[length:200%_100%] animate-shimmer motion-reduce:animate-none',
   },
   presets: [
     presetWind3(),

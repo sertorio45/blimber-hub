@@ -1,6 +1,20 @@
 <script setup lang="ts">
+import type { LibraryAssetRow, MediaLibraryUploadItem } from '~/composables/marketing/useMediaLibrary'
+import type { MediaAssetDeletePreviewItem } from '~/server/utils/media-asset-deletion'
 import { toast } from 'vue-sonner'
-import { deleteWithConfirm } from '~/composables/useConfirmDelete'
+import MediaLibraryDeleteDialog from '~/components/marketing/media/MediaLibraryDeleteDialog.vue'
+import MediaLibraryGrid from '~/components/marketing/media/MediaLibraryGrid.vue'
+import { invalidateMarketingCache } from '~/composables/marketing/useMarketingFetch'
+import {
+  formatMediaAssetSize,
+  libraryAssetDisplayUrl,
+  libraryAssetIsImage,
+  libraryAssetIsVideo,
+  libraryAssetSize,
+  mergeLibraryAssetPreviews,
+  normalizeLibraryAsset,
+  useMediaLibrary,
+} from '~/composables/marketing/useMediaLibrary'
 
 definePageMeta({
   middleware: ['auth'],
@@ -8,27 +22,40 @@ definePageMeta({
 })
 
 const social = useMarketingSocial()
+const mediaLibrary = useMediaLibrary()
+
 const search = ref('')
 const purpose = ref<'all' | 'publication' | 'reference'>('all')
 const category = ref('all')
 const uploadPurpose = ref<'publication' | 'reference'>('publication')
 const uploading = ref(false)
+const uploadingItems = ref<MediaLibraryUploadItem[]>([])
 const previewDialogOpen = ref(false)
-const activeAsset = ref<any>(null)
+const activeAsset = ref<LibraryAssetRow | null>(null)
 const newFolderName = ref('')
 const creatingFolder = ref(false)
+
+const selectedIds = ref<string[]>([])
+const deleteDialogOpen = ref(false)
+const deletePreviewLoading = ref(false)
+const deleting = ref(false)
+const deletePreviewItems = ref<MediaAssetDeletePreviewItem[]>([])
 
 const { can } = useWorkspace()
 const canManageLibrary = computed(() => can('marketing.social.library.manage'))
 
-const { data: assets, showSkeleton, refresh } = useMarketingFetch({
+const { data: assets, showSkeleton, revalidating, refresh, error: loadError } = useMarketingFetch({
   key: () => `marketing-library-${social.tenantId.value}-${category.value}`,
-  handler: () => social.listAssets({
-    ...(category.value !== 'all' ? { category: category.value } : {}),
-  }),
-  default: () => [] as any[],
+  handler: async () => {
+    const rows = await social.listAssets({
+      ...(category.value !== 'all' ? { category: category.value } : {}),
+    })
+    return rows.map(row => normalizeLibraryAsset(row))
+  },
+  default: () => [] as LibraryAssetRow[],
   watch: [social.tenantId, category],
   enabled: () => Boolean(social.tenantId.value),
+  ttlMs: 3 * 60 * 1000,
 })
 
 const { data: folders, refresh: refreshFolders } = useMarketingFetch({
@@ -39,7 +66,9 @@ const { data: folders, refresh: refreshFolders } = useMarketingFetch({
   default: () => ({ data: [] as any[] }),
   watch: [social.tenantId],
   enabled: () => Boolean(social.tenantId.value),
+  ttlMs: 5 * 60 * 1000,
 })
+
 const categories = [
   { value: 'all', label: 'Todas categorias' },
   { value: 'logo', label: 'Logos' },
@@ -53,12 +82,64 @@ const categories = [
 
 const filteredAssets = computed(() => {
   const term = search.value.trim().toLocaleLowerCase('pt-BR')
-  return assets.value.filter((asset: any) => {
+  const rows = Array.isArray(assets.value) ? assets.value as LibraryAssetRow[] : []
+  return rows.filter((asset) => {
     const matchesPurpose = purpose.value === 'all' || asset.purpose === purpose.value
     const matchesSearch = !term || asset.name.toLocaleLowerCase('pt-BR').includes(term)
     const active = asset.lifecycle !== 'discontinued'
     return matchesPurpose && matchesSearch && active
   })
+})
+
+const selectedAssets = computed(() =>
+  filteredAssets.value.filter(asset => selectedIds.value.includes(asset.id)),
+)
+
+const hasSelection = computed(() => selectedIds.value.length > 0)
+const allFilteredSelected = computed(() =>
+  filteredAssets.value.length > 0
+  && filteredAssets.value.every(asset => selectedIds.value.includes(asset.id)),
+)
+
+const isLibraryBooting = computed(() =>
+  !social.tenantId.value || showSkeleton.value,
+)
+
+const showLibraryGrid = computed(() =>
+  isLibraryBooting.value
+  || uploadingItems.value.length > 0
+  || filteredAssets.value.length > 0,
+)
+
+const showEmptyState = computed(() =>
+  !isLibraryBooting.value
+  && !loadError.value
+  && !uploadingItems.value.length
+  && filteredAssets.value.length === 0,
+)
+
+function invalidateLibraryCaches() {
+  const tenant = social.tenantId.value || ''
+  invalidateMarketingCache([
+    `marketing-library-${tenant}`,
+    `marketing-social-form-assets-${tenant}`,
+  ])
+}
+
+function revokeUploadPreviews(items: MediaLibraryUploadItem[]) {
+  for (const item of items) {
+    if (item.previewUrl?.startsWith('blob:'))
+      URL.revokeObjectURL(item.previewUrl)
+  }
+}
+
+onUnmounted(() => {
+  revokeUploadPreviews(uploadingItems.value)
+})
+
+watch(filteredAssets, (items) => {
+  const valid = new Set(items.map(item => item.id))
+  selectedIds.value = selectedIds.value.filter(id => valid.has(id))
 })
 
 async function createFolder() {
@@ -82,66 +163,162 @@ async function createFolder() {
   }
 }
 
+function prependUploadedAssets(uploaded: LibraryAssetRow[]) {
+  if (!uploaded.length)
+    return
+
+  const current = assets.value as LibraryAssetRow[]
+  assets.value = [
+    ...uploaded,
+    ...current.filter(asset => !uploaded.some(row => row.id === asset.id)),
+  ] as LibraryAssetRow[]
+}
+
 async function upload(event: Event) {
   const input = event.target as HTMLInputElement
   if (!input.files?.length)
     return
   uploading.value = true
+  const files = Array.from(input.files)
+  const placeholders: MediaLibraryUploadItem[] = files.map(file => ({
+    id: `upload-${crypto.randomUUID()}`,
+    name: file.name,
+    previewUrl: file.type.startsWith('image/') ? URL.createObjectURL(file) : null,
+  }))
+  uploadingItems.value = placeholders
+  const uploadedRows: LibraryAssetRow[] = []
   try {
-    for (const file of Array.from(input.files))
-      await social.uploadAsset(file, uploadPurpose.value)
-    toast.success('Arquivos adicionados à biblioteca')
-    await refresh()
+    for (const [index, file] of files.entries()) {
+      const uploaded = await social.uploadAsset(file, uploadPurpose.value, {
+        category: category.value !== 'all' ? category.value : undefined,
+      })
+      const row = normalizeLibraryAsset(uploaded, file)
+      uploadedRows.push(row)
+      prependUploadedAssets([row])
+      const placeholder = placeholders[index]
+      if (placeholder)
+        uploadingItems.value = uploadingItems.value.filter(item => item.id !== placeholder.id)
+    }
+
+    toast.success(uploadedRows.length > 1 ? 'Arquivos adicionados à biblioteca' : 'Arquivo adicionado à biblioteca')
     input.value = ''
   }
   catch (error: any) {
-    toast.error(error?.message || 'Não foi possível enviar os arquivos')
+    toast.error(error?.data?.statusMessage || error?.statusMessage || error?.message || 'Não foi possível enviar os arquivos')
   }
   finally {
+    if (uploadedRows.length) {
+      invalidateLibraryCaches()
+      try {
+        await refresh()
+        const listed = Array.isArray(assets.value) ? assets.value as LibraryAssetRow[] : []
+        const listedIds = new Set(listed.map(row => row.id))
+        const missing = uploadedRows.filter(row => row.id && !listedIds.has(row.id))
+        assets.value = mergeLibraryAssetPreviews(
+          [...missing, ...listed],
+          uploadedRows,
+        ) as LibraryAssetRow[]
+      }
+      catch (refreshError) {
+        console.warn('[media-library] refresh after upload failed:', refreshError)
+      }
+    }
+    revokeUploadPreviews(placeholders)
+    uploadingItems.value = []
     uploading.value = false
+    input.value = ''
   }
 }
 
-function formatSize(bytes: number) {
-  if (bytes < 1024 * 1024)
-    return `${Math.max(1, Math.round(bytes / 1024))} KB`
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
-}
-
-function openPreview(asset: any) {
+function openPreview(asset: LibraryAssetRow) {
   activeAsset.value = asset
   previewDialogOpen.value = true
 }
 
-async function deleteAsset(asset?: any) {
-  const target = asset || activeAsset.value
-  if (!target)
+function toggleSelected(id: string, event?: Event) {
+  event?.stopPropagation()
+  if (selectedIds.value.includes(id))
+    selectedIds.value = selectedIds.value.filter(value => value !== id)
+  else
+    selectedIds.value = [...selectedIds.value, id]
+}
+
+function toggleSelectAllFiltered() {
+  if (allFilteredSelected.value)
+    selectedIds.value = []
+  else
+    selectedIds.value = filteredAssets.value.map(asset => asset.id)
+}
+
+function clearSelection() {
+  selectedIds.value = []
+}
+
+async function openDeleteDialog(assetIds?: string[]) {
+  const ids = assetIds?.length ? assetIds : selectedIds.value
+  if (!ids.length || !canManageLibrary.value)
     return
 
-  previewDialogOpen.value = false
+  selectedIds.value = ids
+  deleteDialogOpen.value = true
+  deletePreviewLoading.value = true
+  deletePreviewItems.value = []
 
-  const deleted = await deleteWithConfirm(
-    () => social.deleteAsset(target.id),
-    {
-      title: `Excluir “${target.name}”?`,
-      description: 'Esta ação remove definitivamente o arquivo. Se ele estiver vinculado a uma publicação, remova o vínculo antes de tentar novamente.',
-      confirmLabel: 'Excluir definitivamente',
-      successMessage: target.purpose === 'reference' ? 'Referência excluída com sucesso.' : 'Peça excluída com sucesso.',
-      errorMessage: 'Não foi possível excluir o arquivo.',
-    },
-  )
+  try {
+    const preview = await mediaLibrary.previewDelete(ids)
+    deletePreviewItems.value = preview.assets
+  }
+  catch (error: any) {
+    toast.error(error?.data?.statusMessage || 'Não foi possível preparar a exclusão')
+    deleteDialogOpen.value = false
+  }
+  finally {
+    deletePreviewLoading.value = false
+  }
+}
 
-  if (deleted) {
-    if (activeAsset.value?.id === target.id)
+async function confirmDelete() {
+  const ids = selectedAssets.value.map(asset => asset.id)
+  if (!ids.length)
+    return
+
+  deleting.value = true
+  const previous = (assets.value as LibraryAssetRow[]) || []
+  assets.value = previous.filter(asset => !ids.includes(asset.id)) as LibraryAssetRow[]
+
+  try {
+    const result = await mediaLibrary.deleteAssets(ids)
+    const count = result.count || ids.length
+    toast.success(count > 1 ? `${count} arquivos excluídos` : 'Arquivo excluído com sucesso')
+    deleteDialogOpen.value = false
+    previewDialogOpen.value = false
+    if (activeAsset.value && ids.includes(activeAsset.value.id))
       activeAsset.value = null
+    selectedIds.value = []
+    invalidateLibraryCaches()
     await refresh()
+  }
+  catch (error: any) {
+    assets.value = previous as LibraryAssetRow[]
+    const blocked = error?.data?.data?.blocked || error?.data?.blocked
+    if (blocked?.length) {
+      deletePreviewItems.value = blocked
+      toast.error(error?.data?.statusMessage || 'Alguns arquivos estão vinculados a publicações')
+      return
+    }
+    toast.error(error?.data?.statusMessage || error?.message || 'Não foi possível excluir os arquivos')
+  }
+  finally {
+    deleting.value = false
   }
 }
 
 function deleteFromPreview() {
-  deleteAsset(activeAsset.value)
+  if (!activeAsset.value)
+    return
+  previewDialogOpen.value = false
+  openDeleteDialog([activeAsset.value.id])
 }
-
 </script>
 
 <template>
@@ -153,6 +330,14 @@ function deleteFromPreview() {
         </h1>
         <p class="mt-1 text-muted-foreground">
           Organize peças finais e referências em um só lugar.
+        </p>
+        <p
+          v-if="revalidating"
+          class="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground"
+          aria-live="polite"
+        >
+          <Icon name="lucide:loader-circle" class="h-3 w-3 animate-spin" />
+          Atualizando biblioteca…
         </p>
       </div>
       <div class="flex flex-wrap gap-2">
@@ -230,61 +415,99 @@ function deleteFromPreview() {
       </CardContent>
     </Card>
 
-    <MarketingPageSkeleton v-if="showSkeleton" variant="grid" :cards="10" content-only />
-
-    <div v-else-if="filteredAssets.length" class="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5">
-      <Card
-        v-for="asset in filteredAssets as any[]"
-        :key="asset.id"
-        class="group relative cursor-pointer overflow-hidden transition-all hover:shadow-md hover:-translate-y-0.5"
-        @click="openPreview(asset)"
-      >
-        <Button
-          variant="secondary"
-          size="icon"
-          class="absolute right-2 top-2 z-10 h-8 w-8 opacity-0 shadow-sm transition-opacity focus:opacity-100 group-hover:opacity-100"
-          title="Excluir arquivo"
-          @click.stop="deleteAsset(asset)"
-        >
-          <Icon name="lucide:trash-2" class="h-4 w-4 text-destructive" />
+    <div
+      v-if="canManageLibrary && hasSelection"
+      class="sticky top-0 z-20 flex flex-wrap animate-in items-center justify-between gap-3 border-2 border-primary/40 rounded-xl bg-card p-3 shadow-md fade-in-0 slide-in-from-top-2"
+      role="region"
+      aria-live="polite"
+      aria-label="Ações da seleção"
+    >
+      <div class="flex flex-wrap items-center gap-3">
+        <span class="h-8 min-w-8 flex items-center justify-center rounded-full bg-primary px-2.5 text-sm text-primary-foreground font-semibold">
+          {{ selectedIds.length }}
+        </span>
+        <p class="text-sm font-semibold">
+          {{ selectedIds.length === 1 ? 'arquivo selecionado' : 'arquivos selecionados' }}
+        </p>
+        <Button variant="ghost" size="sm" @click="clearSelection">
+          Limpar
         </Button>
-        <div class="aspect-square overflow-hidden bg-muted">
-          <img
-            v-if="asset.mime_type?.startsWith('image/')"
-            :src="asset.preview_url"
-            :alt="asset.name"
-            class="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
-          >
-          <div v-else class="h-full flex items-center justify-center">
-            <Icon
-              :name="asset.mime_type?.startsWith('video/') ? 'lucide:file-video' : 'lucide:file-text'"
-              class="h-10 w-10 text-muted-foreground"
-            />
-          </div>
-        </div>
-        <CardContent class="p-3">
-          <p class="truncate text-sm font-medium" :title="asset.name">
-            {{ asset.name }}
-          </p>
-          <p class="mt-1 text-xs text-muted-foreground">
-            {{ formatSize(Number(asset.size_bytes || 0)) }}
-          </p>
-          <Badge class="mt-2" variant="secondary">
-            {{ asset.purpose === 'publication' ? 'Peça final' : 'Referência' }}
-          </Badge>
-        </CardContent>
-      </Card>
+        <Button
+          v-if="filteredAssets.length"
+          variant="ghost"
+          size="sm"
+          @click="toggleSelectAllFiltered"
+        >
+          {{ allFilteredSelected ? 'Desmarcar todos' : 'Selecionar todos' }}
+        </Button>
+      </div>
+      <Button variant="destructive" size="sm" @click="openDeleteDialog()">
+        <Icon name="lucide:trash-2" class="mr-2 h-4 w-4" />
+        Excluir
+      </Button>
     </div>
 
-    <Card v-else>
-      <CardContent class="flex flex-col items-center py-14 text-center">
-        <Icon name="lucide:images" class="mb-4 h-10 w-10 text-muted-foreground" />
+    <p v-if="isLibraryBooting" class="sr-only" aria-live="polite">
+      Carregando biblioteca de mídia
+    </p>
+
+    <MediaLibraryGrid
+      v-if="showLibraryGrid"
+      :assets="isLibraryBooting ? [] : filteredAssets"
+      :selected-ids="selectedIds"
+      :can-manage="canManageLibrary"
+      :tenant-id="social.tenantId.value"
+      :skeleton-count="isLibraryBooting ? 12 : 0"
+      :uploading-items="uploadingItems"
+      @toggle="toggleSelected"
+      @open="openPreview"
+    />
+
+    <Card v-else-if="loadError">
+      <CardContent class="flex flex-col items-center py-16 text-center">
+        <div class="mb-4 rounded-full bg-destructive/10 p-4">
+          <Icon name="lucide:image-off" class="h-10 w-10 text-destructive" />
+        </div>
         <h2 class="font-semibold">
-          Biblioteca vazia
+          Não foi possível carregar a biblioteca
         </h2>
-        <p class="mt-1 text-sm text-muted-foreground">
-          Envie artes, vídeos ou documentos de referência.
+        <p class="mt-1 max-w-sm text-sm text-muted-foreground">
+          {{ (loadError as any)?.data?.statusMessage || (loadError as any)?.statusMessage || 'Tente novamente em instantes.' }}
         </p>
+        <Button class="mt-4" variant="outline" @click="refresh()">
+          Tentar de novo
+        </Button>
+      </CardContent>
+    </Card>
+
+    <Card v-else-if="showEmptyState">
+      <CardContent class="flex flex-col items-center py-16 text-center">
+        <div class="mb-4 rounded-full bg-muted p-4">
+          <Icon name="lucide:images" class="h-10 w-10 text-muted-foreground" />
+        </div>
+        <h2 class="font-semibold">
+          {{ search.trim() || purpose !== 'all' || category !== 'all' ? 'Nenhum arquivo encontrado' : 'Biblioteca vazia' }}
+        </h2>
+        <p class="mt-1 max-w-sm text-sm text-muted-foreground">
+          {{
+            search.trim() || purpose !== 'all' || category !== 'all'
+              ? 'Ajuste os filtros ou busque por outro termo.'
+              : 'Envie artes, vídeos ou documentos de referência para começar.'
+          }}
+        </p>
+        <Button v-if="!search.trim() && purpose === 'all' && category === 'all'" as-child class="mt-4" :disabled="uploading">
+          <label class="cursor-pointer">
+            <Icon name="lucide:upload" class="mr-2 h-4 w-4" />
+            Enviar arquivos
+            <input
+              type="file"
+              multiple
+              accept="image/*,video/mp4,video/quicktime,application/pdf"
+              class="hidden"
+              @change="upload"
+            >
+          </label>
+        </Button>
       </CardContent>
     </Card>
 
@@ -294,19 +517,20 @@ function deleteFromPreview() {
           <DialogTitle>{{ activeAsset?.name }}</DialogTitle>
           <DialogDescription>
             {{ activeAsset?.purpose === 'publication' ? 'Peça final' : 'Referência' }}
-            · {{ formatSize(Number(activeAsset?.size_bytes || 0)) }}
+            · {{ formatMediaAssetSize(libraryAssetSize(activeAsset || {})) }}
           </DialogDescription>
         </DialogHeader>
         <div class="max-h-[70vh] overflow-hidden rounded-xl bg-muted">
           <img
-            v-if="activeAsset?.mime_type?.startsWith('image/')"
-            :src="activeAsset.preview_url"
+            v-if="activeAsset && (libraryAssetIsImage(activeAsset))"
+            :src="libraryAssetDisplayUrl(activeAsset, social.tenantId.value) || undefined"
             :alt="activeAsset.name"
-            class="max-h-[70vh] w-full object-contain"
+            class="max-h-[70vh] w-full animate-in object-contain duration-300 fade-in-0"
+            referrerpolicy="no-referrer"
           >
           <video
-            v-else-if="activeAsset?.mime_type?.startsWith('video/')"
-            :src="activeAsset.preview_url"
+            v-else-if="activeAsset && libraryAssetIsVideo(activeAsset)"
+            :src="libraryAssetDisplayUrl(activeAsset, social.tenantId.value) || undefined"
             class="max-h-[70vh] w-full"
             controls
           />
@@ -317,7 +541,7 @@ function deleteFromPreview() {
             </p>
           </div>
         </div>
-        <DialogFooter>
+        <DialogFooter v-if="canManageLibrary">
           <Button
             variant="destructive"
             @click="deleteFromPreview"
@@ -328,5 +552,14 @@ function deleteFromPreview() {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    <MediaLibraryDeleteDialog
+      v-model:open="deleteDialogOpen"
+      :assets="selectedAssets"
+      :preview-items="deletePreviewItems"
+      :loading-preview="deletePreviewLoading"
+      :deleting="deleting"
+      @confirm="confirmDelete"
+    />
   </div>
 </template>
