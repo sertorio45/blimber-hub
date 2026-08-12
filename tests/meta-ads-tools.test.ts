@@ -680,6 +680,76 @@ describe('meta-ads MCP tools', () => {
     )).rejects.toBeInstanceOf(Error)
   })
 
+  it('create adset with custom targeting dryRun previews Graph payload', async () => {
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret('tok'),
+      ad_account_id: '555',
+    })
+    const graphFetch = vi.fn()
+
+    const result = await metaCreateAdset(
+      { client, graphFetch },
+      {
+        tenantId: 'tenant-1',
+        campaignId: 'cmp_1',
+        name: 'Farma custom',
+        targeting: {
+          age_min: 25,
+          age_max: 45,
+          genders: [2],
+          geo_locations: { countries: ['BR'] },
+          interests: [{ id: '6003139266461', name: 'Cosmetics' }],
+        },
+        billingEvent: 'IMPRESSIONS',
+        optimizationGoal: 'LINK_CLICKS',
+        dailyBudget: 9000,
+        confirmTenantId: 'tenant-1',
+        confirm: true,
+      },
+    )
+
+    expect(result.success).toBe(true)
+    expect((result as any).dryRun).toBe(true)
+    expect((result as any).targetingTemplate).toBeNull()
+    expect((result as any).targetingSource).toBe('custom')
+    expect((result as any).targeting).toMatchObject({
+      age_min: 25,
+      age_max: 45,
+      genders: [2],
+      geo_locations: { countries: ['BR'] },
+      flexible_spec: [{ interests: [{ id: '6003139266461', name: 'Cosmetics' }] }],
+    })
+    expect((result as any).preview?.body?.targeting).toMatchObject({
+      genders: [2],
+      flexible_spec: [{ interests: [{ id: '6003139266461', name: 'Cosmetics' }] }],
+    })
+    expect((result as any).preview?.notes?.some((n: string) => n.includes('custom'))).toBe(true)
+    expect(graphFetch).not.toHaveBeenCalled()
+  })
+
+  it('create adset rejects both targetingTemplate and targeting', async () => {
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret('tok'),
+      ad_account_id: '555',
+    })
+
+    await expect(metaCreateAdset(
+      { client, graphFetch: vi.fn() },
+      {
+        tenantId: 'tenant-1',
+        campaignId: 'cmp_1',
+        name: 'Both',
+        targetingTemplate: 'BR_18_65',
+        targeting: { geo_locations: { countries: ['BR'] }, age_min: 18, age_max: 40 },
+        billingEvent: 'IMPRESSIONS',
+        optimizationGoal: 'REACH',
+        dailyBudget: 1000,
+        confirmTenantId: 'tenant-1',
+        confirm: true,
+      },
+    )).rejects.toBeInstanceOf(Error)
+  })
+
   it('create adset ACTIVE without confirmActive is rejected', async () => {
     const client = createIntegrationClient({
       access_token_enc: encryptSecret('tok'),
@@ -1417,6 +1487,46 @@ describe('meta-ads MCP tools', () => {
       geo_locations: { countries: ['BR'] },
       age_min: 25,
       age_max: 54,
+    })
+    expect(graphFetch.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(0)
+  })
+
+  it('update adset targeting accepts custom targeting dryRun', async () => {
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret('tok'),
+      ad_account_id: '555',
+    })
+    const graphFetch = vi.fn(async () => ({
+      id: 'adset_1',
+      name: 'Adset',
+      account_id: '555',
+      targeting: { geo_locations: { countries: ['BR'] }, age_min: 18, age_max: 65 },
+    }))
+
+    const result = await metaUpdateAdsetTargeting(
+      { client, graphFetch },
+      {
+        tenantId: 'tenant-1',
+        adsetId: 'adset_1',
+        targeting: {
+          age_min: 30,
+          age_max: 50,
+          genders: [1, 2],
+          geo_locations: { countries: ['BR'] },
+          custom_audiences: [{ id: 'aud_123' }],
+        },
+        confirmTenantId: 'tenant-1',
+        confirm: true,
+      },
+    )
+
+    expect((result as any).dryRun).toBe(true)
+    expect((result as any).targetingTemplate).toBeNull()
+    expect((result as any).targetingSource).toBe('custom')
+    expect((result as any).after.targeting).toMatchObject({
+      age_min: 30,
+      age_max: 50,
+      custom_audiences: [{ id: 'aud_123' }],
     })
     expect(graphFetch.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(0)
   })

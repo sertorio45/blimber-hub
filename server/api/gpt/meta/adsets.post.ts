@@ -2,7 +2,7 @@ import { defineEventHandler, readBody } from 'h3'
 import { runMetaGptTool } from '~/server/utils/meta-gpt-api'
 
 /**
- * Cria adset Meta com targetingTemplate fechado.
+ * Cria adset Meta com targetingTemplate BR_* OU targeting customizado (XOR).
  * Default PAUSED + dryRun=true. Exige confirm + confirmTenantId.
  * ACTIVE exige confirmActive=true. Budget (daily|lifetime) obrigatório.
  */
@@ -14,8 +14,12 @@ export default defineEventHandler(async (event) => {
     campaignId: body.campaignId,
     name: body.name,
     targetingTemplate: body.targetingTemplate,
+    targeting: body.targeting,
     billingEvent: body.billingEvent,
     optimizationGoal: body.optimizationGoal,
+    destinationType: body.destinationType,
+    campaignObjective: body.campaignObjective,
+    whatsappPhoneNumber: body.whatsappPhoneNumber,
     status: body.status,
     dailyBudget: body.dailyBudget,
     lifetimeBudget: body.lifetimeBudget,

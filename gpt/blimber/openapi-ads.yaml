@@ -6,7 +6,7 @@ info:
     via searchTenants da Ação Marketing. Nunca peça tokens. Mutações: confirm +
     confirmTenantId; create/edit/delete dryRun default true. Bulk: preview →
     IDs → execute. Este YAML é o contrato Ads canônico no ChatGPT.
-  version: 0.4.0
+  version: 0.5.0
   contact:
     name: Blimber Hub
 servers:
@@ -278,9 +278,10 @@ paths:
       operationId: createAdset
       summary: Criar adset (PAUSED)
       description: >
-        Cria adset com targetingTemplate BR_*. Default PAUSED + dryRun=true.
-        destinationType WEBSITE|WHATSAPP (CTWA: destination_type + page_id).
-        Exige confirm+budget+campaignId. ACTIVE exige confirmActive.
+        Cria adset com targetingTemplate BR_* OU targeting customizado (XOR).
+        Default PAUSED + dryRun=true. destinationType WEBSITE|WHATSAPP
+        (CTWA: destination_type + page_id). Exige confirm+budget+campaignId.
+        ACTIVE exige confirmActive.
       x-openai-isConsequential: true
       requestBody:
         required: true
@@ -371,7 +372,8 @@ paths:
       operationId: updateAdsetTargeting
       summary: Atualizar targeting do adset
       description: >
-        Só templates BR_*. dryRun default true. Sem targeting Graph livre. confirm + confirmTenantId.
+        targetingTemplate BR_* OU targeting customizado (XOR). dryRun default true.
+        confirm + confirmTenantId.
       x-openai-isConsequential: true
       parameters:
         - name: adsetId
@@ -922,13 +924,174 @@ components:
           type: boolean
           description: >
             Se true (default), retorna preview sem POST. Envie false para criar.
+    MetaCustomTargeting:
+      type: object
+      description: >
+        Subconjunto validado do targeting Graph. Exige geo_locations com
+        countries e/ou cities e/ou regions. interests/behaviors no topo
+        viram flexible_spec. Não envie junto com targetingTemplate.
+      properties:
+        age_min:
+          type: integer
+          minimum: 13
+          maximum: 65
+        age_max:
+          type: integer
+          minimum: 13
+          maximum: 65
+        genders:
+          type: array
+          items:
+            type: integer
+            enum: [1, 2]
+          description: 1=masculino, 2=feminino. Omitir = todos.
+          minItems: 1
+          maxItems: 2
+        geo_locations:
+          type: object
+          properties:
+            countries:
+              type: array
+              items:
+                type: string
+                minLength: 2
+                maxLength: 2
+              description: ISO country codes (ex. BR).
+            cities:
+              type: array
+              items:
+                type: object
+                required: [key]
+                properties:
+                  key:
+                    type: string
+                  name:
+                    type: string
+                  radius:
+                    type: number
+                  distance_unit:
+                    type: string
+                    enum: [kilometer, mile]
+            regions:
+              type: array
+              items:
+                type: object
+                required: [key]
+                properties:
+                  key:
+                    type: string
+                  name:
+                    type: string
+            location_types:
+              type: array
+              items:
+                type: string
+                enum: [home, recent, travel_in]
+        locales:
+          type: array
+          items:
+            type: integer
+        interests:
+          type: array
+          description: Atalho → flexible_spec[0].interests (IDs Meta).
+          items:
+            type: object
+            required: [id]
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+        behaviors:
+          type: array
+          items:
+            type: object
+            required: [id]
+            properties:
+              id:
+                type: string
+              name:
+                type: string
+        flexible_spec:
+          type: array
+          items:
+            type: object
+            properties:
+              interests:
+                type: array
+                items:
+                  type: object
+                  required: [id]
+                  properties:
+                    id: { type: string }
+                    name: { type: string }
+              behaviors:
+                type: array
+                items:
+                  type: object
+                  required: [id]
+                  properties:
+                    id: { type: string }
+                    name: { type: string }
+        exclusions:
+          type: object
+          properties:
+            interests:
+              type: array
+              items:
+                type: object
+                required: [id]
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+            behaviors:
+              type: array
+              items:
+                type: object
+                required: [id]
+                properties:
+                  id: { type: string }
+                  name: { type: string }
+        custom_audiences:
+          type: array
+          items:
+            type: object
+            required: [id]
+            properties:
+              id:
+                type: string
+        excluded_custom_audiences:
+          type: array
+          items:
+            type: object
+            required: [id]
+            properties:
+              id:
+                type: string
+        publisher_platforms:
+          type: array
+          items:
+            type: string
+            enum: [facebook, instagram, audience_network, messenger]
+        facebook_positions:
+          type: array
+          items:
+            type: string
+        instagram_positions:
+          type: array
+          items:
+            type: string
+        device_platforms:
+          type: array
+          items:
+            type: string
+            enum: [mobile, desktop]
     CreateAdsetBody:
       type: object
       required:
         - tenantId
         - campaignId
         - name
-        - targetingTemplate
         - billingEvent
         - optimizationGoal
         - confirmTenantId
@@ -951,7 +1114,9 @@ components:
         targetingTemplate:
           type: string
           enum: [BR_18_65, BR_25_54, BR_18_34, BR_35_65]
-          description: Template fechado geo+idade (sem targeting Graph livre).
+          description: Preset geo+idade. XOR com targeting — envie um OU outro.
+        targeting:
+          $ref: "#/components/schemas/MetaCustomTargeting"
         billingEvent:
           type: string
           enum: [IMPRESSIONS, LINK_CLICKS]
@@ -1153,7 +1318,7 @@ components:
           description: Default true — preview sem POST.
     UpdateAdsetTargetingBody:
       type: object
-      required: [tenantId, targetingTemplate, confirmTenantId, confirm]
+      required: [tenantId, confirmTenantId, confirm]
       properties:
         tenantId:
           type: string
@@ -1163,6 +1328,9 @@ components:
         targetingTemplate:
           type: string
           enum: [BR_18_65, BR_25_54, BR_18_34, BR_35_65]
+          description: Preset BR_*. XOR com targeting.
+        targeting:
+          $ref: "#/components/schemas/MetaCustomTargeting"
         confirmTenantId:
           type: string
           format: uuid

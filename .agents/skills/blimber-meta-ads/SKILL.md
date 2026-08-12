@@ -51,9 +51,9 @@ description: >-
 | `meta_get_campaign` | Detalhe |
 | `meta_create_campaign` | Criar campanha (PAUSED / dryRun default true) |
 | `meta_list_adsets` | Conjuntos de anúncios |
-| `meta_create_adset` | Criar adset (templates `BR_18_65` / `BR_*` / destination WEBSITE\|WHATSAPP) |
+| `meta_create_adset` | Criar adset (`BR_18_65` / `BR_*` **ou** `targeting` custom; destination WEBSITE\|WHATSAPP) |
 | `meta_update_adset_budget` | Budget adset (dryRun default true) |
-| `meta_update_adset_targeting` | Targeting BR_* |
+| `meta_update_adset_targeting` | Targeting `BR_*` **ou** `targeting` custom (XOR) |
 | `meta_list_ads` | Anúncios |
 | `meta_create_ad` | Criar criativo WEBSITE ou WHATSAPP (CTWA) + anúncio (PAUSED / dryRun true) |
 | `meta_update_ad_creative_copy` | Copy via novo creative |
@@ -83,5 +83,6 @@ Catálogo: `GET /api/gpt/meta/tools`
 - Campanhas orgânicas (`social_campaigns`)
 - Meta CAPI (CRM)
 - Delete por nome/filtro sem lista de IDs
-- Targeting Graph livre / Advantage+ / catálogo
+- Advantage+ / catálogo / targeting sem geo mínimo
+- Busca de interesses Meta (IDs de interest/behavior devem ser conhecidos)
 - video_id / upload binário / carousel

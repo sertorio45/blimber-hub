@@ -30,7 +30,9 @@ import {
   META_ADSET_BILLING_EVENTS,
   META_ADSET_OPTIMIZATION_GOALS,
   META_ADSET_TARGETING_TEMPLATE_IDS,
-  resolveAdsetTargetingTemplate,
+  metaCustomTargetingSchema,
+  refineTargetingXor,
+  resolveAdsetTargeting,
 } from './targeting-templates'
 import {
   assertBulkDeletePreviewToken,
@@ -208,7 +210,7 @@ export const metaCreateCampaignSchema = tenantContextSchema
 
 /**
  * Create adset — dryRun defaults to true.
- * Targeting only via closed templates (no free-form Graph targeting).
+ * Targeting via BR_* preset XOR custom `targeting` object (validated subset of Graph).
  * Status defaults to PAUSED; ACTIVE requires confirmActive: true.
  * destinationType=WHATSAPP → Click-to-WhatsApp (promoted_object.page_id + destination_type).
  */
@@ -218,7 +220,11 @@ export const metaCreateAdsetSchema = tenantContextSchema
     name: z.string().min(1).max(400).describe('Nome do conjunto de anúncios (adset).'),
     targetingTemplate: z
       .enum(META_ADSET_TARGETING_TEMPLATE_IDS)
-      .describe('Template fechado de targeting (geo+idade). Sem targeting Graph livre.'),
+      .optional()
+      .describe('Preset BR_* (geo+idade). XOR com targeting — não envie os dois.'),
+    targeting: metaCustomTargetingSchema
+      .optional()
+      .describe('Targeting Graph customizado (geo/idade/gênero/interesses/audiences). XOR com targetingTemplate.'),
     billingEvent: z
       .enum(META_ADSET_BILLING_EVENTS)
       .describe('Evento de cobrança whitelisted (IMPRESSIONS|LINK_CLICKS). CTWA exige IMPRESSIONS.'),
@@ -273,6 +279,7 @@ export const metaCreateAdsetSchema = tenantContextSchema
     ...metaWriteDryRunField,
   })
   .superRefine((data, ctx) => {
+    refineTargetingXor(data, ctx)
     if (data.dailyBudget != null && data.lifetimeBudget != null) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -546,16 +553,24 @@ export const metaUpdateAdsetBudgetSchema = tenantContextSchema
   })
 
 /**
- * Update adset targeting — only closed BR_* templates. dryRun default true.
+ * Update adset targeting — BR_* preset XOR custom targeting. dryRun default true.
  */
-export const metaUpdateAdsetTargetingSchema = tenantContextSchema.extend({
-  adsetId: z.string().min(1).describe('ID do adset Meta.'),
-  targetingTemplate: z
-    .enum(META_ADSET_TARGETING_TEMPLATE_IDS)
-    .describe('Template fechado (geo+idade). Sem targeting Graph livre.'),
-  ...metaWriteConfirmationFields,
-  ...metaWriteDryRunField,
-})
+export const metaUpdateAdsetTargetingSchema = tenantContextSchema
+  .extend({
+    adsetId: z.string().min(1).describe('ID do adset Meta.'),
+    targetingTemplate: z
+      .enum(META_ADSET_TARGETING_TEMPLATE_IDS)
+      .optional()
+      .describe('Preset BR_* (geo+idade). XOR com targeting.'),
+    targeting: metaCustomTargetingSchema
+      .optional()
+      .describe('Targeting Graph customizado. XOR com targetingTemplate.'),
+    ...metaWriteConfirmationFields,
+    ...metaWriteDryRunField,
+  })
+  .superRefine((data, ctx) => {
+    refineTargetingXor(data, ctx)
+  })
 
 /**
  * Update ad creative copy via new AdCreative + swap on ad (Graph creatives are mostly immutable).
@@ -1456,7 +1471,10 @@ export async function metaCreateAdset(
   const destinationType: MetaAdDestinationType = input.destinationType ?? 'WEBSITE'
   const creds = await withCreds(ctx, input.tenantId, input.adAccountId)
   const graph = fetchGraph(ctx)
-  const template = resolveAdsetTargetingTemplate(input.targetingTemplate)
+  const resolved = resolveAdsetTargeting({
+    targetingTemplate: input.targetingTemplate,
+    targeting: input.targeting,
+  })
 
   let pageId: string | null = null
   let whatsappPhone: string | undefined
@@ -1519,7 +1537,7 @@ export async function metaCreateAdset(
     billingEvent: input.billingEvent,
     optimizationGoal: input.optimizationGoal,
     status,
-    targeting: template.targeting,
+    targeting: resolved.targeting,
     destinationType,
     pageId: pageId ?? undefined,
     whatsappPhoneNumber: whatsappPhone,
@@ -1554,6 +1572,10 @@ export async function metaCreateAdset(
       budgetNotes.push('Informe campaignObjective no dry-run para validar matriz CTWA; na execução a Graph confirma.')
   }
 
+  const targetingNote = resolved.source === 'template'
+    ? `targetingTemplate: ${resolved.targetingTemplate} — ${resolved.summary}`
+    : `targeting: custom — ${resolved.summary}`
+
   const run = await withDryRun(
     dryRun,
     {
@@ -1564,7 +1586,7 @@ export async function metaCreateAdset(
         `Adset "${input.name}" → ${status}`,
         `campaign_id: ${input.campaignId}${campaignName ? ` (${campaignName})` : ''}`,
         `destinationType: ${destinationType}`,
-        `targetingTemplate: ${template.id} — ${template.summary}`,
+        targetingNote,
         `billing_event=${input.billingEvent} · optimization_goal=${input.optimizationGoal}`,
         `ad_account: ${creds.adAccountId}${currency ? ` (${currency})` : ''}`,
         ...budgetNotes,
@@ -1600,9 +1622,10 @@ export async function metaCreateAdset(
         destinationType,
         pageId,
         whatsappPhoneNumber: whatsappPhone ?? null,
-        targetingTemplate: template.id,
-        targeting: template.targeting,
-        targetingSummary: template.summary,
+        targetingTemplate: resolved.targetingTemplate,
+        targeting: resolved.targeting,
+        targetingSummary: resolved.summary,
+        targetingSource: resolved.source,
         dailyBudget: input.dailyBudget ?? null,
         lifetimeBudget: input.lifetimeBudget ?? null,
         startTime: input.startTime ?? null,
@@ -1626,7 +1649,9 @@ export async function metaCreateAdset(
       after: {
         preview: run.preview,
         campaignId: input.campaignId,
-        targetingTemplate: template.id,
+        targetingTemplate: resolved.targetingTemplate,
+        targeting: resolved.targeting,
+        targetingSource: resolved.source,
         destinationType,
         pageId,
         adAccountId: creds.adAccountId,
@@ -1648,9 +1673,10 @@ export async function metaCreateAdset(
       destinationType,
       pageId,
       whatsappPhoneNumber: whatsappPhone ?? null,
-      targetingTemplate: template.id,
-      targeting: template.targeting,
-      targetingSummary: template.summary,
+      targetingTemplate: resolved.targetingTemplate,
+      targeting: resolved.targeting,
+      targetingSummary: resolved.summary,
+      targetingSource: resolved.source,
       dailyBudget: input.dailyBudget ?? null,
       lifetimeBudget: input.lifetimeBudget ?? null,
       startTime: input.startTime ?? null,
@@ -1683,6 +1709,7 @@ export async function metaCreateAdset(
         pageId: result.pageId,
         targetingTemplate: result.targetingTemplate,
         targeting: result.targeting,
+        targetingSource: result.targetingSource,
         dailyBudget: result.dailyBudget,
         lifetimeBudget: result.lifetimeBudget,
         startTime: result.startTime,
@@ -2220,7 +2247,7 @@ export async function metaUpdateAdsetBudget(
 }
 
 /**
- * Update adset targeting via BR_* template only. dryRun default true.
+ * Update adset targeting via BR_* preset or custom targeting. dryRun default true.
  */
 export async function metaUpdateAdsetTargeting(
   ctx: MetaToolContext,
@@ -2232,7 +2259,10 @@ export async function metaUpdateAdsetTargeting(
   const dryRun = resolveDryRun(input.dryRun, true)
   const creds = await withCreds(ctx, input.tenantId, input.adAccountId)
   const graph = fetchGraph(ctx)
-  const template = resolveAdsetTargetingTemplate(input.targetingTemplate)
+  const resolved = resolveAdsetTargeting({
+    targetingTemplate: input.targetingTemplate,
+    targeting: input.targeting,
+  })
 
   const adset = await graph(metaGraphUrl(creds.apiVersion, `/${input.adsetId}`), {
     query: {
@@ -2248,7 +2278,10 @@ export async function metaUpdateAdsetTargeting(
   })
 
   const beforeTargeting = adset?.targeting ?? null
-  const graphBody = { targeting: template.targeting }
+  const graphBody = { targeting: resolved.targeting }
+  const targetingNote = resolved.source === 'template'
+    ? `targetingTemplate: ${resolved.targetingTemplate} — ${resolved.summary}`
+    : `targeting: custom — ${resolved.summary}`
 
   const run = await withDryRun(
     dryRun,
@@ -2258,7 +2291,7 @@ export async function metaUpdateAdsetTargeting(
       body: graphBody,
       notes: [
         `Adset ${input.adsetId}${adset?.name ? ` (${adset.name})` : ''}`,
-        `targetingTemplate: ${template.id} — ${template.summary}`,
+        targetingNote,
         'before: snapshot em `before.targeting` (pode não mapear a um template BR_*)',
         dryRun
           ? 'dryRun=true (default): nenhuma mutação enviada à Graph API.'
@@ -2276,11 +2309,16 @@ export async function metaUpdateAdsetTargeting(
         adAccountId: creds.adAccountId,
         adsetId: input.adsetId,
         adsetName: adset?.name ? String(adset.name) : null,
-        targetingTemplate: template.id,
-        targeting: template.targeting,
-        targetingSummary: template.summary,
+        targetingTemplate: resolved.targetingTemplate,
+        targeting: resolved.targeting,
+        targetingSummary: resolved.summary,
+        targetingSource: resolved.source,
         before: { targeting: beforeTargeting },
-        after: { targetingTemplate: template.id, targeting: template.targeting },
+        after: {
+          targetingTemplate: resolved.targetingTemplate,
+          targeting: resolved.targeting,
+          targetingSource: resolved.source,
+        },
         success: Boolean(updated?.success ?? true),
         dryRun: false as const,
         warning: 'Targeting do adset atualizado. Confira alcance no Ads Manager.',
@@ -2297,8 +2335,9 @@ export async function metaUpdateAdsetTargeting(
       dryRun: true,
       before: { targeting: beforeTargeting },
       after: {
-        targetingTemplate: template.id,
-        targeting: template.targeting,
+        targetingTemplate: resolved.targetingTemplate,
+        targeting: resolved.targeting,
+        targetingSource: resolved.source,
         preview: run.preview,
       },
     })
@@ -2307,11 +2346,16 @@ export async function metaUpdateAdsetTargeting(
       adAccountId: creds.adAccountId,
       adsetId: input.adsetId,
       adsetName: adset?.name ? String(adset.name) : null,
-      targetingTemplate: template.id,
-      targeting: template.targeting,
-      targetingSummary: template.summary,
+      targetingTemplate: resolved.targetingTemplate,
+      targeting: resolved.targeting,
+      targetingSummary: resolved.summary,
+      targetingSource: resolved.source,
       before: { targeting: beforeTargeting },
-      after: { targetingTemplate: template.id, targeting: template.targeting },
+      after: {
+        targetingTemplate: resolved.targetingTemplate,
+        targeting: resolved.targeting,
+        targetingSource: resolved.source,
+      },
       success: true as const,
       dryRun: true as const,
       preview: run.preview,
@@ -2329,8 +2373,9 @@ export async function metaUpdateAdsetTargeting(
       dryRun: false,
       before: { targeting: beforeTargeting },
       after: {
-        targetingTemplate: template.id,
-        targeting: template.targeting,
+        targetingTemplate: resolved.targetingTemplate,
+        targeting: resolved.targeting,
+        targetingSource: resolved.source,
         success: result.success,
         adAccountId: creds.adAccountId,
       },
@@ -3148,13 +3193,13 @@ export const META_TOOL_DESCRIPTIONS: Record<MetaToolName, string> = {
   meta_create_campaign:
     'Cria campanha (Outcome_*). Default PAUSED + dryRun=true. Exige confirm+confirmTenantId. ACTIVE exige confirmActive. Budget opcional com teto env.',
   meta_create_adset:
-    'Cria adset (BR_*). PAUSED+dryRun. destinationType WEBSITE|WHATSAPP (CTWA: destination_type+page_id, CONVERSATIONS). Exige confirm+budget+campaignId.',
+    'Cria adset (BR_* ou targeting custom). PAUSED+dryRun. destinationType WEBSITE|WHATSAPP (CTWA). Exige confirm+budget+campaignId.',
   meta_create_ad:
     'Cria AdCreative+Ad. WEBSITE: linkUrl. WHATSAPP: CTWA oficial (sem linkUrl/wa.me). PAUSED+dryRun. Exige page token, confirm, adsetId.',
   meta_update_adset_budget:
     'Atualiza budget do adset (daily|lifetime). dryRun default true. Teto META_GPT_BUDGET_* + confirmBudgetIncrease se aumento % alto.',
   meta_update_adset_targeting:
-    'Atualiza targeting do adset só via template BR_*. dryRun default true. Sem targeting Graph livre.',
+    'Atualiza targeting do adset (BR_* ou targeting custom). dryRun default true. XOR targetingTemplate|targeting.',
   meta_update_ad_creative_copy:
     'Atualiza copy do ad (message/headline/description/CTA/link) via novo AdCreative + swap. dryRun default true. Exige Page.',
   meta_update_ad_media:

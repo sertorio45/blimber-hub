@@ -96,7 +96,7 @@ Prefira as rotas REST `/api/gpt/meta/*` documentadas no OpenAPI.
 | `meta_update_adset_status` | write | ACTIVE/PAUSED (confirmação) |
 | `meta_update_ad_status` | write | ACTIVE/PAUSED (confirmação) |
 | `meta_create_campaign` | write | Criar campanha (PAUSED / dryRun default true) |
-| `meta_create_adset` | write | Criar adset com targetingTemplate fechado |
+| `meta_create_adset` | write | Criar adset com `BR_*` ou `targeting` custom |
 | `meta_create_ad` | write | Criar AdCreative link/page + Ad (dryRun default true) |
 | `meta_update_adset_budget` | write | Budget adset (dryRun default true) |
 | `meta_update_adset_targeting` | write | Targeting BR_* |

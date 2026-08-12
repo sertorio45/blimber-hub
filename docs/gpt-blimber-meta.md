@@ -94,7 +94,7 @@ Contrato completo: `gpt/blimber/openapi-ads.yaml` (host `ads.blimber.com.br`). `
 ## Limitações
 
 - Sem CAPI, Brand Center / geração de imagem  
-- Targeting de adset só via templates fechados (`BR_*`) — sem Graph targeting livre  
+- Targeting de adset: presets `BR_*` **ou** objeto `targeting` customizado (XOR; geo obrigatório)  
 - Create/edit ad: criativo link/page + mídia tipada (`imageUrl`|`imageHash`); exige page token  
 - Sem `video_id` / upload binário / carousel no edit de mídia  
 - Bulk delete: **só IDs explícitos** (nunca por nome); preview + `previewToken` obrigatórios  
