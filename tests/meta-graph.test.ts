@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   assertWhatsAppAdsetCompatibility,
   buildMetaCreateAdCreativeBody,
+  buildMetaCreateAdCreativeBodyByType,
   buildMetaCreateAdsetGraphBody,
   buildMetaCreateCampaignGraphBody,
   encodeMetaGraphBodyValue,
@@ -10,6 +11,7 @@ import {
   isMetaMessagingProtocolUrl,
   MetaAdsToolError,
   META_WHATSAPP_MESSAGING_LINK,
+  normalizeMetaAdCreativeType,
 } from '~/lib/meta-ads'
 
 describe('meta graph create campaign payload', () => {
@@ -113,6 +115,102 @@ describe('meta CTWA / destination payloads', () => {
         },
       },
     })
+  })
+
+  it('builds VIDEO creative with video_data', () => {
+    const body = buildMetaCreateAdCreativeBodyByType({
+      creativeName: 'Vid',
+      pageId: 'page_1',
+      creativeType: 'VIDEO',
+      destinationType: 'WEBSITE',
+      videoId: 'vid_99',
+      website: {
+        message: 'Assista',
+        linkUrl: 'https://example.com/v',
+        callToAction: 'LEARN_MORE',
+        headline: 'Novo vídeo',
+        imageHash: 'thumb_hash',
+      },
+    })
+    expect(body.object_story_spec).toMatchObject({
+      page_id: 'page_1',
+      video_data: {
+        video_id: 'vid_99',
+        message: 'Assista',
+        title: 'Novo vídeo',
+        image_hash: 'thumb_hash',
+        call_to_action: {
+          type: 'LEARN_MORE',
+          value: { link: 'https://example.com/v' },
+        },
+      },
+    })
+  })
+
+  it('builds CAROUSEL creative with child_attachments', () => {
+    const body = buildMetaCreateAdCreativeBodyByType({
+      creativeName: 'Car',
+      pageId: 'page_1',
+      creativeType: 'CAROUSEL',
+      destinationType: 'WEBSITE',
+      website: {
+        message: 'Escolha',
+        linkUrl: 'https://example.com',
+        callToAction: 'SHOP_NOW',
+      },
+      childAttachments: [
+        { link: 'https://example.com/p1', name: 'P1', imageHash: 'h1' },
+        { link: 'https://example.com/p2', name: 'P2', imageHash: 'h2' },
+      ],
+    })
+    expect(body.object_story_spec).toMatchObject({
+      page_id: 'page_1',
+      link_data: {
+        message: 'Escolha',
+        link: 'https://example.com',
+        multi_share_optimized: true,
+        child_attachments: [
+          { link: 'https://example.com/p1', name: 'P1', image_hash: 'h1' },
+          { link: 'https://example.com/p2', name: 'P2', image_hash: 'h2' },
+        ],
+      },
+    })
+  })
+
+  it('builds DYNAMIC_CREATIVE with asset_feed_spec', () => {
+    const body = buildMetaCreateAdCreativeBodyByType({
+      creativeName: 'Dyn',
+      pageId: 'page_1',
+      creativeType: 'DYNAMIC_CREATIVE',
+      destinationType: 'WEBSITE',
+      assetFeed: {
+        bodies: [{ text: 'A' }, { text: 'B' }],
+        titles: [{ text: 'T1' }],
+        images: [{ hash: 'img1' }, { hash: 'img2' }],
+        linkUrls: [{ websiteUrl: 'https://example.com/lp' }],
+        callToActionTypes: ['LEARN_MORE', 'SHOP_NOW'],
+        adFormats: ['SINGLE_IMAGE', 'AUTOMATIC_FORMAT'],
+      },
+    })
+    expect(body).toMatchObject({
+      name: 'Dyn',
+      object_story_spec: { page_id: 'page_1' },
+      asset_feed_spec: {
+        bodies: [{ text: 'A' }, { text: 'B' }],
+        titles: [{ text: 'T1' }],
+        images: [{ hash: 'img1' }, { hash: 'img2' }],
+        link_urls: [{ website_url: 'https://example.com/lp' }],
+        call_to_action_types: ['LEARN_MORE', 'SHOP_NOW'],
+        ad_formats: ['SINGLE_IMAGE', 'AUTOMATIC_FORMAT'],
+      },
+    })
+    expect(body.object_story_spec).not.toHaveProperty('link_data')
+  })
+
+  it('normalizes creativeType aliases', () => {
+    expect(normalizeMetaAdCreativeType('static')).toBe('IMAGE')
+    expect(normalizeMetaAdCreativeType('VIDEO')).toBe('VIDEO')
+    expect(normalizeMetaAdCreativeType('dynamic')).toBe('DYNAMIC_CREATIVE')
   })
 
   it('builds WHATSAPP adset with destination_type and promoted_object', () => {

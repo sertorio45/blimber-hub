@@ -1046,6 +1046,140 @@ describe('meta-ads MCP tools', () => {
     expect(graphFetch).not.toHaveBeenCalled()
   })
 
+  it('create ad VIDEO dryRun previews video_data Graph payload', async () => {
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret('tok'),
+      page_access_token_enc: encryptSecret('page-tok'),
+      ad_account_id: '555',
+      page_id: 'page_99',
+    })
+    const result = await metaCreateAd(
+      { client, graphFetch: vi.fn() },
+      {
+        tenantId: 'tenant-1',
+        adsetId: 'adset_1',
+        name: 'Ad Vídeo',
+        creativeType: 'VIDEO',
+        linkUrl: 'https://example.com/v',
+        message: 'Veja o vídeo',
+        videoId: 'video_meta_1',
+        imageHash: 'thumb_1',
+        confirmTenantId: 'tenant-1',
+        confirm: true,
+      },
+    )
+    expect((result as any).dryRun).toBe(true)
+    expect((result as any).creativeType).toBe('VIDEO')
+    expect((result as any).preview?.body?.creative?.object_story_spec).toMatchObject({
+      page_id: 'page_99',
+      video_data: {
+        video_id: 'video_meta_1',
+        message: 'Veja o vídeo',
+        image_hash: 'thumb_1',
+        call_to_action: { type: 'LEARN_MORE', value: { link: 'https://example.com/v' } },
+      },
+    })
+    expect((result as any).preview?.body?.creative?.object_story_spec).not.toHaveProperty('link_data')
+  })
+
+  it('create ad CAROUSEL dryRun previews child_attachments', async () => {
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret('tok'),
+      page_access_token_enc: encryptSecret('page-tok'),
+      ad_account_id: '555',
+      page_id: 'page_99',
+    })
+    const result = await metaCreateAd(
+      { client, graphFetch: vi.fn() },
+      {
+        tenantId: 'tenant-1',
+        adsetId: 'adset_1',
+        name: 'Ad Carrossel',
+        creativeType: 'CAROUSEL',
+        linkUrl: 'https://example.com',
+        message: 'Veja as opções',
+        callToAction: 'SHOP_NOW',
+        childAttachments: [
+          { link: 'https://example.com/a', name: 'A', imageHash: 'ha' },
+          { link: 'https://example.com/b', name: 'B', imageHash: 'hb' },
+        ],
+        confirmTenantId: 'tenant-1',
+        confirm: true,
+      },
+    )
+    expect((result as any).creativeType).toBe('CAROUSEL')
+    const linkData = (result as any).preview?.body?.creative?.object_story_spec?.link_data
+    expect(linkData?.child_attachments).toHaveLength(2)
+    expect(linkData?.multi_share_optimized).toBe(true)
+    expect(linkData?.child_attachments[0]).toMatchObject({ image_hash: 'ha', name: 'A' })
+  })
+
+  it('create ad DYNAMIC_CREATIVE dryRun previews asset_feed_spec', async () => {
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret('tok'),
+      page_access_token_enc: encryptSecret('page-tok'),
+      ad_account_id: '555',
+      page_id: 'page_99',
+    })
+    const result = await metaCreateAd(
+      { client, graphFetch: vi.fn() },
+      {
+        tenantId: 'tenant-1',
+        adsetId: 'adset_dyn',
+        name: 'Ad Dinâmico',
+        creativeType: 'DYNAMIC_CREATIVE',
+        message: 'Fallback body',
+        assetFeed: {
+          images: [{ hash: 'h1' }, { hash: 'h2' }],
+          titles: [{ text: 'Título A' }, { text: 'Título B' }],
+          linkUrls: [{ websiteUrl: 'https://example.com/dyn' }],
+          callToActionTypes: ['LEARN_MORE'],
+          adFormats: ['SINGLE_IMAGE', 'AUTOMATIC_FORMAT'],
+        },
+        confirmTenantId: 'tenant-1',
+        confirm: true,
+      },
+    )
+    expect((result as any).creativeType).toBe('DYNAMIC_CREATIVE')
+    expect((result as any).preview?.body?.creative).toMatchObject({
+      object_story_spec: { page_id: 'page_99' },
+      asset_feed_spec: {
+        bodies: [{ text: 'Fallback body' }],
+        titles: [{ text: 'Título A' }, { text: 'Título B' }],
+        images: [{ hash: 'h1' }, { hash: 'h2' }],
+        link_urls: [{ website_url: 'https://example.com/dyn' }],
+        ad_formats: ['SINGLE_IMAGE', 'AUTOMATIC_FORMAT'],
+      },
+    })
+    expect((result as any).preview?.notes?.some((n: string) => n.includes('is_dynamic_creative'))).toBe(true)
+  })
+
+  it('create ad rejects CAROUSEL with WHATSAPP destination', async () => {
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret('tok'),
+      page_access_token_enc: encryptSecret('page-tok'),
+      ad_account_id: '555',
+      page_id: 'page_1',
+    })
+    await expect(metaCreateAd(
+      { client, graphFetch: vi.fn() },
+      {
+        tenantId: 'tenant-1',
+        adsetId: 'adset_1',
+        name: 'Bad',
+        creativeType: 'CAROUSEL',
+        destinationType: 'WHATSAPP',
+        message: 'Oi',
+        childAttachments: [
+          { link: 'https://example.com/a', imageHash: 'h1' },
+          { link: 'https://example.com/b', imageHash: 'h2' },
+        ],
+        confirmTenantId: 'tenant-1',
+        confirm: true,
+      },
+    )).rejects.toThrow()
+  })
+
   it('create ad rejects confirmTenantId mismatch without Graph', async () => {
     const client = createIntegrationClient({
       access_token_enc: encryptSecret('tok'),

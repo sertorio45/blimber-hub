@@ -6,7 +6,7 @@ info:
     via searchTenants da Ação Marketing. Nunca peça tokens. Mutações: confirm +
     confirmTenantId; create/edit/delete dryRun default true. Bulk: preview →
     IDs → execute. Este YAML é o contrato Ads canônico no ChatGPT.
-  version: 0.6.0
+  version: 0.7.0
   contact:
     name: Blimber Hub
 servers:
@@ -607,9 +607,9 @@ paths:
       operationId: createAd
       summary: Criar anúncio + criativo
       description: >
-        Cria AdCreative + Ad. WEBSITE: linkUrl obrigatório. WHATSAPP: CTWA oficial
-        (sem linkUrl/wa.me; CTA WHATSAPP_MESSAGE). Default PAUSED + dryRun=true.
-        Exige confirm, page_id/page token. imageUrl|imageHash opcional.
+        Cria AdCreative+Ad. creativeType IMAGE|VIDEO|CAROUSEL|DYNAMIC_CREATIVE.
+        WEBSITE/WHATSAPP(CTWA). Mídia=imageHash|videoId já na Meta. PAUSED+dryRun.
+        DYNAMIC: adset is_dynamic_creative=true. Sem upload binário.
       x-openai-isConsequential: true
       requestBody:
         required: true
@@ -1343,7 +1343,6 @@ components:
         - tenantId
         - adsetId
         - name
-        - message
         - confirmTenantId
         - confirm
       properties:
@@ -1361,20 +1360,28 @@ components:
           minLength: 1
           maxLength: 400
           description: Nome do anúncio.
+        creativeType:
+          type: string
+          enum: [IMAGE, VIDEO, CAROUSEL, DYNAMIC_CREATIVE]
+          default: IMAGE
+          description: >
+            IMAGE (link_data estático; alias static), VIDEO (video_data+videoId),
+            CAROUSEL (childAttachments 2–10), DYNAMIC_CREATIVE (asset_feed_spec;
+            adset com is_dynamic_creative=true). Mídia já na Meta.
         destinationType:
           type: string
           enum: [WEBSITE, WHATSAPP]
           default: WEBSITE
-          description: WEBSITE exige linkUrl; WHATSAPP = CTWA oficial (sem linkUrl).
+          description: WEBSITE exige linkUrl (exceto DYNAMIC via assetFeed); WHATSAPP = CTWA (IMAGE|VIDEO).
         linkUrl:
           type: string
           format: uri
-          description: URL https de site (só WEBSITE). Rejeita wa.me; nunca inventar.
+          description: URL https de site (IMAGE/VIDEO/CAROUSEL WEBSITE). Rejeita wa.me; nunca inventar.
         message:
           type: string
           minLength: 1
           maxLength: 2000
-          description: Texto principal do criativo (copy explícita).
+          description: Texto principal. Obrigatório IMAGE/VIDEO/CAROUSEL; em DYNAMIC vira bodies se omitido no feed.
         headline:
           type: string
           maxLength: 255
@@ -1400,14 +1407,133 @@ components:
         welcomeMessage:
           type: string
           maxLength: 1000
-          description: Só WHATSAPP — saudação/autofill (page_welcome_message).
+          description: Só WHATSAPP+IMAGE — saudação/autofill (page_welcome_message).
         imageUrl:
           type: string
           format: uri
-          description: URL https de imagem hospedada (XOR imageHash). Nunca inventar.
+          description: URL https de imagem/thumbnail (XOR imageHash). Nunca inventar.
         imageHash:
           type: string
           description: image_hash já na conta (XOR imageUrl).
+        videoId:
+          type: string
+          description: Obrigatório em VIDEO — video_id já na biblioteca Meta (sem upload).
+        childAttachments:
+          type: array
+          minItems: 2
+          maxItems: 10
+          description: Obrigatório em CAROUSEL — cards com link + imageHash|imageUrl|videoId.
+          items:
+            type: object
+            required: [link]
+            properties:
+              link:
+                type: string
+                format: uri
+              name:
+                type: string
+                maxLength: 255
+              description:
+                type: string
+                maxLength: 500
+              imageHash:
+                type: string
+              imageUrl:
+                type: string
+                format: uri
+              videoId:
+                type: string
+        assetFeed:
+          type: object
+          description: Obrigatório em DYNAMIC_CREATIVE (mapeia para asset_feed_spec).
+          required: [linkUrls, callToActionTypes, adFormats]
+          properties:
+            bodies:
+              type: array
+              maxItems: 5
+              items:
+                type: object
+                required: [text]
+                properties:
+                  text:
+                    type: string
+            titles:
+              type: array
+              maxItems: 5
+              items:
+                type: object
+                required: [text]
+                properties:
+                  text:
+                    type: string
+            descriptions:
+              type: array
+              maxItems: 5
+              items:
+                type: object
+                required: [text]
+                properties:
+                  text:
+                    type: string
+            images:
+              type: array
+              maxItems: 10
+              items:
+                type: object
+                required: [hash]
+                properties:
+                  hash:
+                    type: string
+            videos:
+              type: array
+              maxItems: 10
+              items:
+                type: object
+                required: [videoId]
+                properties:
+                  videoId:
+                    type: string
+                  thumbnailUrl:
+                    type: string
+                    format: uri
+                  thumbnailHash:
+                    type: string
+            linkUrls:
+              type: array
+              minItems: 1
+              maxItems: 5
+              items:
+                type: object
+                required: [websiteUrl]
+                properties:
+                  websiteUrl:
+                    type: string
+                    format: uri
+            callToActionTypes:
+              type: array
+              minItems: 1
+              maxItems: 5
+              items:
+                type: string
+                enum:
+                  - LEARN_MORE
+                  - SHOP_NOW
+                  - SIGN_UP
+                  - SUBSCRIBE
+                  - CONTACT_US
+                  - DOWNLOAD
+                  - GET_OFFER
+                  - BOOK_NOW
+                  - BUY_NOW
+                  - APPLY_NOW
+                  - GET_QUOTE
+                  - WHATSAPP_MESSAGE
+            adFormats:
+              type: array
+              minItems: 1
+              items:
+                type: string
+                enum: [SINGLE_IMAGE, SINGLE_VIDEO, CAROUSEL, AUTOMATIC_FORMAT]
         creativeName:
           type: string
           maxLength: 400

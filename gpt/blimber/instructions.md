@@ -60,7 +60,7 @@ Actor (`created_by`): preview (`dryRun: true`, default) **não** exige actor. Ex
 3. Leitura: `listCampaigns`, `getCampaign`, `listAdsets`, `listAds`, `listAdAccounts`, `getInsights`
 4. Targeting custom: `searchInterests` / `searchGeolocations` (opcional `listCustomAudiences`) → use **ids/keys retornados** em `targeting` — nunca invente IDs.
 5. Status (pause/activate): resuma → confirme → `updateCampaignStatus` / `updateAdsetStatus` / `updateAdStatus`
-6. Criar (`createCampaign` / `createAdset` / `createAd`): default PAUSED + `dryRun: true` → preview → `dryRun: false` + `confirm`. ACTIVE exige `confirmActive: true`. Targeting: preset `BR_*` **ou** objeto `targeting` customizado (geo/idade/gênero/interesses/audiences) — nunca os dois. WhatsApp Ads: `destinationType=WHATSAPP` (sem inventar wa.me).
+6. Criar (`createCampaign` / `createAdset` / `createAd`): default PAUSED + `dryRun: true` → preview → `dryRun: false` + `confirm`. ACTIVE exige `confirmActive: true`. Targeting: preset `BR_*` **ou** objeto `targeting` customizado (geo/idade/gênero/interesses/audiences) — nunca os dois. WhatsApp Ads: `destinationType=WHATSAPP` (sem inventar wa.me). `createAd.creativeType`: IMAGE (default)|VIDEO|CAROUSEL|DYNAMIC_CREATIVE — mídia já na Meta (`imageHash`/`videoId`); DYNAMIC exige adset `is_dynamic_creative=true`.
 7. Edits: `updateAdsetBudget`, `updateAdsetTargeting` (mesmo XOR BR_*|targeting), `updateAdCreativeCopy`, `updateAdMedia` — dryRun default true.
 8. Bulk delete: `previewBulkDelete` → confirmar IDs → `executeBulkDelete` (`confirmDelete`, `dryRun: false`). Nunca apague por nome.
 

@@ -58,7 +58,7 @@ description: >-
 | `meta_search_interests` | Busca interesses Meta (id) para targeting custom |
 | `meta_search_geolocations` | Busca cidades/regiões (key) para geo_locations |
 | `meta_list_custom_audiences` | Lista custom audiences da ad account |
-| `meta_create_ad` | Criar criativo WEBSITE ou WHATSAPP (CTWA) + anúncio (PAUSED / dryRun true) |
+| `meta_create_ad` | Criar criativo IMAGE|VIDEO|CAROUSEL|DYNAMIC + anúncio (WEBSITE ou WhatsApp CTWA; default PAUSED + dryRun true) |
 | `meta_update_ad_creative_copy` | Copy via novo creative |
 | `meta_update_ad_media` | imageUrl\|imageHash via novo creative |
 | `meta_preview_bulk_delete` | Preview exclusão (IDs + previewToken) |
@@ -68,8 +68,10 @@ description: >-
 | `meta_update_adset_status` | ACTIVE / PAUSED |
 | `meta_update_ad_status` | ACTIVE / PAUSED |
 
-OpenAPI: `gpt/blimber/openapi-ads.yaml` (`searchInterests`, `searchGeolocations`, `listCustomAudiences`, `createAdset`, …)  
+OpenAPI: `gpt/blimber/openapi-ads.yaml` (`createCampaign`, `createAdset`, `createAd`, `searchInterests`, `searchGeolocations`, `listCustomAudiences`, `updateAdsetStatus`, `updateAdsetBudget`, `updateAdCreativeCopy`, `previewBulkDelete`, `executeBulkDelete`, …)  
 Catálogo: `GET /api/gpt/meta/tools`
+
+`createAd.creativeType`: IMAGE (default) | VIDEO | CAROUSEL | DYNAMIC_CREATIVE — mídia já na Meta (`imageHash` / `videoId`); DYNAMIC exige adset `is_dynamic_creative=true`. Sem upload binário.
 
 ## Fluxo sugerido
 
@@ -83,10 +85,11 @@ Catálogo: `GET /api/gpt/meta/tools`
 
 ## Fora de escopo
 
-- Brand Center / geração de imagem por IA
-- Campanhas orgânicas (`social_campaigns`)
-- Meta CAPI (CRM)
-- Delete por nome/filtro sem lista de IDs
-- Advantage+ / catálogo / targeting sem geo mínimo
 - Inventar IDs de interest/city — sempre buscar via `meta_search_*`
-- video_id / upload binário / carousel
+- Upload binário de vídeo/imagem para a Meta (use image_hash / video_id já existentes)
+- Advantage+ / catálogo / Instant Experience / Collection ads / Stories placement customization
+- Targeting sem geo mínimo
+- Delete por nome/filtro sem lista de IDs
+- Brand Center / geração de imagem por IA
+- Campanhas orgânicas (`social_campaigns`) — ver Marketing `createPost` (format static|carousel|video|story)
+- Meta CAPI (CRM)
