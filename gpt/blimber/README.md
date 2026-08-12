@@ -7,7 +7,7 @@ O ChatGPT aceita **no máximo 30 operations por Ação** e **recusa o mesmo host
 | Artefato | Arquivo |
 |----------|---------|
 | OpenAPI Marketing (**importe**) | `openapi-marketing.yaml` → `https://app.blimber.com.br` (13 ops) |
-| OpenAPI Ads (**importe**) | `openapi-ads.yaml` → `https://ads.blimber.com.br` (21 ops) |
+| OpenAPI Ads (**importe**) | `openapi-ads.yaml` → `https://ads.blimber.com.br` (24 ops) |
 | Índice (**não importe**) | `openapi.yaml` |
 | Instruções | `instructions.md` |
 | Setup 2 Ações + DNS | `docs/gpt-blimber-ACTIONS.md` |
@@ -29,7 +29,7 @@ O ChatGPT aceita **no máximo 30 operations por Ação** e **recusa o mesmo host
 
 ### Opção B — Plugin MCP (Developer Mode)
 
-Uma conexão com **todas** as tools (~35), mesmo backend `/api/gpt/*`:
+Uma conexão com **todas** as tools (~38), mesmo backend `/api/gpt/*`:
 
 1. ChatGPT → Developer Mode → **Novo plugin**
 2. URL: `https://app.blimber.com.br/api/mcp`
@@ -60,7 +60,7 @@ Docs: `docs/mcp-blimber-platform.md`, `docs/gpt-blimber-MARKETING.md`, `docs/gpt
 | `getEditorialCampaign` | `GET /api/gpt/marketing/campaigns/{campaignId}` |
 | `updateEditorialCampaign` | `PUT /api/gpt/marketing/campaigns/{campaignId}` |
 
-### Ação Ads (21) — `ads.blimber.com.br`
+### Ação Ads (24) — `ads.blimber.com.br`
 
 Sem `searchTenants` (canônico na Ação Marketing).
 
@@ -69,6 +69,9 @@ Sem `searchTenants` (canônico na Ação Marketing).
 | `listMetaTools` | `GET /api/gpt/meta/tools` |
 | `listIntegrations` | `GET /api/gpt/meta/integrations` |
 | `listAdAccounts` | `GET /api/gpt/meta/ad-accounts` |
+| `searchInterests` | `GET /api/gpt/meta/targeting/interests` |
+| `searchGeolocations` | `GET /api/gpt/meta/targeting/geolocations` |
+| `listCustomAudiences` | `GET /api/gpt/meta/custom-audiences` |
 | `listCampaigns` | `GET /api/gpt/meta/campaigns` |
 | `createCampaign` | `POST /api/gpt/meta/campaigns` |
 | `getCampaign` | `GET /api/gpt/meta/campaigns/{campaignId}` |

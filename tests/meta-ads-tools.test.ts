@@ -10,8 +10,11 @@ import {
   metaExecuteBulkDelete,
   metaGetInsights,
   metaListCampaigns,
+  metaListCustomAudiences,
   metaListIntegrations,
   metaPreviewBulkDelete,
+  metaSearchGeolocations,
+  metaSearchInterests,
   metaUpdateAdCreativeCopy,
   metaUpdateAdMedia,
   metaUpdateAdsetBudget,
@@ -92,6 +95,141 @@ describe('meta-ads MCP tools', () => {
     const [url, init] = graphFetch.mock.calls[0]!
     expect(String(url)).toContain('/act_123456789/campaigns')
     expect(init?.query?.access_token).toBe(token)
+  })
+
+  it('searches interests via Graph adinterest (never returns token)', async () => {
+    const token = 'meta-interest-token'
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret(token),
+      ad_account_id: '123',
+      api_version: 'v20.0',
+    })
+    const graphFetch = vi.fn(async () => ({
+      data: [
+        {
+          id: '6003139266461',
+          name: 'Cosmetics',
+          audience_size_lower_bound: 1000000,
+          audience_size_upper_bound: 2000000,
+          path: ['Shopping', 'Beauty'],
+          topic: 'Shopping',
+        },
+      ],
+    }))
+
+    const result = await metaSearchInterests(
+      { client, graphFetch },
+      { tenantId: 'tenant-1', q: 'cosméticos', limit: 10 },
+    )
+
+    expect(result.interests).toHaveLength(1)
+    expect(result.interests[0]).toMatchObject({
+      id: '6003139266461',
+      name: 'Cosmetics',
+      audience_size: 2000000,
+      type: 'adinterest',
+    })
+    expect(JSON.stringify(result)).not.toContain(token)
+    const [url, init] = graphFetch.mock.calls[0]!
+    expect(String(url)).toContain('/search')
+    expect(init?.query).toMatchObject({
+      type: 'adinterest',
+      q: 'cosméticos',
+      locale: 'pt_BR',
+      access_token: token,
+    })
+  })
+
+  it('searches geolocations via Graph adgeolocation', async () => {
+    const token = 'meta-geo-token'
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret(token),
+      ad_account_id: '123',
+      api_version: 'v20.0',
+    })
+    const graphFetch = vi.fn(async () => ({
+      data: [
+        {
+          key: '2439115',
+          name: 'São Paulo',
+          type: 'city',
+          country_code: 'BR',
+          region: 'São Paulo',
+          region_id: '2418',
+        },
+      ],
+    }))
+
+    const result = await metaSearchGeolocations(
+      { client, graphFetch },
+      { tenantId: 'tenant-1', q: 'São Paulo', countryCode: 'BR' },
+    )
+
+    expect(result.geolocations).toHaveLength(1)
+    expect(result.geolocations[0]).toMatchObject({
+      key: '2439115',
+      name: 'São Paulo',
+      type: 'city',
+      country_code: 'BR',
+    })
+    expect(result.locationTypes).toEqual(['city', 'region'])
+    const [, init] = graphFetch.mock.calls[0]!
+    expect(init?.query).toMatchObject({
+      type: 'adgeolocation',
+      q: 'São Paulo',
+      country_code: 'BR',
+      location_types: JSON.stringify(['city', 'region']),
+      access_token: token,
+    })
+    expect(JSON.stringify(result)).not.toContain(token)
+  })
+
+  it('lists custom audiences for ad account', async () => {
+    const token = 'meta-audience-token'
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret(token),
+      ad_account_id: '987654321',
+      api_version: 'v20.0',
+    })
+    const graphFetch = vi.fn(async () => ({
+      data: [
+        {
+          id: '1202123456789',
+          name: 'Visitantes site 30d',
+          subtype: 'WEBSITE',
+          approximate_count: 15000,
+        },
+      ],
+    }))
+
+    const result = await metaListCustomAudiences(
+      { client, graphFetch },
+      { tenantId: 'tenant-1', limit: 20 },
+    )
+
+    expect(result.adAccountId).toBe('987654321')
+    expect(result.customAudiences).toHaveLength(1)
+    expect(result.customAudiences[0]).toMatchObject({
+      id: '1202123456789',
+      name: 'Visitantes site 30d',
+      subtype: 'WEBSITE',
+      approximate_count: 15000,
+    })
+    const [url, init] = graphFetch.mock.calls[0]!
+    expect(String(url)).toContain('/act_987654321/customaudiences')
+    expect(init?.query?.access_token).toBe(token)
+    expect(JSON.stringify(result)).not.toContain(token)
+  })
+
+  it('rejects empty interest search query', async () => {
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret('tok'),
+      ad_account_id: '1',
+    })
+    await expect(metaSearchInterests(
+      { client, graphFetch: vi.fn() },
+      { tenantId: 'tenant-1', q: '' },
+    )).rejects.toBeTruthy()
   })
 
   it('lists integrations with write_readiness for Meta', async () => {

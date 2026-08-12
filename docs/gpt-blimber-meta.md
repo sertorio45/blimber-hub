@@ -67,6 +67,9 @@ Passo a passo numerado, prompts e troubleshooting: **[Tutorial](./gpt-blimber-me
 | GET | `/api/gpt/meta/tools` | `listMetaTools` |
 | GET | `/api/gpt/meta/integrations?tenantId=` | `listIntegrations` |
 | GET | `/api/gpt/meta/ad-accounts?tenantId=` | `listAdAccounts` |
+| GET | `/api/gpt/meta/targeting/interests?...` | `searchInterests` |
+| GET | `/api/gpt/meta/targeting/geolocations?...` | `searchGeolocations` |
+| GET | `/api/gpt/meta/custom-audiences?...` | `listCustomAudiences` |
 | GET | `/api/gpt/meta/campaigns?...` | `listCampaigns` |
 | POST | `/api/gpt/meta/campaigns` | `createCampaign` |
 | GET | `/api/gpt/meta/campaigns/{id}?tenantId=` | `getCampaign` |
@@ -94,7 +97,7 @@ Contrato completo: `gpt/blimber/openapi-ads.yaml` (host `ads.blimber.com.br`). `
 ## Limitações
 
 - Sem CAPI, Brand Center / geração de imagem  
-- Targeting de adset: presets `BR_*` **ou** objeto `targeting` customizado (XOR; geo obrigatório)  
+- Targeting de adset: presets `BR_*` **ou** objeto `targeting` customizado (XOR; geo obrigatório). IDs via `searchInterests` / `searchGeolocations` / `listCustomAudiences`  
 - Create/edit ad: criativo link/page + mídia tipada (`imageUrl`|`imageHash`); exige page token  
 - Sem `video_id` / upload binário / carousel no edit de mídia  
 - Bulk delete: **só IDs explícitos** (nunca por nome); preview + `previewToken` obrigatórios  

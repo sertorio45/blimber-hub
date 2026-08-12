@@ -77,7 +77,7 @@ Não é necessário configurar manualmente no Blimber. O authorization server ac
 
 Suporte a **DCR** (`POST /api/mcp/oauth/register`) e **CIMD** (`client_id_metadata_document_supported: true`) para registro automático do cliente ChatGPT.
 
-## Tools expostas (~35)
+## Tools expostas (~38)
 
 Mesma lógica de `lib/blimber-mcp/` e `lib/meta-ads/`:
 
@@ -85,7 +85,7 @@ Mesma lógica de `lib/blimber-mcp/` e `lib/meta-ads/`:
 |---------|----------|
 | **platform** | `searchTenants`, `listBlimberTools` |
 | **marketing** | `marketing_list_posts`, `marketing_create_post`, `marketing_delete_asset`, … |
-| **ads.meta** | `meta_list_campaigns`, `meta_create_ad`, `meta_get_insights`, … |
+| **ads.meta** | `meta_list_campaigns`, `meta_search_interests`, `meta_search_geolocations`, `meta_create_ad`, … |
 | **ads.google** | `ads_google_status` (stub) |
 
 Nomes canônicos `meta_*` (não duplica aliases `ads_meta_*` do registry).
@@ -95,6 +95,13 @@ Nomes canônicos `meta_*` (não duplica aliases `ads_meta_*` do registry).
 - **`tenantId`** obrigatório em tools de domínio
 - **`dryRun`** default `true` em writes marketing; execute exige `actorUserId` ou `BLIMBER_MCP_ACTOR_USER_ID`
 - **Meta writes:** `confirm=true`, `confirmTenantId=tenantId`, padrões dryRun do pack Ads
+
+## Atualizar tools após deploy
+
+| Canal | O que fazer |
+|-------|-------------|
+| **Plugin MCP** | `tools/list` é dinâmico — **não** precisa reinstalar o plugin se a URL for a mesma. Após deploy, o ChatGPT pode cachear: **reconecte OAuth** ou abra um **chat novo**. Se aparecer “nenhuma função”, remova/reative o plugin. |
+| **GPT Actions (OpenAPI)** | **Obrigatório reimportar** `openapi-ads.yaml` / `openapi-marketing.yaml` manualmente em Configurar → Ações. |
 
 ## Relação com GPT Actions (OpenAPI)
 

@@ -21,6 +21,15 @@ const TOOL_INPUT_HINTS: Record<MetaToolName, string[]> = {
     'adAccountId?',
     'limit?',
   ],
+  meta_search_interests: ['tenantId', 'q', 'limit?', 'locale?'],
+  meta_search_geolocations: [
+    'tenantId',
+    'q',
+    'limit?',
+    'locationTypes? (city|region|…)',
+    'countryCode?',
+  ],
+  meta_list_custom_audiences: ['tenantId', 'adAccountId?', 'limit?'],
   meta_update_campaign_status: [
     'tenantId',
     'campaignId',

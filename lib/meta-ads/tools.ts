@@ -109,6 +109,54 @@ export const metaGetInsightsSchema = tenantContextSchema.extend({
   limit: z.number().int().min(1).max(200).optional().default(50),
 })
 
+/** Search Meta interest taxonomy (Graph `/search?type=adinterest`). */
+export const metaSearchInterestsSchema = tenantContextSchema.pick({ tenantId: true }).extend({
+  q: z.string().min(1).max(200).describe('Termo de busca (ex.: cosméticos, farmácia estética).'),
+  limit: z.number().int().min(1).max(50).optional().default(25),
+  locale: z
+    .string()
+    .min(2)
+    .max(20)
+    .optional()
+    .default('pt_BR')
+    .describe('Locale Meta (default pt_BR).'),
+})
+
+export const META_GEOLOCATION_TYPES = [
+  'country',
+  'country_group',
+  'region',
+  'city',
+  'zip',
+  'geo_market',
+  'electoral_district',
+] as const
+
+export type MetaGeolocationType = (typeof META_GEOLOCATION_TYPES)[number]
+
+/** Search Meta geo targeting (Graph `/search?type=adgeolocation`). */
+export const metaSearchGeolocationsSchema = tenantContextSchema.pick({ tenantId: true }).extend({
+  q: z.string().min(1).max(200).describe('Termo (ex.: São Paulo, Rio de Janeiro, SP).'),
+  limit: z.number().int().min(1).max(50).optional().default(25),
+  locationTypes: z
+    .array(z.enum(META_GEOLOCATION_TYPES))
+    .min(1)
+    .max(5)
+    .optional()
+    .default(['city', 'region'])
+    .describe('Tipos Meta location_types (default city+region).'),
+  countryCode: z
+    .string()
+    .length(2)
+    .optional()
+    .describe('Filtro ISO-2 opcional (ex.: BR).'),
+})
+
+/** List custom audiences on the tenant ad account. */
+export const metaListCustomAudiencesSchema = tenantContextSchema.extend({
+  limit: z.number().int().min(1).max(200).optional().default(50),
+})
+
 /**
  * Optional dry-run for pause/activate tools.
  * Default false (retrocompatível na campanha; espelho em adset/ad).
@@ -727,6 +775,9 @@ export type MetaToolName =
   | 'meta_list_adsets'
   | 'meta_list_ads'
   | 'meta_get_insights'
+  | 'meta_search_interests'
+  | 'meta_search_geolocations'
+  | 'meta_list_custom_audiences'
   | 'meta_update_campaign_status'
   | 'meta_update_adset_status'
   | 'meta_update_ad_status'
@@ -860,6 +911,154 @@ export async function metaListAdAccounts(
       currency: row.currency ?? null,
       timezone_name: row.timezone_name ?? null,
     })),
+  }
+}
+
+function mapInterestRow(row: Record<string, unknown>) {
+  const audienceSize = row.audience_size ?? row.audience_size_upper_bound ?? null
+  const lower = row.audience_size_lower_bound ?? null
+  const upper = row.audience_size_upper_bound ?? null
+  return {
+    id: String(row.id || ''),
+    name: String(row.name || row.id || ''),
+    audience_size: audienceSize != null && Number.isFinite(Number(audienceSize))
+      ? Number(audienceSize)
+      : null,
+    audience_size_lower_bound: lower != null && Number.isFinite(Number(lower)) ? Number(lower) : null,
+    audience_size_upper_bound: upper != null && Number.isFinite(Number(upper)) ? Number(upper) : null,
+    path: Array.isArray(row.path) ? row.path.map(String) : null,
+    topic: row.topic != null ? String(row.topic) : null,
+    type: 'adinterest' as const,
+  }
+}
+
+/**
+ * Search Meta interest IDs for custom targeting.flexible_spec / interests.
+ * Graph: GET /search?type=adinterest
+ */
+export async function metaSearchInterests(
+  ctx: MetaToolContext,
+  raw: unknown,
+) {
+  const input = metaSearchInterestsSchema.parse(raw)
+  const tokenCtx = await resolveMetaAccessToken(ctx.client, input.tenantId)
+  const graph = fetchGraph(ctx)
+  const res = await graph(metaGraphUrl(tokenCtx.apiVersion, '/search'), {
+    query: {
+      type: 'adinterest',
+      q: input.q,
+      limit: input.limit,
+      locale: input.locale,
+      access_token: tokenCtx.accessToken,
+    },
+  })
+
+  const interests = (Array.isArray(res?.data) ? res.data : [])
+    .map((row: Record<string, unknown>) => mapInterestRow(row))
+    .filter((row: { id: string }) => Boolean(row.id))
+
+  return {
+    tenantId: input.tenantId,
+    q: input.q,
+    locale: input.locale,
+    interests,
+    paging: res?.paging || null,
+  }
+}
+
+function mapGeolocationRow(row: Record<string, unknown>) {
+  const key = String(row.key || row.id || '')
+  return {
+    key,
+    name: String(row.name || key),
+    type: row.type != null ? String(row.type) : null,
+    country_code: row.country_code != null ? String(row.country_code) : null,
+    country_name: row.country_name != null ? String(row.country_name) : null,
+    region: row.region != null ? String(row.region) : null,
+    region_id: row.region_id != null ? String(row.region_id) : null,
+    supports_region: typeof row.supports_region === 'boolean' ? row.supports_region : null,
+    supports_city: typeof row.supports_city === 'boolean' ? row.supports_city : null,
+  }
+}
+
+/**
+ * Search Meta geo keys for targeting.geo_locations.cities|regions.
+ * Graph: GET /search?type=adgeolocation
+ */
+export async function metaSearchGeolocations(
+  ctx: MetaToolContext,
+  raw: unknown,
+) {
+  const input = metaSearchGeolocationsSchema.parse(raw)
+  const tokenCtx = await resolveMetaAccessToken(ctx.client, input.tenantId)
+  const graph = fetchGraph(ctx)
+  const query: Record<string, string | number | undefined> = {
+    type: 'adgeolocation',
+    q: input.q,
+    limit: input.limit,
+    location_types: JSON.stringify(input.locationTypes),
+    access_token: tokenCtx.accessToken,
+  }
+  if (input.countryCode)
+    query.country_code = input.countryCode.toUpperCase()
+
+  const res = await graph(metaGraphUrl(tokenCtx.apiVersion, '/search'), {
+    query,
+  })
+
+  const geolocations = (Array.isArray(res?.data) ? res.data : [])
+    .map((row: Record<string, unknown>) => mapGeolocationRow(row))
+    .filter((row: { key: string }) => Boolean(row.key))
+
+  return {
+    tenantId: input.tenantId,
+    q: input.q,
+    locationTypes: input.locationTypes,
+    countryCode: input.countryCode?.toUpperCase() ?? null,
+    geolocations,
+    paging: res?.paging || null,
+  }
+}
+
+/**
+ * List custom audiences for the tenant ad account (ids for targeting.custom_audiences).
+ * Graph: GET /act_{id}/customaudiences
+ */
+export async function metaListCustomAudiences(
+  ctx: MetaToolContext,
+  raw: unknown,
+) {
+  const input = metaListCustomAudiencesSchema.parse(raw)
+  const creds = await withCreds(ctx, input.tenantId, input.adAccountId)
+  const graph = fetchGraph(ctx)
+  const res = await graph(
+    metaGraphUrl(creds.apiVersion, `/${actPath(creds.adAccountId)}/customaudiences`),
+    {
+      query: {
+        fields: 'id,name,subtype,approximate_count,delivery_status,time_created,time_updated',
+        limit: input.limit,
+        access_token: creds.accessToken,
+      },
+    },
+  )
+
+  const customAudiences = (Array.isArray(res?.data) ? res.data : []).map((row: Record<string, unknown>) => ({
+    id: String(row.id || ''),
+    name: String(row.name || row.id || ''),
+    subtype: row.subtype != null ? String(row.subtype) : null,
+    approximate_count: row.approximate_count != null && Number.isFinite(Number(row.approximate_count))
+      ? Number(row.approximate_count)
+      : null,
+    delivery_status: row.delivery_status ?? null,
+    time_created: row.time_created != null ? String(row.time_created) : null,
+    time_updated: row.time_updated != null ? String(row.time_updated) : null,
+  })).filter((row: { id: string }) => Boolean(row.id))
+
+  return {
+    tenantId: input.tenantId,
+    adAccountId: creds.adAccountId,
+    customAudiences,
+    paging: res?.paging || null,
   }
 }
 
@@ -3133,6 +3332,9 @@ export const META_TOOL_HANDLERS: Record<MetaToolName, ToolHandler> = {
   meta_list_adsets: metaListAdsets,
   meta_list_ads: metaListAds,
   meta_get_insights: metaGetInsights,
+  meta_search_interests: metaSearchInterests,
+  meta_search_geolocations: metaSearchGeolocations,
+  meta_list_custom_audiences: metaListCustomAudiences,
   meta_update_campaign_status: metaUpdateCampaignStatus,
   meta_update_adset_status: metaUpdateAdsetStatus,
   meta_update_ad_status: metaUpdateAdStatus,
@@ -3155,6 +3357,9 @@ export const META_TOOL_SCHEMAS: Record<MetaToolName, z.ZodTypeAny> = {
   meta_list_adsets: metaListAdsetsSchema,
   meta_list_ads: metaListAdsSchema,
   meta_get_insights: metaGetInsightsSchema,
+  meta_search_interests: metaSearchInterestsSchema,
+  meta_search_geolocations: metaSearchGeolocationsSchema,
+  meta_list_custom_audiences: metaListCustomAudiencesSchema,
   meta_update_campaign_status: metaUpdateCampaignStatusSchema,
   meta_update_adset_status: metaUpdateAdsetStatusSchema,
   meta_update_ad_status: metaUpdateAdStatusSchema,
@@ -3184,6 +3389,12 @@ export const META_TOOL_DESCRIPTIONS: Record<MetaToolName, string> = {
     'Lista anúncios Meta (conta, campanha ou adset).',
   meta_get_insights:
     'Consulta insights/métricas Meta (nível account|campaign|adset|ad + período).',
+  meta_search_interests:
+    'Busca interesses Meta (id+name+audience_size) via Graph adinterest. Use os IDs em targeting.interests / flexible_spec.',
+  meta_search_geolocations:
+    'Busca cidades/regiões Meta (key+name+country_code) via Graph adgeolocation. Use key em targeting.geo_locations.cities|regions.',
+  meta_list_custom_audiences:
+    'Lista custom audiences da ad account (id+name+subtype). Use ids em targeting.custom_audiences.',
   meta_update_campaign_status:
     'PAUSA ou ATIVA campanha (ACTIVE|PAUSED). Exige confirm=true e confirmTenantId=tenantId. dryRun opcional (default false).',
   meta_update_adset_status:

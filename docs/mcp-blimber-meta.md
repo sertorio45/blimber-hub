@@ -92,6 +92,9 @@ Prefira as rotas REST `/api/gpt/meta/*` documentadas no OpenAPI.
 | `meta_list_adsets` | read | Conjuntos |
 | `meta_list_ads` | read | Anúncios |
 | `meta_get_insights` | read | Insights |
+| `meta_search_interests` | read | Busca interesses (id) para targeting |
+| `meta_search_geolocations` | read | Busca cidades/regiões (key) |
+| `meta_list_custom_audiences` | read | Custom audiences da ad account |
 | `meta_update_campaign_status` | write | ACTIVE/PAUSED (confirmação) |
 | `meta_update_adset_status` | write | ACTIVE/PAUSED (confirmação) |
 | `meta_update_ad_status` | write | ACTIVE/PAUSED (confirmação) |

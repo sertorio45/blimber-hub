@@ -55,6 +55,9 @@ description: >-
 | `meta_update_adset_budget` | Budget adset (dryRun default true) |
 | `meta_update_adset_targeting` | Targeting `BR_*` **ou** `targeting` custom (XOR) |
 | `meta_list_ads` | Anúncios |
+| `meta_search_interests` | Busca interesses Meta (id) para targeting custom |
+| `meta_search_geolocations` | Busca cidades/regiões (key) para geo_locations |
+| `meta_list_custom_audiences` | Lista custom audiences da ad account |
 | `meta_create_ad` | Criar criativo WEBSITE ou WHATSAPP (CTWA) + anúncio (PAUSED / dryRun true) |
 | `meta_update_ad_creative_copy` | Copy via novo creative |
 | `meta_update_ad_media` | imageUrl\|imageHash via novo creative |
@@ -65,7 +68,7 @@ description: >-
 | `meta_update_adset_status` | ACTIVE / PAUSED |
 | `meta_update_ad_status` | ACTIVE / PAUSED |
 
-OpenAPI: `gpt/blimber/openapi-ads.yaml` (`updateAdsetStatus`, `createCampaign`, `createAdset`, `createAd`, `updateAdsetBudget`, `updateAdCreativeCopy`, `previewBulkDelete`, `executeBulkDelete`)  
+OpenAPI: `gpt/blimber/openapi-ads.yaml` (`searchInterests`, `searchGeolocations`, `listCustomAudiences`, `createAdset`, …)  
 Catálogo: `GET /api/gpt/meta/tools`
 
 ## Fluxo sugerido
@@ -73,9 +76,10 @@ Catálogo: `GET /api/gpt/meta/tools`
 1. `searchTenants` (se não houver UUID) → confirmar cliente  
 2. `meta_list_integrations` → confirmar Meta pronto / write_readiness  
 3. `meta_list_campaigns` / adsets / ads ou `meta_get_insights`  
-4. Pausar/ativar: listar ou detalhar → confirmação → tool de status (`dryRun` opcional)  
-5. Criar/editar: preview (`dryRun` default) → confirmar → `dryRun: false`  
-6. Bulk delete: `meta_preview_bulk_delete` → listar IDs ao usuário → `meta_execute_bulk_delete`
+4. Targeting custom: `meta_search_interests` / `meta_search_geolocations` (opcional `meta_list_custom_audiences`) → montar `targeting` com IDs/keys → `meta_create_adset` ou `meta_update_adset_targeting`  
+5. Pausar/ativar: listar ou detalhar → confirmação → tool de status (`dryRun` opcional)  
+6. Criar/editar: preview (`dryRun` default) → confirmar → `dryRun: false`  
+7. Bulk delete: `meta_preview_bulk_delete` → listar IDs ao usuário → `meta_execute_bulk_delete`
 
 ## Fora de escopo
 
@@ -84,5 +88,5 @@ Catálogo: `GET /api/gpt/meta/tools`
 - Meta CAPI (CRM)
 - Delete por nome/filtro sem lista de IDs
 - Advantage+ / catálogo / targeting sem geo mínimo
-- Busca de interesses Meta (IDs de interest/behavior devem ser conhecidos)
+- Inventar IDs de interest/city — sempre buscar via `meta_search_*`
 - video_id / upload binário / carousel

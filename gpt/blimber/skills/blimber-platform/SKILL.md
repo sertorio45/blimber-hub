@@ -42,11 +42,12 @@ description: >-
 | `getBrandContext` | Brand Center |
 | `listMediaAssets` / `listSocialAccounts` | biblioteca / contas |
 
-## Tools — Ação Ads (21, host ads.*)
+## Tools — Ação Ads (24, host ads.*)
 
 | Tool / operationId | Uso |
 |--------------------|-----|
 | `listMetaTools` / `listIntegrations` / `listAdAccounts` | catálogo / status / contas |
+| `searchInterests` / `searchGeolocations` / `listCustomAudiences` | IDs de interesse/cidade/audiences para targeting |
 | `listCampaigns` / `getCampaign` / `createCampaign` / `updateCampaignStatus` | campanhas Meta |
 | `listAdsets` / `createAdset` / `updateAdsetStatus` / `updateAdsetBudget` / `updateAdsetTargeting` | adsets |
 | `listAds` / `createAd` / `updateAdStatus` / `updateAdCreativeCopy` / `updateAdMedia` | anúncios |

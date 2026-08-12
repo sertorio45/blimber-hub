@@ -6,7 +6,7 @@ info:
     via searchTenants da Ação Marketing. Nunca peça tokens. Mutações: confirm +
     confirmTenantId; create/edit/delete dryRun default true. Bulk: preview →
     IDs → execute. Este YAML é o contrato Ads canônico no ChatGPT.
-  version: 0.5.0
+  version: 0.6.0
   contact:
     name: Blimber Hub
 servers:
@@ -31,6 +31,155 @@ paths:
           description: Não autorizado — API key ausente ou inválida
         "503":
           description: Serviço indisponível — BLIMBER_MCP_API_KEY não configurado no servidor
+
+  /api/gpt/meta/targeting/interests:
+    get:
+      operationId: searchInterests
+      summary: Buscar interesses Meta (IDs)
+      description: >
+        Busca interesses na taxonomia Meta (Graph adinterest). Use id+name em
+        targeting.interests / flexible_spec ao criar ou editar adset.
+      parameters:
+        - name: tenantId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: UUID do tenant (empresa) no Blimber. Obrigatório — nunca misture tenants.
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 200
+          description: Termo de busca (ex. cosméticos, farmácia estética).
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 25
+        - name: locale
+          in: query
+          required: false
+          schema:
+            type: string
+            default: pt_BR
+          description: Locale Meta (default pt_BR).
+      responses:
+        "200":
+          description: Interesses encontrados (id, name, audience_size)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkToolResponse"
+        "401":
+          description: Não autorizado — API key ausente ou inválida
+        "400":
+          description: Requisição inválida — erro de validação ou da ferramenta
+
+  /api/gpt/meta/targeting/geolocations:
+    get:
+      operationId: searchGeolocations
+      summary: Buscar cidades/regiões Meta
+      description: >
+        Busca geo targeting Meta (Graph adgeolocation). Use key em
+        targeting.geo_locations.cities ou regions (não invente keys).
+      parameters:
+        - name: tenantId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: UUID do tenant (empresa) no Blimber. Obrigatório — nunca misture tenants.
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 200
+          description: Termo (ex. São Paulo, Rio de Janeiro).
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 25
+        - name: locationTypes
+          in: query
+          required: false
+          schema:
+            type: string
+            default: city,region
+          description: Tipos separados por vírgula (city,region,country). Default city,region.
+        - name: countryCode
+          in: query
+          required: false
+          schema:
+            type: string
+            minLength: 2
+            maxLength: 2
+          description: Filtro ISO-2 opcional (ex. BR).
+      responses:
+        "200":
+          description: Geolocalizações (key, name, type, country_code)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkToolResponse"
+        "401":
+          description: Não autorizado — API key ausente ou inválida
+        "400":
+          description: Requisição inválida — erro de validação ou da ferramenta
+
+  /api/gpt/meta/custom-audiences:
+    get:
+      operationId: listCustomAudiences
+      summary: Listar custom audiences
+      description: >
+        Lista custom audiences da ad account. Use ids em
+        targeting.custom_audiences ao criar/editar adset.
+      parameters:
+        - name: tenantId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: UUID do tenant (empresa) no Blimber. Obrigatório — nunca misture tenants.
+        - name: adAccountId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Conta de anúncios sem prefixo act_. Usa a da integração se omitido.
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        "200":
+          description: Custom audiences (id, name, subtype, approximate_count)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkToolResponse"
+        "401":
+          description: Não autorizado — API key ausente ou inválida
+        "400":
+          description: Requisição inválida — erro de validação ou da ferramenta
 
   /api/gpt/meta/integrations:
     get:
@@ -1490,6 +1639,9 @@ components:
             - meta_list_adsets
             - meta_list_ads
             - meta_get_insights
+            - meta_search_interests
+            - meta_search_geolocations
+            - meta_list_custom_audiences
             - meta_update_campaign_status
             - meta_update_adset_status
             - meta_update_ad_status
