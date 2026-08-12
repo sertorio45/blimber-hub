@@ -389,6 +389,32 @@ paths:
                 timezone:
                   type: string
                   maxLength: 80
+                variants:
+                  type: array
+                  maxItems: 10
+                  description: >
+                    Social channels to assign. Replaces ALL existing variants.
+                    Each item needs accountId (from listSocialAccounts) + platform.
+                    Send empty array [] to remove all variants.
+                  items:
+                    type: object
+                    required: [accountId, platform]
+                    properties:
+                      accountId:
+                        type: string
+                        format: uuid
+                        description: UUID of the social account (from listSocialAccounts).
+                      platform:
+                        type: string
+                        enum: [facebook, instagram, linkedin]
+                      format:
+                        type: string
+                        enum: [static, carousel, video, story]
+                        default: static
+                      caption:
+                        type: string
+                        maxLength: 5000
+                        description: Per-channel caption. Defaults to post content.
                 actorUserId:
                   type: string
                   format: uuid

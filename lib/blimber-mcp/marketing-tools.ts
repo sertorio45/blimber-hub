@@ -215,6 +215,13 @@ export const marketingCreatePostSchema = z.object({
   ...blimberWriteDryRunField,
 })
 
+const variantInputSchema = z.object({
+  accountId: uuid.describe('UUID of the social account (from listSocialAccounts).'),
+  platform: platformEnum,
+  format: formatEnum.default('static'),
+  caption: z.string().max(5000).optional(),
+})
+
 export const marketingUpdatePostSchema = z.object({
   tenantId: tenantIdField,
   postId: uuid,
@@ -226,6 +233,8 @@ export const marketingUpdatePostSchema = z.object({
   campaignId: uuid.nullable().optional(),
   scheduledAt: z.string().datetime({ offset: true }).nullable().optional(),
   timezone: z.string().min(1).max(80).optional(),
+  /** Replaces all variants (social channels) linked to this post. */
+  variants: z.array(variantInputSchema).max(10).optional(),
   actorUserId: uuid.optional(),
   ...blimberWriteConfirmationFields,
   ...blimberWriteDryRunField,
@@ -299,7 +308,7 @@ export const MARKETING_TOOL_DESCRIPTIONS: Record<MarketingToolName, string> = {
   marketing_list_posts: 'Lista posts editoriais (social_posts) do tenant.',
   marketing_get_post: 'Detalhe de um post editorial por postId.',
   marketing_create_post: 'Cria rascunho de post editorial (dryRun default true sem actor; execute exige actorUserId ou env).',
-  marketing_update_post: 'Atualiza campos de um post draft (dryRun default true).',
+  marketing_update_post: 'Atualiza campos de um post draft, incluindo variants/contas sociais (dryRun default true).',
   marketing_delete_post: 'Soft-delete de 1 post editorial (dryRun default true). Isolado por tenant; sem exclusão em massa nem remota.',
   marketing_list_campaigns: 'Lista campanhas EDITORIAIS (social_campaigns) — não são Meta Ads.',
   marketing_get_campaign: 'Detalhe de campanha editorial + posts vinculados.',
@@ -744,6 +753,23 @@ export async function marketingUpdatePost(
   if (input.timezone !== undefined)
     updatePayload.timezone = input.timezone
 
+  if (input.variants?.length) {
+    const accountIds = input.variants.map(v => v.accountId)
+    const { data: accounts } = await ctx.client
+      .from('social_accounts')
+      .select('id, platform')
+      .eq('tenant_id', input.tenantId)
+      .eq('is_active', true)
+      .in('id', accountIds)
+    if ((accounts || []).length !== new Set(accountIds).size) {
+      throw new BlimberMcpError(
+        'INVALID_ACCOUNT',
+        'Um ou mais accountId não pertencem ao tenant ou estão inativos.',
+        400,
+      )
+    }
+  }
+
   if (dryRun) {
     return {
       dryRun: true as const,
@@ -752,6 +778,7 @@ export async function marketingUpdatePost(
       kind: 'editorial' as const,
       before: mapPostRow(existing),
       afterPreview: updatePayload,
+      variantsPreview: input.variants ?? null,
       notes: ['Reenvie com dryRun=false após confirmação.'],
     }
   }
@@ -768,6 +795,38 @@ export async function marketingUpdatePost(
     throw new BlimberMcpError('DB_ERROR', error.message, 400)
   if (!data)
     throw new BlimberMcpError('NOT_FOUND', 'Publicação não encontrada', 404)
+
+  if (input.variants) {
+    const { error: delError } = await ctx.client
+      .from('social_post_variants')
+      .delete()
+      .eq('post_id', input.postId)
+      .eq('tenant_id', input.tenantId)
+    if (delError)
+      throw new BlimberMcpError('DB_ERROR', delError.message, 400)
+
+    if (input.variants.length) {
+      const caption = input.content ?? existing.content ?? ''
+      const hashtags = input.hashtags ?? ((existing.metadata as any)?.hashtags || [])
+      const { error: insError } = await ctx.client
+        .from('social_post_variants')
+        .insert(input.variants.map(v => ({
+          tenant_id: input.tenantId,
+          post_id: input.postId,
+          account_id: v.accountId,
+          platform: v.platform,
+          format: v.format,
+          caption: v.caption || caption,
+          hashtags,
+          platform_config: {
+            artText: input.artText?.trim() ?? ((existing.metadata as any)?.art_text || ''),
+            cta: input.cta?.trim() ?? ((existing.metadata as any)?.cta || ''),
+          },
+        })))
+      if (insError)
+        throw new BlimberMcpError('DB_ERROR', insError.message, 400)
+    }
+  }
 
   return {
     dryRun: false as const,

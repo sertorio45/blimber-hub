@@ -5,6 +5,7 @@ import {
   marketingCreatePost,
   marketingDeletePost,
   marketingListPosts,
+  marketingUpdatePost,
 } from '../lib/blimber-mcp'
 
 const TENANT_ID = '11111111-1111-1111-1111-111111111111'
@@ -508,6 +509,198 @@ describe('blimber marketing tools (mocked)', () => {
       else
         process.env.BLIMBER_MCP_ACTOR_USER_ID = previousActor
     }
+  })
+
+  it('update post dry-run shows variants preview', async () => {
+    const postId = '33333333-3333-3333-3333-333333333333'
+    const accountId = '66666666-6666-6666-6666-666666666666'
+    const existing = {
+      id: postId,
+      title: 'Post A',
+      content: 'Texto',
+      status: 'draft',
+      tenant_id: TENANT_ID,
+      deleted_at: null,
+      metadata: {},
+    }
+    const client = {
+      from(table: string) {
+        if (table === 'social_accounts') {
+          return {
+            select: () => ({
+              eq: () => ({
+                eq: () => ({
+                  in: async () => ({
+                    data: [{ id: accountId, platform: 'instagram' }],
+                  }),
+                }),
+              }),
+            }),
+          }
+        }
+        return {
+          select: () => ({
+            eq: () => ({
+              eq: () => ({
+                maybeSingle: async () => ({ data: existing, error: null }),
+              }),
+            }),
+          }),
+        }
+      },
+    }
+
+    const result = await marketingUpdatePost(
+      { client: client as any },
+      {
+        tenantId: TENANT_ID,
+        postId,
+        variants: [{ accountId, platform: 'instagram', format: 'static' }],
+        confirm: true,
+        confirmTenantId: TENANT_ID,
+        dryRun: true,
+      },
+    )
+    expect(result).toMatchObject({ dryRun: true, wouldMutate: true })
+    expect((result as any).variantsPreview).toHaveLength(1)
+    expect((result as any).variantsPreview[0].accountId).toBe(accountId)
+  })
+
+  it('update post execute replaces variants', async () => {
+    const postId = '33333333-3333-3333-3333-333333333333'
+    const accountId = '66666666-6666-6666-6666-666666666666'
+    const deleteFn = vi.fn(() => ({
+      eq: () => ({
+        eq: async () => ({ error: null }),
+      }),
+    }))
+    const insertFn = vi.fn(async () => ({ error: null }))
+    const existing = {
+      id: postId,
+      title: 'Post A',
+      content: 'Texto',
+      status: 'draft',
+      tenant_id: TENANT_ID,
+      deleted_at: null,
+      metadata: {},
+    }
+    let callCount = 0
+    const client = {
+      from(table: string) {
+        if (table === 'social_accounts') {
+          return {
+            select: () => ({
+              eq: () => ({
+                eq: () => ({
+                  in: async () => ({
+                    data: [{ id: accountId, platform: 'instagram' }],
+                  }),
+                }),
+              }),
+            }),
+          }
+        }
+        if (table === 'social_post_variants') {
+          return { delete: deleteFn, insert: insertFn }
+        }
+        callCount++
+        if (callCount === 1) {
+          return {
+            select: () => ({
+              eq: () => ({
+                eq: () => ({
+                  maybeSingle: async () => ({ data: existing, error: null }),
+                }),
+              }),
+            }),
+          }
+        }
+        return {
+          update: () => ({
+            eq: () => ({
+              eq: () => ({
+                select: () => ({
+                  maybeSingle: async () => ({ data: existing, error: null }),
+                }),
+              }),
+            }),
+          }),
+        }
+      },
+    }
+
+    const result = await marketingUpdatePost(
+      { client: client as any },
+      {
+        tenantId: TENANT_ID,
+        postId,
+        variants: [{ accountId, platform: 'instagram' }],
+        confirm: true,
+        confirmTenantId: TENANT_ID,
+        dryRun: false,
+      },
+    )
+    expect(result).toMatchObject({ dryRun: false, kind: 'editorial' })
+    expect(deleteFn).toHaveBeenCalledTimes(1)
+    expect(insertFn).toHaveBeenCalledTimes(1)
+    expect(insertFn.mock.calls[0][0][0]).toMatchObject({
+      account_id: accountId,
+      platform: 'instagram',
+      post_id: postId,
+      tenant_id: TENANT_ID,
+    })
+  })
+
+  it('update post rejects invalid account', async () => {
+    const postId = '33333333-3333-3333-3333-333333333333'
+    const badAccountId = '77777777-7777-7777-7777-777777777777'
+    const existing = {
+      id: postId,
+      title: 'Post A',
+      content: 'Texto',
+      status: 'draft',
+      tenant_id: TENANT_ID,
+      deleted_at: null,
+      metadata: {},
+    }
+    const client = {
+      from(table: string) {
+        if (table === 'social_accounts') {
+          return {
+            select: () => ({
+              eq: () => ({
+                eq: () => ({
+                  in: async () => ({ data: [] }),
+                }),
+              }),
+            }),
+          }
+        }
+        return {
+          select: () => ({
+            eq: () => ({
+              eq: () => ({
+                maybeSingle: async () => ({ data: existing, error: null }),
+              }),
+            }),
+          }),
+        }
+      },
+    }
+
+    await expect(
+      marketingUpdatePost(
+        { client: client as any },
+        {
+          tenantId: TENANT_ID,
+          postId,
+          variants: [{ accountId: badAccountId, platform: 'instagram' }],
+          confirm: true,
+          confirmTenantId: TENANT_ID,
+          dryRun: false,
+        },
+      ),
+    ).rejects.toMatchObject({ code: 'INVALID_ACCOUNT' })
   })
 
   const POST_ID = '33333333-3333-3333-3333-333333333333'
