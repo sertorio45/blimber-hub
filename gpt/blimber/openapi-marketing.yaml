@@ -5,7 +5,7 @@ info:
     Ação 1 (Marketing + platform + brand). Auth Bearer BLIMBER_MCP_API_KEY.
     Ads pagos: Ação 2 (openapi-ads.yaml, host ads.blimber.com.br). Não importe
     o índice openapi.yaml no mesmo GPT.
-  version: 0.4.0
+  version: 0.4.1
   contact:
     name: Blimber Hub
 servers:
@@ -131,6 +131,18 @@ paths:
             type: string
             enum: [reference, publication]
           description: Filtro de purpose.
+        - name: mime
+          in: query
+          schema:
+            type: string
+            maxLength: 80
+          description: Prefixo de mime_type (ex. image).
+        - name: campaignId
+          in: query
+          schema:
+            type: string
+            format: uuid
+          description: Filtrar assets da campanha editorial.
       responses:
         "200":
           description: Assets
@@ -229,19 +241,54 @@ paths:
                   maxLength: 180
                 content:
                   type: string
+                  maxLength: 10000
+                artText:
+                  type: string
+                  maxLength: 2000
+                  description: Texto da arte (metadata).
+                cta:
+                  type: string
+                  maxLength: 240
+                  description: CTA do post (metadata).
                 campaignId:
                   type: string
                   format: uuid
                 hashtags:
                   type: array
+                  maxItems: 30
                   items:
                     type: string
+                    maxLength: 100
+                scheduledAt:
+                  type: string
+                  format: date-time
+                  description: ISO-8601 com offset. Omitir se sem agenda.
+                timezone:
+                  type: string
+                  maxLength: 80
+                  default: America/Sao_Paulo
+                referenceAssetIds:
+                  type: array
+                  maxItems: 20
+                  items:
+                    type: string
+                    format: uuid
+                  description: IDs da biblioteca (listMediaAssets). Sem upload.
                 accountId:
                   type: string
                   format: uuid
                 platform:
                   type: string
                   enum: [facebook, instagram, linkedin]
+                format:
+                  type: string
+                  enum: [static, carousel, video, story]
+                  default: static
+                  description: Formato da variant (exige accountId+platform).
+                caption:
+                  type: string
+                  maxLength: 5000
+                  description: Caption da variant. Default = content.
                 actorUserId:
                   type: string
                   format: uuid
@@ -313,11 +360,35 @@ paths:
                   format: uuid
                 title:
                   type: string
+                  minLength: 2
+                  maxLength: 180
                 content:
                   type: string
+                  maxLength: 10000
+                artText:
+                  type: string
+                  maxLength: 2000
+                  description: Texto da arte (metadata).
+                cta:
+                  type: string
+                  maxLength: 240
+                  description: CTA do post (metadata).
+                hashtags:
+                  type: array
+                  maxItems: 30
+                  items:
+                    type: string
+                    maxLength: 100
                 campaignId:
                   type: string
                   format: uuid
+                scheduledAt:
+                  type: string
+                  format: date-time
+                  description: ISO-8601 com offset. Omita se não alterar.
+                timezone:
+                  type: string
+                  maxLength: 80
                 actorUserId:
                   type: string
                   format: uuid
@@ -384,6 +455,8 @@ paths:
           description: Post de outro tenant
         "404":
           description: Post não encontrado
+        "409":
+          description: Já excluído ou publicação em andamento
 
   /api/gpt/marketing/campaigns:
     get:
@@ -410,6 +483,14 @@ paths:
           schema:
             type: string
           description: Busca no nome.
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+          description: Máximo de campanhas (1–100).
       responses:
         "200":
           description: Campanhas editoriais
@@ -439,11 +520,20 @@ paths:
                   maxLength: 180
                 objective:
                   type: string
+                  maxLength: 5000
                 status:
                   type: string
                   enum: [draft, active, paused, completed, cancelled]
+                  default: draft
+                startsAt:
+                  type: string
+                  description: Início da campanha editorial (ISO ou null).
+                endsAt:
+                  type: string
+                  description: Fim da campanha editorial (ISO ou null).
                 briefingSummary:
                   type: string
+                  maxLength: 10000
                 actorUserId:
                   type: string
                   format: uuid
@@ -491,7 +581,7 @@ paths:
     put:
       operationId: updateEditorialCampaign
       summary: Atualizar campanha editorial
-      description: Atualiza nome/status/briefing. dryRun default true + confirm. actorUserId opcional.
+      description: Atualiza nome/objetivo/status/datas/briefing. dryRun default true + confirm. actorUserId opcional.
       parameters:
         - name: campaignId
           in: path
@@ -513,11 +603,23 @@ paths:
                   format: uuid
                 name:
                   type: string
+                  minLength: 1
+                  maxLength: 180
+                objective:
+                  type: string
+                  maxLength: 5000
                 status:
                   type: string
                   enum: [draft, active, paused, completed, cancelled]
+                startsAt:
+                  type: string
+                  description: Início da campanha editorial (ISO ou null).
+                endsAt:
+                  type: string
+                  description: Fim da campanha editorial (ISO ou null).
                 briefingSummary:
                   type: string
+                  maxLength: 10000
                 actorUserId:
                   type: string
                   format: uuid
