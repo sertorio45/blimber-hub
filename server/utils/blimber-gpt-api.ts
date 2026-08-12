@@ -18,6 +18,15 @@ import {
 
 export { optionalBool, optionalInt, optionalString, queryRecord }
 
+/** Coerces confirm from JSON boolean or query string ("true"). */
+export function parseConfirmTrue(value: unknown): unknown {
+  if (value === true)
+    return true
+  if (optionalBool(value) === true)
+    return true
+  return value
+}
+
 /**
  * Reads JSON body for GPT mutations. Merges query params as fallback for
  * DELETE/PUT when proxies or clients strip the body (ChatGPT Actions).
@@ -38,7 +47,7 @@ export async function readGptMutationBody(event: H3Event): Promise<Record<string
   return { ...query, ...body }
 }
 
-/** Normalizes deletePost DELETE payload (body + optional query fallback). */
+/** Normalizes deletePost payload (POST body and/or query params). */
 export function buildMarketingDeletePostArgs(
   postId: string | undefined,
   payload: Record<string, unknown>,
@@ -48,20 +57,69 @@ export function buildMarketingDeletePostArgs(
     postId,
     actorUserId: optionalString(payload.actorUserId),
     confirmTenantId: optionalString(payload.confirmTenantId),
-    confirm: payload.confirm === true ? true : payload.confirm,
+    confirm: parseConfirmTrue(payload.confirm),
     dryRun: optionalBool(payload.dryRun),
   }
+}
+
+/** Shared handler for marketing_delete_post (DELETE + POST alias). */
+export async function runMarketingDeletePost(
+  event: H3Event,
+  postId: string | undefined,
+) {
+  const payload = await readGptMutationBody(event)
+  return runMarketingGptTool(
+    event,
+    'marketing_delete_post',
+    buildMarketingDeletePostArgs(postId, payload),
+  )
 }
 
 /**
  * Authenticate + invoke a Marketing tool, mapping errors to HTTP status.
  */
+function formatGptAuthError(error: unknown) {
+  if (
+    error
+    && typeof error === 'object'
+    && 'statusCode' in error
+    && typeof (error as { statusCode: unknown }).statusCode === 'number'
+  ) {
+    const statusCode = (error as { statusCode: number }).statusCode
+    const message = (
+      'statusMessage' in error && typeof (error as { statusMessage?: unknown }).statusMessage === 'string'
+        ? (error as { statusMessage: string }).statusMessage
+        : 'Não autorizado'
+    )
+    return {
+      ok: false as const,
+      error: {
+        code: statusCode === 401 ? 'UNAUTHORIZED' : 'SERVICE_UNAVAILABLE',
+        message,
+        statusCode,
+      },
+    }
+  }
+  return null
+}
+
 export async function runMarketingGptTool(
   event: H3Event,
   tool: MarketingToolName,
   args: Record<string, unknown>,
 ) {
-  assertBlimberMcpApiKey(event)
+  try {
+    assertBlimberMcpApiKey(event)
+  }
+  catch (error) {
+    const formatted = formatGptAuthError(error)
+    if (formatted) {
+      event.node.res.statusCode = formatted.error.statusCode
+      return formatted
+    }
+    throw error
+  }
+
   const client = createBlimberServiceRoleClient() || await serverSupabaseServiceRole(event)
   const actorUserId = process.env.BLIMBER_MCP_ACTOR_USER_ID || undefined
 

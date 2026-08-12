@@ -1,16 +1,10 @@
 import { defineEventHandler, getRouterParam } from 'h3'
-import {
-  buildMarketingDeletePostArgs,
-  readGptMutationBody,
-  runMarketingGptTool,
-} from '~/server/utils/blimber-gpt-api'
+import { runMarketingDeletePost } from '~/server/utils/blimber-gpt-api'
 
-/** Soft-delete de 1 post editorial. dryRun default true. */
+/**
+ * Soft-delete de 1 post editorial. dryRun default true.
+ * Prefer POST /posts/{postId}/delete from ChatGPT (DELETE body is often stripped).
+ */
 export default defineEventHandler(async (event) => {
-  const payload = await readGptMutationBody(event)
-  return runMarketingGptTool(
-    event,
-    'marketing_delete_post',
-    buildMarketingDeletePostArgs(getRouterParam(event, 'postId'), payload),
-  )
+  return runMarketingDeletePost(event, getRouterParam(event, 'postId'))
 })

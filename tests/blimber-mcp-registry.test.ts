@@ -180,6 +180,9 @@ const EXPECTED_ROUTE_FILES: Record<string, string[]> = {
     'server/api/gpt/marketing/posts/[postId].put.ts',
     'server/api/gpt/marketing/posts/[postId].delete.ts',
   ],
+  '/api/gpt/marketing/posts/{postId}/delete': [
+    'server/api/gpt/marketing/posts/[postId]/delete.post.ts',
+  ],
   '/api/gpt/marketing/campaigns': [
     'server/api/gpt/marketing/campaigns/index.get.ts',
     'server/api/gpt/marketing/campaigns/index.post.ts',
@@ -311,6 +314,7 @@ describe('blimber unified MCP registry + openapi', () => {
     expect(paths).toContain('/api/gpt/marketing/assets')
     expect(paths).toContain('/api/gpt/marketing/brand-context')
     expect(paths).toContain('/api/gpt/marketing/posts')
+    expect(paths).toContain('/api/gpt/marketing/posts/{postId}/delete')
     expect(paths).toContain('/api/gpt/marketing/campaigns')
     expect(paths.some(p => p.startsWith('/api/gpt/meta/'))).toBe(false)
 

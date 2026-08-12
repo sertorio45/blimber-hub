@@ -407,13 +407,15 @@ paths:
           description: Preview ou post atualizado
         "401":
           description: Não autorizado
-    delete:
+
+  /api/gpt/marketing/posts/{postId}/delete:
+    post:
       operationId: deletePost
       summary: Excluir post editorial (soft-delete)
       description: >
         Soft-delete de 1 social_post (deleted_at). dryRun default true
         (preview id/title/campaignId). Exige confirm + confirmTenantId.
-        Isolado por tenant. Query params fallback se proxy remover body DELETE.
+        Use POST (não DELETE): ChatGPT Actions remove body de DELETE.
       parameters:
         - name: postId
           in: path

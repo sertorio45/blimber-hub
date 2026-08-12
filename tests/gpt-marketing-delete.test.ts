@@ -7,6 +7,7 @@ import {
 } from '../lib/blimber-mcp'
 import {
   buildMarketingDeletePostArgs,
+  parseConfirmTrue,
 } from '../server/utils/blimber-gpt-api'
 
 const TENANT_ID = '11111111-1111-1111-1111-111111111111'
@@ -220,7 +221,7 @@ describe('buildMarketingDeletePostArgs', () => {
     ).toBe(false)
   })
 
-  it('leaves confirm strict boolean check to tool layer', () => {
+  it('coerces confirm from query string "true"', () => {
     expect(
       buildMarketingDeletePostArgs(POST_ID, {
         tenantId: TENANT_ID,
@@ -228,6 +229,32 @@ describe('buildMarketingDeletePostArgs', () => {
         confirm: 'true',
         dryRun: true,
       }).confirm,
-    ).toBe('true')
+    ).toBe(true)
+  })
+
+  it('builds args from query-only payload (ChatGPT DELETE without body)', () => {
+    expect(
+      buildMarketingDeletePostArgs(POST_ID, {
+        tenantId: TENANT_ID,
+        confirmTenantId: TENANT_ID,
+        confirm: 'true',
+        dryRun: 'true',
+      }),
+    ).toEqual({
+      tenantId: TENANT_ID,
+      postId: POST_ID,
+      actorUserId: undefined,
+      confirmTenantId: TENANT_ID,
+      confirm: true,
+      dryRun: true,
+    })
+  })
+})
+
+describe('parseConfirmTrue', () => {
+  it('accepts boolean and string forms', () => {
+    expect(parseConfirmTrue(true)).toBe(true)
+    expect(parseConfirmTrue('true')).toBe(true)
+    expect(parseConfirmTrue('false')).not.toBe(true)
   })
 })
