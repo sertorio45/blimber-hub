@@ -47,6 +47,7 @@ export {
   MARKETING_TOOL_SCHEMAS,
   marketingCreateCampaign,
   marketingCreatePost,
+  marketingDeletePost,
   marketingGetBrandContext,
   marketingGetCampaign,
   marketingGetPost,

@@ -178,6 +178,7 @@ const EXPECTED_ROUTE_FILES: Record<string, string[]> = {
   '/api/gpt/marketing/posts/{postId}': [
     'server/api/gpt/marketing/posts/[postId].get.ts',
     'server/api/gpt/marketing/posts/[postId].put.ts',
+    'server/api/gpt/marketing/posts/[postId].delete.ts',
   ],
   '/api/gpt/marketing/campaigns': [
     'server/api/gpt/marketing/campaigns/index.get.ts',
@@ -249,6 +250,7 @@ describe('blimber unified MCP registry + openapi', () => {
     const names = registry.tools.map(t => t.name)
     expect(names).toContain('searchTenants')
     expect(names).toContain('marketing_list_posts')
+    expect(names).toContain('marketing_delete_post')
     expect(names).toContain('marketing_create_campaign')
     expect(names).toContain('meta_list_campaigns')
     expect(names).toContain('ads_meta_list_campaigns')
@@ -296,6 +298,7 @@ describe('blimber unified MCP registry + openapi', () => {
     expect(operationIds).toContain('listMediaAssets')
     expect(operationIds).toContain('getBrandContext')
     expect(operationIds).toContain('createPost')
+    expect(operationIds).toContain('deletePost')
     expect(operationIds).toContain('createEditorialCampaign')
     expect(operationIds).not.toContain('listCampaigns')
     expect(operationIds).not.toContain('createCampaign')

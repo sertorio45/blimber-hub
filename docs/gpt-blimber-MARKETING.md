@@ -27,6 +27,7 @@ Preview (`dryRun=true`, default) **não** exige actor. Execute (`dryRun=false`) 
 | POST | `/api/gpt/marketing/posts` | `createPost` |
 | GET | `/api/gpt/marketing/posts/{id}?tenantId=` | `getPost` |
 | PUT | `/api/gpt/marketing/posts/{id}` | `updatePost` |
+| DELETE | `/api/gpt/marketing/posts/{id}` | `deletePost` |
 | GET | `/api/gpt/marketing/campaigns?...` | `listEditorialCampaigns` |
 | POST | `/api/gpt/marketing/campaigns` | `createEditorialCampaign` |
 | GET | `/api/gpt/marketing/campaigns/{id}?tenantId=` | `getEditorialCampaign` |
@@ -52,6 +53,13 @@ Preview (`dryRun=true`, default) **não** exige actor. Execute (`dryRun=false`) 
 1. `listPosts` / `getPost`
 2. `updatePost` dryRun → confirmar → execute  
    (bloqueado se `published` / `publishing`)
+
+### 4. Remover duplicados de uma campanha
+
+1. `getEditorialCampaign` (ou `listPosts` com `campaignId`) — liste ids/títulos
+2. `deletePost` com `dryRun: true` → preview (`id`, `title`, `campaignId`)
+3. Confirmar com o usuário → `deletePost` com `dryRun: false`
+4. Um post por chamada (N duplicados = N executes). Soft-delete local (`deleted_at`); não remove das redes.
 
 ## Segurança
 

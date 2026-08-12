@@ -3,6 +3,7 @@ import {
   BlimberMcpError,
   marketingCreateCampaign,
   marketingCreatePost,
+  marketingDeletePost,
   marketingListPosts,
 } from '../lib/blimber-mcp'
 
@@ -507,5 +508,141 @@ describe('blimber marketing tools (mocked)', () => {
       else
         process.env.BLIMBER_MCP_ACTOR_USER_ID = previousActor
     }
+  })
+
+  const POST_ID = '33333333-3333-3333-3333-333333333333'
+  const OTHER_TENANT_ID = '44444444-4444-4444-4444-444444444444'
+  const CAMPAIGN_ID = '55555555-5555-5555-5555-555555555555'
+
+  function editorialPost(overrides: Record<string, unknown> = {}) {
+    return {
+      id: POST_ID,
+      title: 'Post duplicado',
+      campaign_id: CAMPAIGN_ID,
+      tenant_id: TENANT_ID,
+      deleted_at: null,
+      status: 'draft',
+      publication_status: 'not_scheduled',
+      ...overrides,
+    }
+  }
+
+  function createDeleteClient(opts: {
+    post: Record<string, unknown> | null
+    rpc?: ReturnType<typeof vi.fn>
+  }) {
+    const rpc = opts.rpc ?? vi.fn(async () => ({ data: true, error: null }))
+    const update = vi.fn(() => ({
+      eq: () => ({
+        eq: () => ({
+          is: () => ({
+            select: () => ({
+              maybeSingle: async () => ({ data: { id: POST_ID }, error: null }),
+            }),
+          }),
+        }),
+      }),
+    }))
+    return {
+      rpc,
+      update,
+      from() {
+        const chain: any = {
+          select: () => chain,
+          eq: () => chain,
+          is: () => chain,
+          update,
+          maybeSingle: async () => ({ data: opts.post, error: null }),
+        }
+        return chain
+      },
+    }
+  }
+
+  it('delete post dry-run returns preview and does not delete', async () => {
+    const rpc = vi.fn(async () => ({ data: true, error: null }))
+    const client = createDeleteClient({ post: editorialPost(), rpc })
+
+    const result = await marketingDeletePost(
+      { client: client as any },
+      {
+        tenantId: TENANT_ID,
+        postId: POST_ID,
+        confirm: true,
+        confirmTenantId: TENANT_ID,
+        dryRun: true,
+      },
+    )
+
+    expect(result).toMatchObject({
+      dryRun: true,
+      wouldMutate: true,
+      kind: 'editorial',
+      deleteMode: 'soft',
+      preview: { id: POST_ID, title: 'Post duplicado', campaignId: CAMPAIGN_ID },
+    })
+    expect(rpc).not.toHaveBeenCalled()
+    expect(client.update).not.toHaveBeenCalled()
+  })
+
+  it('delete post rejects wrong tenant without mutating', async () => {
+    const rpc = vi.fn(async () => ({ data: true, error: null }))
+    const client = createDeleteClient({
+      post: editorialPost({ tenant_id: OTHER_TENANT_ID }),
+      rpc,
+    })
+
+    await expect(
+      marketingDeletePost(
+        { client: client as any },
+        {
+          tenantId: TENANT_ID,
+          postId: POST_ID,
+          confirm: true,
+          confirmTenantId: TENANT_ID,
+          dryRun: false,
+        },
+      ),
+    ).rejects.toMatchObject({
+      code: 'FORBIDDEN',
+      statusCode: 403,
+    })
+    expect(rpc).not.toHaveBeenCalled()
+    expect(client.update).not.toHaveBeenCalled()
+  })
+
+  it('delete post execute soft-deletes via domain RPC', async () => {
+    const rpc = vi.fn(async () => ({ data: true, error: null }))
+    const client = createDeleteClient({ post: editorialPost(), rpc })
+
+    const result = await marketingDeletePost(
+      { client: client as any },
+      {
+        tenantId: TENANT_ID,
+        postId: POST_ID,
+        confirm: true,
+        confirmTenantId: TENANT_ID,
+        dryRun: false,
+        actorUserId: ACTOR_ID,
+      },
+    )
+
+    expect(rpc).toHaveBeenCalledTimes(1)
+    expect(rpc.mock.calls[0][0]).toBe('marketing_delete_social_post')
+    expect(rpc.mock.calls[0][1]).toMatchObject({
+      p_tenant_id: TENANT_ID,
+      p_post_id: POST_ID,
+      p_deleted_by: ACTOR_ID,
+      p_mode: 'system_only',
+      p_remote_status: 'not_applicable',
+    })
+    expect(client.update).not.toHaveBeenCalled()
+    expect(result).toMatchObject({
+      dryRun: false,
+      kind: 'editorial',
+      deleted: true,
+      deleteMode: 'soft',
+      post: { id: POST_ID, title: 'Post duplicado', campaignId: CAMPAIGN_ID },
+    })
   })
 })

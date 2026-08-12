@@ -44,7 +44,7 @@ export function listPlatformToolDescriptors(): BlimberMcpToolDescriptor[] {
 }
 
 export function listMarketingToolDescriptors(): BlimberMcpToolDescriptor[] {
-  const hints: Partial<Record<MarketingToolName, { path: string, method: 'GET' | 'POST' | 'PUT' }>> = {
+  const hints: Partial<Record<MarketingToolName, { path: string, method: 'GET' | 'POST' | 'PUT' | 'DELETE' }>> = {
     marketing_list_social_accounts: { path: '/api/gpt/marketing/accounts', method: 'GET' },
     marketing_list_assets: { path: '/api/gpt/marketing/assets', method: 'GET' },
     marketing_get_brand_context: { path: '/api/gpt/marketing/brand-context', method: 'GET' },
@@ -52,6 +52,7 @@ export function listMarketingToolDescriptors(): BlimberMcpToolDescriptor[] {
     marketing_get_post: { path: '/api/gpt/marketing/posts/{postId}', method: 'GET' },
     marketing_create_post: { path: '/api/gpt/marketing/posts', method: 'POST' },
     marketing_update_post: { path: '/api/gpt/marketing/posts/{postId}', method: 'PUT' },
+    marketing_delete_post: { path: '/api/gpt/marketing/posts/{postId}', method: 'DELETE' },
     marketing_list_campaigns: { path: '/api/gpt/marketing/campaigns', method: 'GET' },
     marketing_get_campaign: { path: '/api/gpt/marketing/campaigns/{campaignId}', method: 'GET' },
     marketing_create_campaign: { path: '/api/gpt/marketing/campaigns', method: 'POST' },

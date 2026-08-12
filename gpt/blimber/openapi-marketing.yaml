@@ -336,6 +336,54 @@ paths:
           description: Preview ou post atualizado
         "401":
           description: Não autorizado
+    delete:
+      operationId: deletePost
+      summary: Excluir post editorial (soft-delete)
+      description: >
+        Soft-delete de 1 social_post (deleted_at). dryRun default true
+        (preview id/title/campaignId). Exige confirm + confirmTenantId.
+        Isolado por tenant. Sem massa e sem exclusão remota nas redes.
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: ID do post (um por chamada).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tenantId, confirmTenantId, confirm]
+              properties:
+                tenantId:
+                  type: string
+                  format: uuid
+                confirmTenantId:
+                  type: string
+                  format: uuid
+                confirm:
+                  type: boolean
+                  enum: [true]
+                dryRun:
+                  type: boolean
+                  default: true
+                actorUserId:
+                  type: string
+                  format: uuid
+                  description: Opcional. Gravado em deleted_by se enviado.
+      responses:
+        "200":
+          description: Preview ou post excluído
+        "401":
+          description: Não autorizado
+        "403":
+          description: Post de outro tenant
+        "404":
+          description: Post não encontrado
 
   /api/gpt/marketing/campaigns:
     get:

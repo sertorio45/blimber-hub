@@ -38,6 +38,11 @@ export interface BlimberMcpToolDescriptor {
 
 export interface BlimberMcpSupabaseLike {
   from: (table: string) => any
+  /** Optional RPC (service role). Used for domain soft-delete of social_posts. */
+  rpc?: (
+    fn: string,
+    args: Record<string, unknown>,
+  ) => Promise<{ data: unknown, error: { message?: string } | null }>
   /**
    * Optional Auth admin. Execute must not depend on this — Nuxt/Vercel
    * service clients often expose getUserById without a working fetch.

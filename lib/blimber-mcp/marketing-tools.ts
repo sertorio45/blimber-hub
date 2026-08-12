@@ -231,6 +231,14 @@ export const marketingUpdatePostSchema = z.object({
   ...blimberWriteDryRunField,
 })
 
+export const marketingDeletePostSchema = z.object({
+  tenantId: tenantIdField,
+  postId: uuid,
+  actorUserId: uuid.optional(),
+  ...blimberWriteConfirmationFields,
+  ...blimberWriteDryRunField,
+})
+
 export const marketingListCampaignsSchema = z.object({
   tenantId: tenantIdField,
   status: socialCampaignStatus.or(z.literal('all')).optional(),
@@ -278,6 +286,7 @@ export type MarketingToolName =
   | 'marketing_get_post'
   | 'marketing_create_post'
   | 'marketing_update_post'
+  | 'marketing_delete_post'
   | 'marketing_list_campaigns'
   | 'marketing_get_campaign'
   | 'marketing_create_campaign'
@@ -291,6 +300,7 @@ export const MARKETING_TOOL_DESCRIPTIONS: Record<MarketingToolName, string> = {
   marketing_get_post: 'Detalhe de um post editorial por postId.',
   marketing_create_post: 'Cria rascunho de post editorial (dryRun default true sem actor; execute exige actorUserId ou env).',
   marketing_update_post: 'Atualiza campos de um post draft (dryRun default true).',
+  marketing_delete_post: 'Soft-delete de 1 post editorial (dryRun default true). Isolado por tenant; sem exclusão em massa nem remota.',
   marketing_list_campaigns: 'Lista campanhas EDITORIAIS (social_campaigns) — não são Meta Ads.',
   marketing_get_campaign: 'Detalhe de campanha editorial + posts vinculados.',
   marketing_create_campaign: 'Cria campanha editorial (dryRun default true sem actor; execute exige actorUserId ou env).',
@@ -305,6 +315,7 @@ export const MARKETING_TOOL_SCHEMAS = {
   marketing_get_post: marketingGetPostSchema,
   marketing_create_post: marketingCreatePostSchema,
   marketing_update_post: marketingUpdatePostSchema,
+  marketing_delete_post: marketingDeletePostSchema,
   marketing_list_campaigns: marketingListCampaignsSchema,
   marketing_get_campaign: marketingGetCampaignSchema,
   marketing_create_campaign: marketingCreateCampaignSchema,
@@ -765,6 +776,129 @@ export async function marketingUpdatePost(
   }
 }
 
+function mapDeletePreview(row: Record<string, any>) {
+  return {
+    id: String(row.id),
+    title: String(row.title || ''),
+    campaignId: row.campaign_id ?? null,
+  }
+}
+
+/**
+ * Local soft-delete of one editorial post (deleted_at tombstone).
+ * Does not call Meta/LinkedIn remote delete — Hub UI owns that cascade.
+ */
+export async function marketingDeletePost(
+  ctx: BlimberMcpToolContext,
+  raw: unknown,
+) {
+  const input = marketingDeletePostSchema.parse(raw)
+  assertBlimberWriteConfirmation(input)
+  const dryRun = resolveDryRun(input.dryRun, true)
+
+  const { data: existing, error } = await ctx.client
+    .from('social_posts')
+    .select('id, title, campaign_id, tenant_id, deleted_at, status, publication_status')
+    .eq('id', input.postId)
+    .maybeSingle()
+
+  if (error)
+    throw new BlimberMcpError('DB_ERROR', error.message, 400)
+  if (!existing)
+    throw new BlimberMcpError('NOT_FOUND', 'Publicação não encontrada', 404)
+  if (String(existing.tenant_id) !== input.tenantId) {
+    throw new BlimberMcpError(
+      'FORBIDDEN',
+      'Publicação pertence a outro tenant.',
+      403,
+    )
+  }
+  if (existing.deleted_at) {
+    throw new BlimberMcpError('GONE', 'Publicação já excluída', 409)
+  }
+  if (['publishing'].includes(String(existing.status))
+    || String(existing.publication_status) === 'publishing') {
+    throw new BlimberMcpError(
+      'LOCKED',
+      'Há publicação em andamento. Aguarde o término antes de excluir.',
+      409,
+    )
+  }
+
+  const preview = mapDeletePreview(existing)
+
+  if (dryRun) {
+    return {
+      dryRun: true as const,
+      wouldMutate: true,
+      entity: 'social_post',
+      kind: 'editorial' as const,
+      deleteMode: 'soft' as const,
+      preview,
+      notes: [
+        'Soft-delete local (deleted_at). Não remove o post das redes (Meta/LinkedIn).',
+        'Um post por chamada — para duplicados, confirme e chame de novo por id.',
+        'Reenvie com dryRun=false após confirmação.',
+      ],
+    }
+  }
+
+  const actorUserId = resolveOptionalActorUserId(ctx, input.actorUserId)
+  const rpc = ctx.client.rpc
+
+  if (typeof rpc === 'function') {
+    const { data: ok, error: rpcError } = await rpc('marketing_delete_social_post', {
+      p_tenant_id: input.tenantId,
+      p_post_id: input.postId,
+      p_deleted_by: actorUserId,
+      p_mode: 'system_only',
+      p_reason: 'gpt_marketing_delete_post',
+      p_remote_status: 'not_applicable',
+    })
+    if (rpcError)
+      throw new BlimberMcpError('DB_ERROR', rpcError.message || 'Falha ao excluir publicação', 400)
+    if (ok === false) {
+      throw new BlimberMcpError('NOT_FOUND', 'Publicação não encontrada', 404)
+    }
+  }
+  else {
+    const now = new Date().toISOString()
+    const { data, error: updateError } = await ctx.client
+      .from('social_posts')
+      .update({
+        deleted_at: now,
+        deleted_by: actorUserId,
+        deletion_mode: 'system_only',
+        deletion_status: 'completed',
+        deletion_reason: 'gpt_marketing_delete_post',
+        remote_deletion_status: 'not_applicable',
+        publication_status: 'deleted',
+        editorial_status: 'cancelled',
+        status: 'archived',
+        scheduled_at: null,
+        updated_at: now,
+      })
+      .eq('id', input.postId)
+      .eq('tenant_id', input.tenantId)
+      .is('deleted_at', null)
+      .select('id')
+      .maybeSingle()
+
+    if (updateError)
+      throw new BlimberMcpError('DB_ERROR', updateError.message, 400)
+    if (!data)
+      throw new BlimberMcpError('NOT_FOUND', 'Publicação não encontrada', 404)
+  }
+
+  return {
+    dryRun: false as const,
+    kind: 'editorial' as const,
+    deleted: true,
+    deleteMode: 'soft' as const,
+    post: preview,
+  }
+}
+
 export async function marketingListCampaigns(
   ctx: BlimberMcpToolContext,
   raw: unknown,
@@ -988,6 +1122,7 @@ export const MARKETING_TOOL_HANDLERS: Record<MarketingToolName, MarketingHandler
   marketing_get_post: marketingGetPost,
   marketing_create_post: marketingCreatePost,
   marketing_update_post: marketingUpdatePost,
+  marketing_delete_post: marketingDeletePost,
   marketing_list_campaigns: marketingListCampaigns,
   marketing_get_campaign: marketingGetCampaign,
   marketing_create_campaign: marketingCreateCampaign,
