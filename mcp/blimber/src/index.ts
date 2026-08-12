@@ -62,16 +62,6 @@ async function main() {
   }
 
   const client = createServiceSupabase()
-  const transport = new StreamableHTTPServerTransport({
-    sessionIdGenerator: undefined,
-    enableJsonResponse: true,
-  })
-
-  const server = createBlimberMcpServer(
-    client,
-    process.env.BLIMBER_MCP_ACTOR_USER_ID || undefined,
-  )
-  await server.connect(transport)
 
   const httpServer = createServer(async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*')
@@ -105,7 +95,22 @@ async function main() {
     if (req.method === 'POST')
       parsedBody = await readJsonBody(req)
 
-    await transport.handleRequest(req, res, parsedBody)
+    // Fresh transport+server per request — SDK forbids reusing stateless transports.
+    const transport = new StreamableHTTPServerTransport({
+      sessionIdGenerator: undefined,
+      enableJsonResponse: true,
+    })
+    const server = createBlimberMcpServer(
+      client,
+      process.env.BLIMBER_MCP_ACTOR_USER_ID || undefined,
+    )
+    await server.connect(transport)
+    try {
+      await transport.handleRequest(req, res, parsedBody)
+    }
+    finally {
+      await Promise.allSettled([transport.close(), server.close()])
+    }
   })
 
   httpServer.listen(PORT, HOST, () => {

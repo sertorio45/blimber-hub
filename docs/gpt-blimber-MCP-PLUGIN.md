@@ -114,13 +114,21 @@ Backend compartilhado — escolha um ou use os dois no mesmo ecossistema.
 
 ## Limitações
 
-1. **Vercel serverless:** endpoint em modo **stateless** + respostas JSON (`enableJsonResponse: true`) — sem SSE persistente entre requests.
+1. **Vercel serverless:** endpoint em modo **stateless** + respostas JSON (`enableJsonResponse: true`) — **um transport+server MCP novo por request** (exigência do SDK; singleton quebra `tools/list` no ChatGPT).
 2. **OAuth pragmático:** não é login Supabase/Google — você valida `BLIMBER_MCP_API_KEY` uma vez na tela de consentimento; tokens OAuth são JWT HS256 de curta duração.
 3. **Sem refresh token:** ao expirar (~1 h), reconecte pelo fluxo OAuth no ChatGPT.
 4. **Sem upload binário** de mídia via MCP (igual Marketing Actions).
 5. **Google Ads:** apenas stub `ads_google_status`.
 6. **CRM:** não exposto (planned no registry).
 7. **Cold start:** primeira requisição após deploy pode ser mais lenta (init Supabase + MCP).
+
+## Se o ChatGPT mostrar namespace sem funções
+
+Sintoma: `@Blimber Hub` / `Blimber_Hub` aparece, mas “nenhuma função está definida”.
+
+1. Confirme que o deploy inclui o fix de **transport por request** (`server/utils/blimber-mcp-transport.ts`).
+2. No ChatGPT: remova o plugin → salve → adicione de novo com a mesma URL → conclua o OAuth.
+3. Em um chat novo, peça `@Blimber Hub listBlimberTools` ou `searchTenants` — devem aparecer tools como `searchTenants`, `marketing_list_posts`, `meta_list_campaigns`.
 
 ## Alternativa: túnel local
 
@@ -139,6 +147,23 @@ Ver `mcp/blimber/README.md`.
 pnpm test tests/blimber-mcp-oauth.test.ts
 pnpm test tests/blimber-mcp-http.test.ts
 pnpm test tests/blimber-mcp-registry.test.ts
+pnpm test tests/blimber-mcp-streamable-lifecycle.test.ts
+```
+
+Smoke local (com `BLIMBER_MCP_API_KEY` e app rodando):
+
+```bash
+curl -sS http://localhost:3000/api/mcp \
+  -H "Authorization: Bearer $BLIMBER_MCP_API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"curl","version":"1.0"}}}'
+
+curl -sS http://localhost:3000/api/mcp \
+  -H "Authorization: Bearer $BLIMBER_MCP_API_KEY" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json, text/event-stream" \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'
 ```
 
 ## Arquivos relacionados
@@ -148,6 +173,6 @@ pnpm test tests/blimber-mcp-registry.test.ts
 - `server/routes/.well-known/*` — discovery RFC 9728 / 8414
 - `server/utils/blimber-mcp-oauth.ts` — JWT, PKCE, metadata
 - `lib/blimber-mcp/create-server.ts` — registro unificado de tools
-- `server/utils/blimber-mcp-transport.ts` — transport singleton stateless
+- `server/utils/blimber-mcp-transport.ts` — transport+server **por request** (stateless)
 - `docs/mcp-blimber-platform.md` — arquitetura geral
 - `gpt/blimber/README.md` — pack OpenAPI Actions

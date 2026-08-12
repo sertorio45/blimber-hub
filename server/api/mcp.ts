@@ -9,7 +9,7 @@ import type { H3Event } from 'h3'
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js'
 import { createError, defineEventHandler, readRawBody, setResponseHeader, setResponseStatus } from 'h3'
 import { assertMcpEndpointAuth } from '~/server/utils/blimber-mcp-oauth'
-import { getBlimberMcpTransport } from '~/server/utils/blimber-mcp-transport'
+import { handleBlimberMcpHttpRequest } from '~/server/utils/blimber-mcp-transport'
 
 const MCP_CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -84,8 +84,6 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 401, statusMessage: 'Não autorizado' })
   }
 
-  const transport = await getBlimberMcpTransport()
-
   let parsedBody: unknown
   if (event.method === 'POST') {
     const raw = await readRawBody(event, false)
@@ -101,7 +99,8 @@ export default defineEventHandler(async (event) => {
   const req = event.node.req as typeof event.node.req & { auth?: AuthInfo }
   req.auth = mcpAuthInfo
 
-  await transport.handleRequest(req, event.node.res, parsedBody)
+  // Fresh transport+server per request (SDK stateless requirement).
+  await handleBlimberMcpHttpRequest(req, event.node.res, parsedBody)
 
   if (event.node.res.writableEnded || event.node.res.headersSent)
     return undefined
