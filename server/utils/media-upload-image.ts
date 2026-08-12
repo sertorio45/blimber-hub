@@ -1,4 +1,15 @@
-import sharp from 'sharp'
+type SharpModule = typeof import('sharp')
+type SharpInstance = ReturnType<SharpModule['default']>
+
+let sharpModulePromise: Promise<SharpModule> | null = null
+
+/** Lazy-load sharp so Nitro cold start does not crash unrelated API routes. */
+async function loadSharp(): Promise<SharpModule['default']> {
+  if (!sharpModulePromise)
+    sharpModulePromise = import('sharp')
+  const mod = await sharpModulePromise
+  return mod.default
+}
 
 export const IMAGE_UPLOAD_PRESETS = {
   square: { width: 1080, height: 1080 },
@@ -75,6 +86,8 @@ export async function compressImageForUpload(
     formatHint?: ImageUploadFormatHint
   },
 ): Promise<CompressedImageResult> {
+  const sharp = await loadSharp()
+
   try {
     const metadata = await sharp(buffer).metadata()
     if (!metadata.width || !metadata.height || !metadata.format)
@@ -90,7 +103,7 @@ export async function compressImageForUpload(
     const keepPng = (input.inputMime === 'image/png' || input.inputMime === 'image/webp') && metadata.hasAlpha
     const outputFormat = keepPng ? 'png' as const : 'jpeg' as const
 
-    let pipeline = sharp(buffer)
+    let pipeline: SharpInstance = sharp(buffer)
       .rotate()
       .resize({
         width: preset.width,

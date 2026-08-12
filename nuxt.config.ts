@@ -55,13 +55,22 @@ export default defineNuxtConfig({
   },
 
   nitro: {
+    // Native modules must stay external; trace platform binaries for Vercel linux-x64.
+    serverExternalPackages: ['sharp', '@modelcontextprotocol/sdk'],
     externals: {
-      external: ['sharp'],
+      external: ['sharp', '@modelcontextprotocol/sdk'],
+      traceInclude: [
+        'node_modules/sharp/**',
+        'node_modules/@img/**',
+      ],
     },
     routeRules: {
       // Phone photos can exceed the default Nitro body limit; align with bucket max (100MB).
       '/api/marketing/social/upload-asset': {
         bodySizeLimit: 104857600,
+      },
+      '/api/mcp': {
+        headers: { 'Cache-Control': 'no-store' },
       },
     },
   },
