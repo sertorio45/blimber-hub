@@ -9,6 +9,16 @@ import type {
   SocialPostInput,
 } from '~/types/marketing-social'
 
+/** Vercel serverless request body limit — keep headroom for multipart overhead. */
+const SERVER_COMPRESSION_MAX_BYTES = 4 * 1024 * 1024
+
+function isImageUpload(file: File): boolean {
+  if (file.type.startsWith('image/'))
+    return true
+
+  return /\.(jpe?g|png|gif|webp|heic|heif)$/i.test(file.name)
+}
+
 export function useMarketingSocial() {
   const supabase = useSupabaseClient()
   const { tenantId } = useTenant()
@@ -269,42 +279,24 @@ export function useMarketingSocial() {
     const response = await $fetch<{ data: MediaAsset[] }>('/api/marketing/social/assets', {
       query: tenantQuery(filters),
     })
-    return response.data
+    const rows = Array.isArray(response?.data) ? response.data : []
+    return rows
   }
 
-  async function uploadAsset(
+  async function uploadAssetDirect(
     file: File,
-    purpose: MediaAssetPurpose = 'reference',
-    options?: { category?: string | null, format?: 'square' | 'portrait' | 'landscape' | 'story' | 'auto' },
+    purpose: MediaAssetPurpose,
+    options?: { category?: string | null },
   ) {
-    if (!tenantId.value)
-      throw new Error('Selecione uma empresa')
-
-    const isImage = file.type.startsWith('image/')
-
-    if (isImage) {
-      const formData = new FormData()
-      formData.append('file', file)
-      formData.append('format', options?.format || 'auto')
-      formData.append('purpose', purpose)
-      if (options?.category)
-        formData.append('category', options.category)
-
-      const response = await $fetch<{ data: MediaAsset, meta: Record<string, unknown> }>(
-        `/api/marketing/social/upload-asset?tenant_id=${tenantId.value}`,
-        { method: 'POST', body: formData },
-      )
-      return response.data
-    }
-
-    // Fallback for non-image files (videos, docs): direct upload
     const extension = file.name.includes('.') ? file.name.split('.').pop() : 'bin'
     const objectPath = `${tenantId.value}/${crypto.randomUUID()}/original.${extension}`
+    const mimeType = file.type || 'application/octet-stream'
+
     const { error: uploadError } = await supabase.storage
       .from('marketing-assets')
       .upload(objectPath, file, {
         cacheControl: '3600',
-        contentType: file.type,
+        contentType: mimeType,
         upsert: false,
       })
     if (uploadError)
@@ -317,7 +309,7 @@ export function useMarketingSocial() {
           tenant_id: tenantId.value,
           name: file.name,
           objectPath,
-          mimeType: file.type || 'application/octet-stream',
+          mimeType,
           sizeBytes: file.size,
           purpose,
           category: options?.category || undefined,
@@ -329,6 +321,61 @@ export function useMarketingSocial() {
       await supabase.storage.from('marketing-assets').remove([objectPath])
       throw error
     }
+  }
+
+  async function uploadAssetViaServer(
+    file: File,
+    purpose: MediaAssetPurpose,
+    options?: { category?: string | null, format?: 'square' | 'portrait' | 'landscape' | 'story' | 'auto' },
+  ) {
+    const formData = new FormData()
+    formData.append('file', file)
+    formData.append('format', options?.format || 'auto')
+    formData.append('purpose', purpose)
+    if (options?.category)
+      formData.append('category', options.category)
+
+    const response = await $fetch<{ data: MediaAsset, meta?: Record<string, unknown> }>(
+      '/api/marketing/social/upload-asset',
+      {
+        method: 'POST',
+        body: formData,
+        query: tenantQuery(),
+      },
+    )
+
+    if (!response.data)
+      throw new Error('Resposta inválida do servidor ao enviar imagem')
+
+    return response.data
+  }
+
+  async function uploadAsset(
+    file: File,
+    purpose: MediaAssetPurpose = 'reference',
+    options?: { category?: string | null, format?: 'square' | 'portrait' | 'landscape' | 'story' | 'auto' },
+  ) {
+    if (!tenantId.value)
+      throw new Error('Selecione uma empresa')
+
+    const canUseServerCompression = isImageUpload(file) && file.size <= SERVER_COMPRESSION_MAX_BYTES
+
+    if (canUseServerCompression) {
+      try {
+        return await uploadAssetViaServer(file, purpose, options)
+      }
+      catch (error: any) {
+        const status = Number(error?.statusCode || error?.status || 0)
+        const message = String(error?.data?.statusMessage || error?.statusMessage || error?.message || '')
+        const canFallback = status === 413
+          || /compressão|unsupported image|body.*limit|payload too large/i.test(message)
+        if (!canFallback)
+          throw error
+        console.warn('[marketing] Server compression failed, falling back to direct upload:', error)
+      }
+    }
+
+    return uploadAssetDirect(file, purpose, options)
   }
 
   async function deleteAsset(id: string) {

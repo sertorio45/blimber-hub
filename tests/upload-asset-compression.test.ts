@@ -1,20 +1,15 @@
 import sharp from 'sharp'
 import { describe, expect, it } from 'vitest'
 
-const PRESETS = {
-  square: { width: 1080, height: 1080 },
-  portrait: { width: 1080, height: 1350 },
-  landscape: { width: 1200, height: 630 },
-  story: { width: 1080, height: 1920 },
-} as const
+import {
+  compressImageForUpload,
+  detectBestPreset,
+  IMAGE_UPLOAD_PRESETS,
+  inferImageMimeType,
+  isLikelyImageFile,
+} from '~/server/utils/media-upload-image'
 
-function detectBestPreset(width: number, height: number) {
-  const ratio = width / height
-  if (ratio >= 0.9 && ratio <= 1.1) return 'square'
-  if (ratio >= 0.7 && ratio < 0.9) return 'portrait'
-  if (ratio < 0.7) return 'story'
-  return 'landscape'
-}
+const PRESETS = IMAGE_UPLOAD_PRESETS
 
 async function compressImage(
   buffer: Buffer,
@@ -67,6 +62,13 @@ function createPngWithAlpha(width: number, height: number) {
 }
 
 describe('upload asset compression', () => {
+  describe('mime detection', () => {
+    it('infers jpeg from filename when multipart type is generic', () => {
+      expect(inferImageMimeType('application/octet-stream', 'photo.jpg')).toBe('image/jpeg')
+      expect(isLikelyImageFile('application/octet-stream', 'photo.jpg')).toBe(true)
+    })
+  })
+
   describe('aspect ratio detection', () => {
     it('detects square images (1:1)', () => {
       expect(detectBestPreset(1080, 1080)).toBe('square')
@@ -148,6 +150,17 @@ describe('upload asset compression', () => {
       const meta = await sharp(data).metadata()
       expect(meta.format).toBe('png')
       expect(meta.channels).toBe(4)
+    })
+
+    it('falls back to original bytes when compression fails', async () => {
+      const input = Buffer.from('not-an-image')
+      const result = await compressImageForUpload(input, {
+        inputMime: 'image/jpeg',
+      })
+
+      expect(result.compressed).toBe(false)
+      expect(result.format).toBe('original')
+      expect(result.data.equals(input)).toBe(true)
     })
   })
 })

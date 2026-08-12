@@ -23,8 +23,25 @@ export function mediaAssetObjectPath(asset: MediaAssetLike): string {
   return asset.objectPath || asset.object_path || ''
 }
 
+/**
+ * `<img src>` cannot send Authorization headers. Same-origin `/api/.../file`
+ * routes that require Bearer (or mishandle Buffer responses) always break in
+ * the grid. Only blob/data/absolute http(s) URLs are safe to render.
+ */
+export function isDisplayablePreviewUrl(url: string | null | undefined): url is string {
+  if (!url)
+    return false
+  const value = url.trim()
+  if (!value)
+    return false
+  if (value.startsWith('blob:') || value.startsWith('data:'))
+    return true
+  return /^https?:\/\//i.test(value)
+}
+
 export function mediaAssetPreviewUrl(asset: MediaAssetLike): string | null {
-  return asset.previewUrl || asset.preview_url || null
+  const raw = asset.previewUrl || asset.preview_url || null
+  return isDisplayablePreviewUrl(raw) ? raw : null
 }
 
 /** Map library asset into Brand Center logo/reference preview shape. */

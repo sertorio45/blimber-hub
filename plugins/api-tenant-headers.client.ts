@@ -6,6 +6,8 @@ import { ORGANIZATION_HEADER, TENANT_HEADER } from '~/constants/workspace'
  * links and contracted modules before honouring them.
  */
 export default defineNuxtPlugin(() => {
+  const session = useSupabaseSession()
+
   globalThis.$fetch = $fetch.create({
     onRequest({ request, options }) {
       const url = typeof request === 'string' ? request : String(request)
@@ -13,7 +15,20 @@ export default defineNuxtPlugin(() => {
         return
 
       const tenantStore = useTenantStore()
-      const headers = new Headers(options.headers as HeadersInit)
+      const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData
+
+      const headers = options.headers instanceof Headers
+        ? options.headers
+        : new Headers(options.headers as HeadersInit)
+
+      if (isFormData) {
+        // Never set Content-Type on multipart — the browser must add the boundary.
+        headers.delete('content-type')
+        headers.delete('Content-Type')
+      }
+
+      if (session.value?.access_token && !headers.has('Authorization'))
+        headers.set('Authorization', `Bearer ${session.value.access_token}`)
 
       if (tenantStore.tenantId && !headers.has(TENANT_HEADER))
         headers.set(TENANT_HEADER, tenantStore.tenantId)

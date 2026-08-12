@@ -54,6 +54,18 @@ export default defineNuxtConfig({
     },
   },
 
+  nitro: {
+    externals: {
+      external: ['sharp'],
+    },
+    routeRules: {
+      // Phone photos can exceed the default Nitro body limit; align with bucket max (100MB).
+      '/api/marketing/social/upload-asset': {
+        bodySizeLimit: 104857600,
+      },
+    },
+  },
+
   routeRules: {
     // Marketing MVP canonical routes — keep old bookmarks working.
     '/marketing/posts': { redirect: { to: '/marketing/content', statusCode: 301 } },

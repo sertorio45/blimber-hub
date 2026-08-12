@@ -353,6 +353,33 @@ async function loadCapabilities(
 }
 
 /**
+ * Cookie session is preferred; Bearer JWT is accepted for browser multipart uploads
+ * where the Supabase SSR cookie may not ride along on FormData requests.
+ */
+async function resolveRequestUser(event: any): Promise<User> {
+  try {
+    const user = await serverSupabaseUser(event)
+    if (user)
+      return user
+  }
+  catch {
+    // Cookie session missing or expired — fall through to Bearer.
+  }
+
+  const authHeader = getHeader(event, 'authorization')
+  const token = authHeader?.match(/^Bearer\s+(.+)$/i)?.[1]?.trim()
+  if (!token)
+    throw createError({ statusCode: 401, statusMessage: 'Não autenticado' })
+
+  const serviceClient: WorkspaceClient = await serverSupabaseServiceRole(event)
+  const { data: { user }, error } = await serviceClient.auth.getUser(token)
+  if (error || !user)
+    throw createError({ statusCode: 401, statusMessage: 'Não autenticado' })
+
+  return user
+}
+
+/**
  * Resolves the scope without applying the caller's requirements. Callers should
  * use `requireWorkspaceContext`, which also enforces `options`.
  */
@@ -360,9 +387,7 @@ async function resolveWorkspaceContext(
   event: any,
   options: WorkspaceContextOptions,
 ): Promise<WorkspaceContext> {
-  const user = await serverSupabaseUser(event)
-  if (!user)
-    throw createError({ statusCode: 401, statusMessage: 'Não autenticado' })
+  const user = await resolveRequestUser(event)
 
   const client: WorkspaceClient = await serverSupabaseServiceRole(event)
 

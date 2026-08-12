@@ -1,86 +1,78 @@
 import { randomUUID } from 'node:crypto'
 
-import { readMultipartFormData } from 'h3'
-import sharp from 'sharp'
+import { getQuery, readMultipartFormData } from 'h3'
 
+import { extractStorageSignedUrl } from '~/server/utils/media-asset-preview'
+import {
+  compressImageForUpload,
+  inferImageMimeType,
+  isLikelyImageFile,
+  type ImageUploadFormatHint,
+} from '~/server/utils/media-upload-image'
 import { recordSocialAudit } from '~/server/utils/social-audit'
 import { requireSocialContext } from '~/server/utils/social-context'
 
-const DIMENSION_PRESETS = {
-  square: { width: 1080, height: 1080 },
-  portrait: { width: 1080, height: 1350 },
-  landscape: { width: 1200, height: 630 },
-  story: { width: 1080, height: 1920 },
-} as const
-
-type FormatHint = keyof typeof DIMENSION_PRESETS | 'auto'
-
-function detectBestPreset(width: number, height: number): keyof typeof DIMENSION_PRESETS {
-  const ratio = width / height
-  if (ratio >= 0.9 && ratio <= 1.1) return 'square'
-  if (ratio >= 0.7 && ratio < 0.9) return 'portrait'
-  if (ratio < 0.7) return 'story'
-  return 'landscape'
-}
-
 export default defineEventHandler(async (event) => {
-  const { client, tenantId, user } = await requireSocialContext(event, 'marketing.social.create')
+  const query = getQuery(event)
+  const requestedTenantId = typeof query.tenant_id === 'string' ? query.tenant_id : null
+
+  const { client, tenantId, user } = await requireSocialContext(
+    event,
+    'marketing.social.create',
+    requestedTenantId,
+  )
 
   const parts = await readMultipartFormData(event)
   if (!parts?.length)
     throw createError({ statusCode: 400, statusMessage: 'Nenhum arquivo enviado' })
 
-  const filePart = parts.find(p => p.name === 'file')
-  if (!filePart?.data || !filePart.type)
+  const filePart = parts.find(part => part.name === 'file')
+  if (!filePart?.data?.length)
     throw createError({ statusCode: 400, statusMessage: 'Campo "file" obrigatório' })
 
-  if (!filePart.type.startsWith('image/'))
-    throw createError({ statusCode: 400, statusMessage: 'Apenas imagens são aceitas para compressão' })
+  const inputMime = inferImageMimeType(filePart.type, filePart.filename)
+  if (!isLikelyImageFile(filePart.type, filePart.filename)) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Apenas imagens são aceitas para compressão',
+    })
+  }
 
-  const formatHint = (parts.find(p => p.name === 'format')?.data?.toString() || 'auto') as FormatHint
-  const purpose = (parts.find(p => p.name === 'purpose')?.data?.toString() || 'reference') as 'reference' | 'publication'
-  const category = parts.find(p => p.name === 'category')?.data?.toString() || null
+  const formatHint = (parts.find(part => part.name === 'format')?.data?.toString() || 'auto') as ImageUploadFormatHint
+  const purpose = (parts.find(part => part.name === 'purpose')?.data?.toString() || 'reference') as 'reference' | 'publication'
+  const category = parts.find(part => part.name === 'category')?.data?.toString() || null
 
   const originalBuffer = filePart.data
   const originalSize = originalBuffer.length
 
-  const metadata = await sharp(originalBuffer).metadata()
-  const inputWidth = metadata.width || 1080
-  const inputHeight = metadata.height || 1080
-
-  const preset = formatHint !== 'auto'
-    ? DIMENSION_PRESETS[formatHint]
-    : DIMENSION_PRESETS[detectBestPreset(inputWidth, inputHeight)]
-
-  const keepPng = (filePart.type === 'image/png' || filePart.type === 'image/webp') && metadata.hasAlpha
-  const outputFormat = keepPng ? 'png' as const : 'jpeg' as const
-
-  let pipeline = sharp(originalBuffer)
-    .rotate()
-    .resize({
-      width: preset.width,
-      height: preset.height,
-      fit: 'inside',
-      withoutEnlargement: true,
+  let processed: Awaited<ReturnType<typeof compressImageForUpload>>
+  try {
+    processed = await compressImageForUpload(originalBuffer, {
+      inputMime,
+      formatHint,
     })
+  }
+  catch (error: any) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: error?.message || 'Formato de imagem não suportado',
+    })
+  }
 
-  if (outputFormat === 'jpeg')
-    pipeline = pipeline.jpeg({ quality: 80, mozjpeg: true })
-  else
-    pipeline = pipeline.png({ compressionLevel: 9 })
+  const ext = processed.format === 'jpeg'
+    ? 'jpg'
+    : processed.format === 'png'
+      ? 'png'
+      : (filePart.filename?.includes('.') ? filePart.filename.split('.').pop() : 'jpg') || 'jpg'
 
-  const { data: compressedData, info } = await pipeline.toBuffer({ resolveWithObject: true })
-  const compressedSize = compressedData.length
-
-  const ext = outputFormat === 'jpeg' ? 'jpg' : 'png'
-  const compressedMime = outputFormat === 'jpeg' ? 'image/jpeg' : 'image/png'
-  const objectPath = `${tenantId}/${randomUUID()}/optimized.${ext}`
+  const objectPath = `${tenantId}/${randomUUID()}/${processed.compressed ? 'optimized' : 'original'}.${ext}`
+  const compressedSize = processed.data.length
 
   const { error: uploadError } = await client.storage
     .from('marketing-assets')
-    .upload(objectPath, compressedData, {
+    .upload(objectPath, processed.data, {
       cacheControl: '3600',
-      contentType: compressedMime,
+      contentType: processed.mimeType,
       upsert: false,
     })
 
@@ -93,16 +85,19 @@ export default defineEventHandler(async (event) => {
       tenant_id: tenantId,
       name: filePart.filename || 'upload.jpg',
       object_path: objectPath,
-      mime_type: compressedMime,
+      mime_type: processed.mimeType,
       size_bytes: compressedSize,
-      width: info.width,
-      height: info.height,
+      width: processed.width,
+      height: processed.height,
       purpose,
       category,
       metadata: {
         originalSize,
-        originalMime: filePart.type,
-        compressionRatio: Math.round((1 - compressedSize / originalSize) * 100),
+        originalMime: inputMime,
+        compressionRatio: processed.compressed
+          ? Math.round((1 - compressedSize / originalSize) * 100)
+          : 0,
+        compressed: processed.compressed,
       },
       created_by: user.id,
     })
@@ -123,22 +118,32 @@ export default defineEventHandler(async (event) => {
     after: asset,
   })
 
-  const { data: signed } = await client.storage
+  const { data: signed, error: signError } = await client.storage
     .from('marketing-assets')
-    .createSignedUrl(objectPath, 60 * 60)
+    .createSignedUrl(objectPath, 60 * 60 * 4)
+
+  if (signError) {
+    console.warn('[media_assets] upload signed URL generation failed:', signError.message)
+  }
+
+  const preview = extractStorageSignedUrl(signed)
 
   return {
     data: {
       ...asset,
-      preview_url: signed?.signedUrl || null,
+      preview_url: preview,
+      previewUrl: preview,
     },
     meta: {
       originalSize,
       compressedSize,
-      width: info.width,
-      height: info.height,
-      format: outputFormat,
-      reductionPercent: Math.round((1 - compressedSize / originalSize) * 100),
+      width: processed.width,
+      height: processed.height,
+      format: processed.format,
+      compressed: processed.compressed,
+      reductionPercent: processed.compressed
+        ? Math.round((1 - compressedSize / originalSize) * 100)
+        : 0,
     },
   }
 })

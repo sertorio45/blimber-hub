@@ -1,6 +1,7 @@
 import { readBody } from 'h3'
 import { z } from 'zod'
 
+import { extractStorageSignedUrl } from '~/server/utils/media-asset-preview'
 import { recordSocialAudit } from '~/server/utils/social-audit'
 import { requireSocialContext } from '~/server/utils/social-context'
 
@@ -15,6 +16,7 @@ const LIBRARY_CATEGORIES = [
 ] as const
 
 const schema = z.object({
+  tenant_id: z.string().uuid().optional(),
   name: z.string().trim().min(1).max(255),
   objectPath: z.string().min(1).max(1024),
   mimeType: z.string().min(1).max(150),
@@ -30,7 +32,12 @@ const schema = z.object({
 
 export default defineEventHandler(async (event) => {
   const input = schema.parse(await readBody(event))
-  const { client, tenantId, user } = await requireSocialContext(event, 'marketing.social.create')
+  const requestedTenantId = typeof input.tenant_id === 'string' ? input.tenant_id : null
+  const { client, tenantId, user } = await requireSocialContext(
+    event,
+    'marketing.social.create',
+    requestedTenantId,
+  )
 
   if (input.purpose === 'publication' && !/^(?:image|video)\//.test(input.mimeType))
     throw createError({ statusCode: 400, statusMessage: 'Peças finais devem ser imagens ou vídeos' })
@@ -80,14 +87,20 @@ export default defineEventHandler(async (event) => {
     after: data,
   })
 
-  const { data: signed } = await client.storage
+  const { data: signed, error: signError } = await client.storage
     .from('marketing-assets')
-    .createSignedUrl(data.object_path, 60 * 60)
+    .createSignedUrl(data.object_path, 60 * 60 * 4)
+
+  if (signError)
+    console.warn('[media_assets] insert signed URL generation failed:', signError.message)
+
+  const preview = extractStorageSignedUrl(signed)
 
   return {
     data: {
       ...data,
-      preview_url: signed?.signedUrl || null,
+      preview_url: preview,
+      previewUrl: preview,
     },
   }
 })

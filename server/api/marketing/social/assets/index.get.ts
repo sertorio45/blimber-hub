@@ -1,10 +1,16 @@
 import { getQuery } from 'h3'
 
+import { attachMediaAssetPreviews } from '~/server/utils/media-asset-preview'
 import { requireSocialContext } from '~/server/utils/social-context'
 
 export default defineEventHandler(async (event) => {
   const query = getQuery(event)
-  const { client, tenantId } = await requireSocialContext(event, 'marketing.social.read')
+  const requestedTenantId = typeof query.tenant_id === 'string' ? query.tenant_id : null
+  const { client, tenantId } = await requireSocialContext(
+    event,
+    'marketing.social.read',
+    requestedTenantId,
+  )
 
   let request = client
     .from('media_assets')
@@ -35,16 +41,7 @@ export default defineEventHandler(async (event) => {
   if (error)
     throw createError({ statusCode: 400, statusMessage: error.message })
 
-  const paths = (data || []).map((row: any) => row.object_path)
-  const { data: signedRows } = paths.length
-    ? await client.storage.from('marketing-assets').createSignedUrls(paths, 60 * 60)
-    : { data: [] }
-  const signedUrls = new Map((signedRows || []).map((row: any) => [row.path, row.signedUrl]))
-
   return {
-    data: (data || []).map((asset: any) => ({
-      ...asset,
-      preview_url: signedUrls.get(asset.object_path) || null,
-    })),
+    data: await attachMediaAssetPreviews(client, data || [], tenantId),
   }
 })
