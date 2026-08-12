@@ -43,6 +43,14 @@ const TOOL_INPUT_HINTS: Record<MarketingToolName, string[]> = {
     'dryRun? (default true)',
     'actorUserId?',
   ],
+  marketing_delete_asset: [
+    'tenantId',
+    'assetId',
+    'confirmTenantId',
+    'confirm',
+    'dryRun? (default true)',
+    'actorUserId?',
+  ],
   marketing_list_campaigns: ['tenantId', 'status?', 'search?', 'limit?'],
   marketing_get_campaign: ['tenantId', 'campaignId'],
   marketing_create_campaign: [

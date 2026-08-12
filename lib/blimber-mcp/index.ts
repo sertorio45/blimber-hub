@@ -49,6 +49,7 @@ export {
   marketingCreateCampaign,
   marketingCreatePost,
   marketingDeletePost,
+  marketingDeleteAsset,
   marketingGetBrandContext,
   marketingGetCampaign,
   marketingGetPost,

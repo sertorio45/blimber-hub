@@ -53,6 +53,7 @@ export function listMarketingToolDescriptors(): BlimberMcpToolDescriptor[] {
     marketing_create_post: { path: '/api/gpt/marketing/posts', method: 'POST' },
     marketing_update_post: { path: '/api/gpt/marketing/posts/{postId}', method: 'PUT' },
     marketing_delete_post: { path: '/api/gpt/marketing/posts/{postId}/delete', method: 'POST' },
+    marketing_delete_asset: { path: '/api/gpt/marketing/assets/{assetId}/delete', method: 'POST' },
     marketing_list_campaigns: { path: '/api/gpt/marketing/campaigns', method: 'GET' },
     marketing_get_campaign: { path: '/api/gpt/marketing/campaigns/{campaignId}', method: 'GET' },
     marketing_create_campaign: { path: '/api/gpt/marketing/campaigns', method: 'POST' },

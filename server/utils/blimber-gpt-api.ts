@@ -75,6 +75,34 @@ export async function runMarketingDeletePost(
   )
 }
 
+/** Normalizes deleteAsset payload (POST body and/or query params). */
+export function buildMarketingDeleteAssetArgs(
+  assetId: string | undefined,
+  payload: Record<string, unknown>,
+): Record<string, unknown> {
+  return {
+    tenantId: optionalString(payload.tenantId),
+    assetId,
+    actorUserId: optionalString(payload.actorUserId),
+    confirmTenantId: optionalString(payload.confirmTenantId),
+    confirm: parseConfirmTrue(payload.confirm),
+    dryRun: optionalBool(payload.dryRun),
+  }
+}
+
+/** Shared handler for marketing_delete_asset. */
+export async function runMarketingDeleteAsset(
+  event: H3Event,
+  assetId: string | undefined,
+) {
+  const payload = await readGptMutationBody(event)
+  return runMarketingGptTool(
+    event,
+    'marketing_delete_asset',
+    buildMarketingDeleteAssetArgs(assetId, payload),
+  )
+}
+
 /**
  * Authenticate + invoke a Marketing tool, mapping errors to HTTP status.
  */

@@ -5,7 +5,7 @@ info:
     Ação 1 (Marketing + platform + brand). Auth Bearer BLIMBER_MCP_API_KEY.
     Ads pagos: Ação 2 (openapi-ads.yaml, host ads.blimber.com.br). Não importe
     o índice openapi.yaml no mesmo GPT.
-  version: 0.4.1
+  version: 0.4.2
   contact:
     name: Blimber Hub
 servers:
@@ -148,6 +148,62 @@ paths:
           description: Assets
         "401":
           description: Não autorizado
+
+  /api/gpt/marketing/assets/{assetId}/delete:
+    post:
+      operationId: deleteMediaAsset
+      summary: Excluir mídia da biblioteca
+      description: >
+        Remove 1 media_asset (storage + DB). dryRun default true (preview com
+        linkedPosts). Bloqueia com ASSET_IN_USE se vinculada a posts. Exige
+        confirm + confirmTenantId. Use POST (não DELETE): ChatGPT Actions
+        remove body de DELETE.
+      parameters:
+        - name: assetId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: ID da mídia (um por chamada).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tenantId, confirmTenantId, confirm]
+              properties:
+                tenantId:
+                  type: string
+                  format: uuid
+                confirmTenantId:
+                  type: string
+                  format: uuid
+                confirm:
+                  type: boolean
+                  enum: [true]
+                dryRun:
+                  type: boolean
+                  default: true
+                  description: >
+                    true = preview (nome, tamanho, linkedPosts). false = excluir
+                    após confirmação.
+                actorUserId:
+                  type: string
+                  format: uuid
+                  description: Opcional. Reservado para auditoria futura.
+      responses:
+        "200":
+          description: Preview ou mídia excluída
+        "401":
+          description: Não autorizado
+        "403":
+          description: Mídia de outro tenant
+        "404":
+          description: Mídia não encontrada
+        "409":
+          description: Mídia vinculada a publicações (ASSET_IN_USE)
 
   /api/gpt/marketing/brand-context:
     get:

@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { fetchBrandContextForTenant } from '~/server/utils/brand-context'
+import { LINKED_POSTS_EMBED_SELECT } from '~/server/utils/media-asset-deletion'
 import { assertPackageAllowsNewPost } from '~/server/utils/social-packages'
 import {
   assertBlimberWriteConfirmation,
@@ -248,6 +249,14 @@ export const marketingDeletePostSchema = z.object({
   ...blimberWriteDryRunField,
 })
 
+export const marketingDeleteAssetSchema = z.object({
+  tenantId: tenantIdField,
+  assetId: uuid,
+  actorUserId: uuid.optional(),
+  ...blimberWriteConfirmationFields,
+  ...blimberWriteDryRunField,
+})
+
 export const marketingListCampaignsSchema = z.object({
   tenantId: tenantIdField,
   status: socialCampaignStatus.or(z.literal('all')).optional(),
@@ -296,6 +305,7 @@ export type MarketingToolName =
   | 'marketing_create_post'
   | 'marketing_update_post'
   | 'marketing_delete_post'
+  | 'marketing_delete_asset'
   | 'marketing_list_campaigns'
   | 'marketing_get_campaign'
   | 'marketing_create_campaign'
@@ -310,6 +320,7 @@ export const MARKETING_TOOL_DESCRIPTIONS: Record<MarketingToolName, string> = {
   marketing_create_post: 'Cria rascunho de post editorial (dryRun default true sem actor; execute exige actorUserId ou env).',
   marketing_update_post: 'Atualiza campos de um post draft, incluindo variants/contas sociais (dryRun default true).',
   marketing_delete_post: 'Soft-delete de 1 post editorial (dryRun default true). Isolado por tenant; sem exclusão em massa nem remota.',
+  marketing_delete_asset: 'Remove 1 mídia da Biblioteca (storage + DB). dryRun default true. Bloqueia se vinculada a posts.',
   marketing_list_campaigns: 'Lista campanhas EDITORIAIS (social_campaigns) — não são Meta Ads.',
   marketing_get_campaign: 'Detalhe de campanha editorial + posts vinculados.',
   marketing_create_campaign: 'Cria campanha editorial (dryRun default true sem actor; execute exige actorUserId ou env).',
@@ -325,6 +336,7 @@ export const MARKETING_TOOL_SCHEMAS = {
   marketing_create_post: marketingCreatePostSchema,
   marketing_update_post: marketingUpdatePostSchema,
   marketing_delete_post: marketingDeletePostSchema,
+  marketing_delete_asset: marketingDeleteAssetSchema,
   marketing_list_campaigns: marketingListCampaignsSchema,
   marketing_get_campaign: marketingGetCampaignSchema,
   marketing_create_campaign: marketingCreateCampaignSchema,
@@ -964,6 +976,152 @@ export async function marketingDeletePost(
   }
 }
 
+function mapAssetPreview(asset: Record<string, any>) {
+  return {
+    id: String(asset.id),
+    name: String(asset.name || ''),
+    mimeType: asset.mime_type ?? null,
+    purpose: asset.purpose ?? null,
+    sizeBytes: asset.size_bytes ?? null,
+    objectPath: asset.object_path ?? null,
+    createdAt: asset.created_at ?? null,
+  }
+}
+
+type LinkedPostRef = { id: string, title: string }
+
+async function fetchAssetLinkedPosts(
+  ctx: BlimberMcpToolContext,
+  tenantId: string,
+  assetId: string,
+): Promise<LinkedPostRef[]> {
+  const { data, error } = await ctx.client
+    .from('social_post_assets')
+    .select(LINKED_POSTS_EMBED_SELECT)
+    .eq('tenant_id', tenantId)
+    .eq('asset_id', assetId)
+
+  if (error)
+    throw new BlimberMcpError('DB_ERROR', error.message, 400)
+
+  const seen = new Set<string>()
+  const linked: LinkedPostRef[] = []
+  for (const row of data || []) {
+    const post = (row as any).social_posts
+    if (!post?.id)
+      continue
+    const id = String(post.id)
+    if (seen.has(id))
+      continue
+    seen.add(id)
+    linked.push({
+      id,
+      title: String(post.title || ''),
+    })
+  }
+  return linked
+}
+
+/**
+ * Hard-delete of one media asset (storage object + DB row).
+ * Blocks deletion when linked via social_post_assets (same rule as Hub UI).
+ */
+export async function marketingDeleteAsset(
+  ctx: BlimberMcpToolContext,
+  raw: unknown,
+) {
+  const input = marketingDeleteAssetSchema.parse(raw)
+  assertBlimberWriteConfirmation(input)
+  const dryRun = resolveDryRun(input.dryRun, true)
+
+  const { data: asset, error } = await ctx.client
+    .from('media_assets')
+    .select('id, name, mime_type, purpose, size_bytes, object_path, bucket, tenant_id, created_at, status')
+    .eq('id', input.assetId)
+    .maybeSingle()
+
+  if (error)
+    throw new BlimberMcpError('DB_ERROR', error.message, 400)
+  if (!asset)
+    throw new BlimberMcpError('NOT_FOUND', 'Mídia não encontrada', 404)
+  if (String(asset.tenant_id) !== input.tenantId) {
+    throw new BlimberMcpError(
+      'FORBIDDEN',
+      'Mídia pertence a outro tenant.',
+      403,
+    )
+  }
+
+  const linkedPosts = await fetchAssetLinkedPosts(ctx, input.tenantId, input.assetId)
+  const preview = mapAssetPreview(asset)
+
+  if (dryRun) {
+    return {
+      dryRun: true as const,
+      wouldMutate: true,
+      entity: 'media_asset' as const,
+      deleteMode: 'hard' as const,
+      preview,
+      linkedPosts,
+      linkedPostsCount: linkedPosts.length,
+      canDelete: linkedPosts.length === 0,
+      notes: [
+        'Remove o arquivo do bucket marketing-assets e o registro em media_assets.',
+        linkedPosts.length
+          ? 'Não será possível excluir: mídia vinculada a publicações (veja linkedPosts).'
+          : 'Nenhum vínculo com posts — seguro para excluir após confirmação.',
+        'Reenvie com dryRun=false após confirmação.',
+        `Hub: ${MARKETING_LIBRARY_URL}`,
+      ],
+    }
+  }
+
+  if (linkedPosts.length) {
+    throw new BlimberMcpError(
+      'ASSET_IN_USE',
+      'Esta mídia está vinculada a publicações. Remova o vínculo antes de excluir.',
+      409,
+      { linkedPosts, linkedPostsCount: linkedPosts.length },
+    )
+  }
+
+  const { data: derivatives } = await ctx.client
+    .from('media_asset_derivatives')
+    .select('object_path')
+    .eq('tenant_id', input.tenantId)
+    .eq('asset_id', input.assetId)
+
+  const { error: deleteError } = await ctx.client
+    .from('media_assets')
+    .delete()
+    .eq('tenant_id', input.tenantId)
+    .eq('id', input.assetId)
+
+  if (deleteError)
+    throw new BlimberMcpError('DB_ERROR', deleteError.message, 400)
+
+  const bucket = asset.bucket || 'marketing-assets'
+  const paths = [asset.object_path, ...(derivatives || []).map((d: any) => d.object_path)].filter(Boolean)
+  if (paths.length && ctx.client.storage) {
+    const { error: storageError } = await ctx.client.storage.from(bucket).remove(paths)
+    if (storageError) {
+      throw new BlimberMcpError(
+        'STORAGE_ERROR',
+        storageError.message,
+        500,
+      )
+    }
+  }
+
+  return {
+    dryRun: false as const,
+    deleted: true,
+    deleteMode: 'hard' as const,
+    asset: preview,
+    removedPaths: paths,
+  }
+}
+
 export async function marketingListCampaigns(
   ctx: BlimberMcpToolContext,
   raw: unknown,
@@ -1188,6 +1346,7 @@ export const MARKETING_TOOL_HANDLERS: Record<MarketingToolName, MarketingHandler
   marketing_create_post: marketingCreatePost,
   marketing_update_post: marketingUpdatePost,
   marketing_delete_post: marketingDeletePost,
+  marketing_delete_asset: marketingDeleteAsset,
   marketing_list_campaigns: marketingListCampaigns,
   marketing_get_campaign: marketingGetCampaign,
   marketing_create_campaign: marketingCreateCampaign,
