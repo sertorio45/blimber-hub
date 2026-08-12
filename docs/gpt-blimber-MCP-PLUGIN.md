@@ -137,6 +137,23 @@ Sintoma: `@Blimber Hub` / `Blimber_Hub` aparece, mas “nenhuma função está d
 2. No ChatGPT: remova o plugin → salve → adicione de novo com a mesma URL → conclua o OAuth.
 3. Em um chat novo, peça `@Blimber Hub listBlimberTools` ou `searchTenants` — devem aparecer tools como `searchTenants`, `marketing_list_posts`, `meta_list_campaigns`.
 
+## Se aparecer `Resource not found: Blimber_Hub.meta_create_ad`
+
+Sintoma: a tool aparece na descoberta (`tools/list` / schema com `creativeType`), mas a invocação falha com **Resource not found** (às vezes sem chegar ao backend — bug conhecido do conector ChatGPT).
+
+No servidor Blimber:
+
+1. `tools/call` aceita o nome **canônico** `meta_create_ad` **e** aliases (`Blimber_Hub.meta_create_ad`, `createAd`, `ads_meta_create_ad`).
+2. Meta tools são registradas **antes** de Marketing (create_ad fica cedo na lista).
+3. Cada tool também aparece em `resources/list` (`blimber://tools/<name>`) — isso é catálogo; a execução continua sendo `tools/call`.
+
+No ChatGPT (obrigatório para limpar rota stale do host):
+
+1. Aguarde o deploy deste fix.
+2. **Remova** o conector Blimber Hub → salve → **adicione de novo** (`https://app.blimber.com.br/api/mcp` + OAuth).
+3. Abra um **chat novo** (não reutilize o thread onde o erro apareceu).
+4. Peça explicitamente `meta_create_ad` com `dryRun: true` (nome **sem** prefixo `Blimber_Hub.` no payload MCP — o prefixo é só do namespace da UI).
+
 ## Alternativa: túnel local
 
 Se preferir testar sem deploy:
@@ -155,6 +172,7 @@ pnpm test tests/blimber-mcp-oauth.test.ts
 pnpm test tests/blimber-mcp-http.test.ts
 pnpm test tests/blimber-mcp-registry.test.ts
 pnpm test tests/blimber-mcp-streamable-lifecycle.test.ts
+pnpm test tests/blimber-mcp-create-ad-invoke.test.ts
 ```
 
 Smoke local (com `BLIMBER_MCP_API_KEY` e app rodando):

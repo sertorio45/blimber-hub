@@ -29,6 +29,10 @@ export {
   ADS_META_TOOL_PREFIX,
 } from './ads/meta'
 export {
+  resolveBlimberMcpToolName,
+  stripMcpConnectorNamespace,
+} from './tool-name'
+export {
   adsGoogleStatus,
   ADS_GOOGLE_TOOL_DESCRIPTORS,
   invokeAdsGoogleTool,

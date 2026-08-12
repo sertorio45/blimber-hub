@@ -67,9 +67,26 @@ async function main() {
   const list = await rpc(2, 'tools/list')
   const tools = list.body?.result?.tools || []
   console.log('tools/list', list.status, 'count', tools.length)
-  const want = ['searchTenants', 'listBlimberTools', 'marketing_list_posts', 'meta_list_campaigns', 'ads_google_status']
+  const want = [
+    'searchTenants',
+    'listBlimberTools',
+    'meta_list_campaigns',
+    'meta_create_ad',
+    'meta_create_campaign',
+    'meta_create_adset',
+    'marketing_list_posts',
+    'ads_google_status',
+  ]
   for (const w of want)
     console.log(w, tools.some((t: { name: string }) => t.name === w))
+
+  const namesOrdered = tools.map((t: { name: string }) => t.name)
+  const createAdIdx = namesOrdered.indexOf('meta_create_ad')
+  const marketingIdx = namesOrdered.findIndex((n: string) => n.startsWith('marketing_'))
+  if (createAdIdx < 0 || marketingIdx < 0 || createAdIdx > marketingIdx) {
+    console.error('meta_create_ad should be listed before marketing_* tools', { createAdIdx, marketingIdx })
+    process.exitCode = 1
+  }
 
   if (tools.length !== names.length) {
     console.error('count mismatch', tools.length, names.length)
