@@ -275,11 +275,29 @@ export function useMarketingSocial() {
   async function uploadAsset(
     file: File,
     purpose: MediaAssetPurpose = 'reference',
-    options?: { category?: string | null },
+    options?: { category?: string | null, format?: 'square' | 'portrait' | 'landscape' | 'story' | 'auto' },
   ) {
     if (!tenantId.value)
       throw new Error('Selecione uma empresa')
 
+    const isImage = file.type.startsWith('image/')
+
+    if (isImage) {
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('format', options?.format || 'auto')
+      formData.append('purpose', purpose)
+      if (options?.category)
+        formData.append('category', options.category)
+
+      const response = await $fetch<{ data: MediaAsset, meta: Record<string, unknown> }>(
+        `/api/marketing/social/upload-asset?tenant_id=${tenantId.value}`,
+        { method: 'POST', body: formData },
+      )
+      return response.data
+    }
+
+    // Fallback for non-image files (videos, docs): direct upload
     const extension = file.name.includes('.') ? file.name.split('.').pop() : 'bin'
     const objectPath = `${tenantId.value}/${crypto.randomUUID()}/original.${extension}`
     const { error: uploadError } = await supabase.storage
