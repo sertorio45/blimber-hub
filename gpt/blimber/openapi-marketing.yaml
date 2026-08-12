@@ -413,7 +413,7 @@ paths:
       description: >
         Soft-delete de 1 social_post (deleted_at). dryRun default true
         (preview id/title/campaignId). Exige confirm + confirmTenantId.
-        Isolado por tenant. Sem massa e sem exclusão remota nas redes.
+        Isolado por tenant. Query params fallback se proxy remover body DELETE.
       parameters:
         - name: postId
           in: path

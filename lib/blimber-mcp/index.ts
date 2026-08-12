@@ -9,6 +9,7 @@ export {
   BlimberMcpToolError,
   formatBlimberMcpError,
   formatBlimberMcpToolError,
+  mapSupabaseRpcError,
 } from './errors'
 export {
   resolveBlimberMcpApiSecret,

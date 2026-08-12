@@ -8,7 +8,7 @@ import {
   resolveDryRun,
 } from './confirm'
 import { resolveMcpActorUserId } from './auth'
-import { BlimberMcpError } from './errors'
+import { BlimberMcpError, mapSupabaseRpcError } from './errors'
 import type { BlimberMcpToolContext } from './types'
 import {
   MARKETING_BRAND_URL,
@@ -844,21 +844,27 @@ export async function marketingDeletePost(
   }
 
   const actorUserId = resolveOptionalActorUserId(ctx, input.actorUserId)
-  const rpc = ctx.client.rpc
 
-  if (typeof rpc === 'function') {
-    const { data: ok, error: rpcError } = await rpc('marketing_delete_social_post', {
-      p_tenant_id: input.tenantId,
-      p_post_id: input.postId,
-      p_deleted_by: actorUserId,
-      p_mode: 'system_only',
-      p_reason: 'gpt_marketing_delete_post',
-      p_remote_status: 'not_applicable',
-    })
-    if (rpcError)
-      throw new BlimberMcpError('DB_ERROR', rpcError.message || 'Falha ao excluir publicação', 400)
-    if (ok === false) {
-      throw new BlimberMcpError('NOT_FOUND', 'Publicação não encontrada', 404)
+  if (typeof ctx.client.rpc === 'function') {
+    try {
+      const { data: ok, error: rpcError } = await ctx.client.rpc('marketing_delete_social_post', {
+        p_tenant_id: input.tenantId,
+        p_post_id: input.postId,
+        p_deleted_by: actorUserId,
+        p_mode: 'system_only',
+        p_reason: 'gpt_marketing_delete_post',
+        p_remote_status: 'not_applicable',
+      })
+      if (rpcError)
+        throw mapSupabaseRpcError(rpcError, 'Falha ao excluir publicação')
+      if (ok === false) {
+        throw new BlimberMcpError('NOT_FOUND', 'Publicação não encontrada', 404)
+      }
+    }
+    catch (error) {
+      if (error instanceof BlimberMcpError)
+        throw error
+      throw mapSupabaseRpcError(error, 'Falha ao excluir publicação')
     }
   }
   else {

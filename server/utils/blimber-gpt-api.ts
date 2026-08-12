@@ -1,5 +1,6 @@
 import type { H3Event } from 'h3'
 import process from 'node:process'
+import { readBody } from 'h3'
 import { serverSupabaseServiceRole } from '#supabase/server'
 import {
   formatBlimberMcpError,
@@ -16,6 +17,41 @@ import {
 } from '~/server/utils/meta-gpt-api'
 
 export { optionalBool, optionalInt, optionalString, queryRecord }
+
+/**
+ * Reads JSON body for GPT mutations. Merges query params as fallback for
+ * DELETE/PUT when proxies or clients strip the body (ChatGPT Actions).
+ */
+export async function readGptMutationBody(event: H3Event): Promise<Record<string, unknown>> {
+  const query = queryRecord(event)
+  let body: Record<string, unknown> = {}
+
+  try {
+    const raw = await readBody(event)
+    if (raw && typeof raw === 'object' && !Array.isArray(raw))
+      body = raw as Record<string, unknown>
+  }
+  catch {
+    // Empty or unsupported body — rely on query fallback below.
+  }
+
+  return { ...query, ...body }
+}
+
+/** Normalizes deletePost DELETE payload (body + optional query fallback). */
+export function buildMarketingDeletePostArgs(
+  postId: string | undefined,
+  payload: Record<string, unknown>,
+): Record<string, unknown> {
+  return {
+    tenantId: optionalString(payload.tenantId),
+    postId,
+    actorUserId: optionalString(payload.actorUserId),
+    confirmTenantId: optionalString(payload.confirmTenantId),
+    confirm: payload.confirm === true ? true : payload.confirm,
+    dryRun: optionalBool(payload.dryRun),
+  }
+}
 
 /**
  * Authenticate + invoke a Marketing tool, mapping errors to HTTP status.

@@ -19,6 +19,45 @@ export class BlimberMcpError extends Error {
 /** @deprecated Prefer BlimberMcpError — alias kept for newer call sites. */
 export const BlimberMcpToolError = BlimberMcpError
 
+function isPostgrestLikeError(error: unknown): error is {
+  code?: string
+  message?: string
+  details?: string
+  hint?: string
+} {
+  return Boolean(
+    error
+    && typeof error === 'object'
+    && ('code' in error || 'details' in error)
+    && 'message' in error,
+  )
+}
+
+/** Maps Supabase PostgREST / RPC failures to structured MCP errors. */
+export function mapSupabaseRpcError(
+  error: unknown,
+  fallbackMessage = 'Falha na operação de banco',
+): BlimberMcpError {
+  if (error instanceof BlimberMcpError)
+    return error
+
+  if (isPostgrestLikeError(error)) {
+    const message = error.message || fallbackMessage
+    const statusCode = error.code === 'PGRST116' ? 404 : 400
+    return new BlimberMcpError('DB_ERROR', message, statusCode, {
+      code: error.code,
+      details: error.details,
+      hint: error.hint,
+    })
+  }
+
+  if (error instanceof Error) {
+    return new BlimberMcpError('DB_ERROR', error.message || fallbackMessage, 400)
+  }
+
+  return new BlimberMcpError('DB_ERROR', fallbackMessage, 400)
+}
+
 export function formatBlimberMcpError(error: unknown) {
   if (error instanceof BlimberMcpError) {
     return {
@@ -41,6 +80,19 @@ export function formatBlimberMcpError(error: unknown) {
         message: 'Input inválido',
         statusCode: 400,
         details: typeof zodError.flatten === 'function' ? zodError.flatten() : error,
+      },
+    }
+  }
+
+  if (isPostgrestLikeError(error)) {
+    const mapped = mapSupabaseRpcError(error)
+    return {
+      ok: false as const,
+      error: {
+        code: mapped.code,
+        message: mapped.message,
+        statusCode: mapped.statusCode,
+        details: mapped.details,
       },
     }
   }
