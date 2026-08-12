@@ -1,0 +1,517 @@
+openapi: 3.0.3
+info:
+  title: Blimber Marketing API
+  description: >
+    Ação 1 (Marketing + platform + brand). Auth Bearer BLIMBER_MCP_API_KEY.
+    Ads pagos: Ação 2 (openapi-ads.yaml, host ads.blimber.com.br). Não importe
+    este índice openapi.yaml nem gpt/blimber-meta no mesmo GPT.
+  version: 0.4.0
+  contact:
+    name: Blimber Hub
+servers:
+  - url: https://app.blimber.com.br
+    description: Produção Blimber Hub (Ação Marketing)
+security:
+  - BearerAuth: []
+paths:
+  /api/gpt/tenants:
+    get:
+      operationId: searchTenants
+      summary: Buscar cliente (tenant) pelo nome
+      description: >
+        Busca tenant por nome/slug. Use quando faltar tenantId UUID. Vários
+        matches → confirme qual. Retorna id, name, slug — sem tokens.
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 2
+          description: Trecho do nome ou slug do cliente.
+        - name: name
+          in: query
+          required: false
+          schema:
+            type: string
+            minLength: 2
+          description: Alias de q. Prefira q.
+        - name: organizationId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+          description: Opcional. Limita ao portfólio da organização.
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+          description: Máximo de resultados (1–50).
+      responses:
+        "200":
+          description: Lista de tenants
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TenantSearchResponse"
+        "400":
+          description: q/name inválido
+        "401":
+          description: Não autorizado
+        "503":
+          description: BLIMBER_MCP_API_KEY ausente
+
+  /api/gpt/tools:
+    get:
+      operationId: listBlimberTools
+      summary: Catálogo unificado de tools
+      description: >
+        Lista tools por domínio (platform, marketing, ads.meta). Sem secrets.
+        Ops Meta (list/create/status/bulk) estão na Ação Ads (ads.blimber.com.br).
+      responses:
+        "200":
+          description: Catálogo
+        "401":
+          description: Não autorizado
+
+  /api/gpt/marketing/accounts:
+    get:
+      operationId: listSocialAccounts
+      summary: Listar contas sociais
+      description: Contas sociais ativas do tenant (para accountId em createPost).
+      parameters:
+        - name: tenantId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: UUID do tenant (empresa). Nunca misture tenants.
+      responses:
+        "200":
+          description: Contas sociais
+        "401":
+          description: Não autorizado
+
+  /api/gpt/marketing/assets:
+    get:
+      operationId: listMediaAssets
+      summary: Listar biblioteca de mídia
+      description: >
+        Lista media_assets do tenant (ids para referência). Sem upload binário —
+        upload no Hub.
+      parameters:
+        - name: tenantId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: UUID do tenant (empresa). Nunca misture tenants.
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+          description: Limite de itens.
+        - name: search
+          in: query
+          schema:
+            type: string
+          description: Busca por nome.
+        - name: purpose
+          in: query
+          schema:
+            type: string
+            enum: [reference, publication]
+          description: Filtro de purpose.
+      responses:
+        "200":
+          description: Assets
+        "401":
+          description: Não autorizado
+
+  /api/gpt/marketing/brand-context:
+    get:
+      operationId: getBrandContext
+      summary: Brand Context do tenant
+      description: Tom, CTAs, restrições e identidade do Brand Center.
+      parameters:
+        - name: tenantId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: UUID do tenant (empresa). Nunca misture tenants.
+      responses:
+        "200":
+          description: BrandContext
+        "401":
+          description: Não autorizado
+
+  /api/gpt/marketing/posts:
+    get:
+      operationId: listPosts
+      summary: Listar posts editoriais
+      description: Lista social_posts do tenant (rascunhos, agenda, status).
+      parameters:
+        - name: tenantId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: UUID do tenant (empresa). Nunca misture tenants.
+        - name: page
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+          description: Página.
+        - name: pageSize
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+          description: Tamanho da página.
+        - name: status
+          in: query
+          schema:
+            type: string
+          description: Filtro de status do post.
+        - name: campaignId
+          in: query
+          schema:
+            type: string
+            format: uuid
+          description: Filtrar por campanha editorial.
+        - name: search
+          in: query
+          schema:
+            type: string
+          description: Busca no título.
+      responses:
+        "200":
+          description: Posts + pagination
+        "401":
+          description: Não autorizado
+    post:
+      operationId: createPost
+      summary: Criar post editorial (draft)
+      description: >
+        Cria rascunho em social_posts. dryRun default true. Exige confirm=true e
+        confirmTenantId=tenantId. Actor: actorUserId ou BLIMBER_MCP_ACTOR_USER_ID.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tenantId, title, confirmTenantId, confirm]
+              properties:
+                tenantId:
+                  type: string
+                  format: uuid
+                title:
+                  type: string
+                  minLength: 2
+                  maxLength: 180
+                content:
+                  type: string
+                campaignId:
+                  type: string
+                  format: uuid
+                hashtags:
+                  type: array
+                  items:
+                    type: string
+                accountId:
+                  type: string
+                  format: uuid
+                platform:
+                  type: string
+                  enum: [facebook, instagram, linkedin]
+                actorUserId:
+                  type: string
+                  format: uuid
+                confirmTenantId:
+                  type: string
+                  format: uuid
+                confirm:
+                  type: boolean
+                  enum: [true]
+                dryRun:
+                  type: boolean
+                  default: true
+      responses:
+        "200":
+          description: Preview ou post criado
+        "401":
+          description: Não autorizado
+
+  /api/gpt/marketing/posts/{postId}:
+    get:
+      operationId: getPost
+      summary: Detalhe do post
+      description: Detalhe de um post editorial por postId.
+      parameters:
+        - name: tenantId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: UUID do tenant (empresa). Nunca misture tenants.
+        - name: postId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: ID do post.
+      responses:
+        "200":
+          description: Post
+        "401":
+          description: Não autorizado
+    put:
+      operationId: updatePost
+      summary: Atualizar post draft
+      description: >
+        Atualiza campos de post draft. dryRun default true. Exige confirm +
+        confirmTenantId.
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: ID do post.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tenantId, confirmTenantId, confirm]
+              properties:
+                tenantId:
+                  type: string
+                  format: uuid
+                title:
+                  type: string
+                content:
+                  type: string
+                campaignId:
+                  type: string
+                  format: uuid
+                confirmTenantId:
+                  type: string
+                  format: uuid
+                confirm:
+                  type: boolean
+                  enum: [true]
+                dryRun:
+                  type: boolean
+                  default: true
+      responses:
+        "200":
+          description: Preview ou post atualizado
+        "401":
+          description: Não autorizado
+
+  /api/gpt/marketing/campaigns:
+    get:
+      operationId: listEditorialCampaigns
+      summary: Listar campanhas editoriais
+      description: >
+        Lista social_campaigns (conteúdo mensal). NÃO são campanhas Meta Ads.
+      parameters:
+        - name: tenantId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: UUID do tenant (empresa). Nunca misture tenants.
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [draft, active, paused, completed, cancelled, all]
+          description: Filtro de status.
+        - name: search
+          in: query
+          schema:
+            type: string
+          description: Busca no nome.
+      responses:
+        "200":
+          description: Campanhas editoriais
+        "401":
+          description: Não autorizado
+    post:
+      operationId: createEditorialCampaign
+      summary: Criar campanha editorial
+      description: >
+        Cria social_campaigns. dryRun default true. Ads pagos: Ação Ads
+        (openapi-ads.yaml — createCampaign, etc.).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tenantId, name, confirmTenantId, confirm]
+              properties:
+                tenantId:
+                  type: string
+                  format: uuid
+                name:
+                  type: string
+                  minLength: 1
+                  maxLength: 180
+                objective:
+                  type: string
+                status:
+                  type: string
+                  enum: [draft, active, paused, completed, cancelled]
+                briefingSummary:
+                  type: string
+                actorUserId:
+                  type: string
+                  format: uuid
+                confirmTenantId:
+                  type: string
+                  format: uuid
+                confirm:
+                  type: boolean
+                  enum: [true]
+                dryRun:
+                  type: boolean
+                  default: true
+      responses:
+        "200":
+          description: Preview ou campanha criada
+        "401":
+          description: Não autorizado
+
+  /api/gpt/marketing/campaigns/{campaignId}:
+    get:
+      operationId: getEditorialCampaign
+      summary: Detalhe campanha editorial
+      description: Detalhe + posts vinculados da campanha editorial.
+      parameters:
+        - name: tenantId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: UUID do tenant (empresa). Nunca misture tenants.
+        - name: campaignId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: ID da campanha editorial.
+      responses:
+        "200":
+          description: Campanha
+        "401":
+          description: Não autorizado
+    put:
+      operationId: updateEditorialCampaign
+      summary: Atualizar campanha editorial
+      description: Atualiza nome/status/briefing. dryRun default true + confirm.
+      parameters:
+        - name: campaignId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: ID da campanha.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tenantId, confirmTenantId, confirm]
+              properties:
+                tenantId:
+                  type: string
+                  format: uuid
+                name:
+                  type: string
+                status:
+                  type: string
+                  enum: [draft, active, paused, completed, cancelled]
+                briefingSummary:
+                  type: string
+                confirmTenantId:
+                  type: string
+                  format: uuid
+                confirm:
+                  type: boolean
+                  enum: [true]
+                dryRun:
+                  type: boolean
+                  default: true
+      responses:
+        "200":
+          description: Preview ou campanha atualizada
+        "401":
+          description: Não autorizado
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: API Key
+      description: BLIMBER_MCP_API_KEY no GPT (Authentication → API Key → Bearer).
+  schemas:
+    TenantSearchResponse:
+      type: object
+      required: [ok, query, tenants]
+      properties:
+        ok:
+          type: boolean
+          example: true
+        query:
+          type: string
+          description: Texto de busca normalizado usado na consulta.
+        organizationId:
+          type: string
+          format: uuid
+          description: Presente quando a busca foi limitada a uma organização.
+        tenants:
+          type: array
+          items:
+            type: object
+            required: [id, name, slug]
+            properties:
+              id:
+                type: string
+                format: uuid
+                description: UUID do tenant — use como tenantId nas outras ações.
+              name:
+                type: string
+                description: Nome do cliente/empresa.
+              slug:
+                type: string
+                description: Slug público do tenant.

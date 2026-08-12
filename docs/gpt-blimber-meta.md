@@ -3,8 +3,8 @@
 Experiência **primária**: GPT personalizado + **Ações** (Actions / OpenAPI) + **Habilidade** (Skill) OpenAI.  
 MCP stdio (Cursor / Claude Desktop) é **opcional** — ver [`mcp-blimber-meta.md`](./mcp-blimber-meta.md).
 
-> **Hub unificado (Marketing + Meta Ads):** [`mcp-blimber-platform.md`](./mcp-blimber-platform.md) e pack `gpt/blimber/` — **uma Ação** (`gpt/blimber/openapi.yaml` já inclui `/api/gpt/meta/*`).  
-> Este pack `gpt/blimber-meta/` é um **GPT separado** só de Ads. **Não** importe os dois OpenAPI no mesmo GPT: o ChatGPT recusa *«domínios duplicados — app.blimber.com.br»*.
+> **Hub unificado (Marketing + Meta Ads):** [`mcp-blimber-platform.md`](./mcp-blimber-platform.md) e pack `gpt/blimber/` — **duas Ações** (`openapi-marketing.yaml` + `openapi-ads.yaml`, hosts `app.*` e `ads.*`). Setup: [`gpt-blimber-ACTIONS.md`](./gpt-blimber-ACTIONS.md).  
+> Este pack `gpt/blimber-meta/` é um **GPT separado** só de Ads (standby, host `app.blimber.com.br`). **Não** importe no GPT unificado: conflito com a Ação Marketing.
 
 > Plano: [`gpt-blimber-UNIFIED-PLAN.md`](./gpt-blimber-UNIFIED-PLAN.md) · marketing [`gpt-blimber-MARKETING.md`](./gpt-blimber-MARKETING.md)
 

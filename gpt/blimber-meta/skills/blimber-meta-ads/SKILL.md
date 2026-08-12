@@ -41,7 +41,7 @@ Uso principal: **GPT personalizado + Ações** no ChatGPT. MCP stdio (Cursor/Cla
 
 1. `tenantId` (UUID) — **obrigatório** em toda Ação Meta. Se o usuário der só o nome, resolva com `searchTenants` antes.
 2. Integração Meta já OAuth no Hub para esse tenant
-3. Ações importadas de `gpt/blimber-meta/openapi.yaml` (UI: **Configurar** → **Ações** → **Criar nova ação**). Este pack = **GPT só Ads**. Não importe `gpt/blimber/openapi.yaml` no mesmo GPT (domínio `app.blimber.com.br` duplicado). GPT unificado (Marketing + Meta) usa só `gpt/blimber/openapi.yaml`.
+3. Ações importadas de `gpt/blimber-meta/openapi.yaml` (UI: **Configurar** → **Ações** → **Criar nova ação**). Este pack = **GPT só Ads** (host `app.blimber.com.br`). Não importe no GPT unificado (domínio `app.*` duplicado com Marketing). GPT unificado = `openapi-marketing.yaml` + `openapi-ads.yaml` (hosts `app.*` e `ads.*`).
 4. Auth Bearer = `BLIMBER_MCP_API_KEY` em **Autenticação** → **Chave de API** → **Bearer**
 5. Para **createAd** / edits de creative/media: `write_readiness.has_page_token` + `page_id`
 

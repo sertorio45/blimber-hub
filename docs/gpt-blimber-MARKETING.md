@@ -3,9 +3,9 @@
 Como usar as tools de **Marketing** do hub unificado (`gpt/blimber/`).
 
 > **Não é Meta Ads.** Campanhas aqui são `social_campaigns` (editorial).  
-> Ads pagos: no GPT unificado use as operations `/api/gpt/meta/*` do **mesmo** `gpt/blimber/openapi.yaml` (uma Ação).  
-> Pack [`gpt/blimber-meta`](../gpt/blimber-meta/) = GPT **separado** só de Ads — ver [gpt-blimber-meta.md](./gpt-blimber-meta.md).  
-> Não importe os dois YAMLs no mesmo GPT (erro de domínio duplicado).
+> Ads pagos: Ação Ads do mesmo GPT (`gpt/blimber/openapi-ads.yaml`, host `ads.blimber.com.br`) — set completo (list/create/status/bulk/budget/copy).  
+> Pack [`gpt/blimber-meta`](../gpt/blimber-meta/) = GPT **separado** só de Ads (standby) — ver [gpt-blimber-meta.md](./gpt-blimber-meta.md).  
+> Não importe `gpt/blimber-meta/openapi.yaml` no GPT unificado (host `app.*` duplicado com Marketing). Setup: [gpt-blimber-ACTIONS.md](./gpt-blimber-ACTIONS.md).
 
 ## Pré-requisitos
 

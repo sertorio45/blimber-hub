@@ -4,9 +4,14 @@ description: >-
   Gestão e insights de Meta Ads no Blimber Hub (campanhas, adsets, ads,
   insights, status, create, edits e bulk delete com preview). Uso principal =
   ChatGPT GPT personalizado + Ações em português (Brasil) — pack Ads em
-  gpt/blimber-meta (GPT separado). Hub unificado: gpt/blimber/openapi.yaml
-  (uma Ação; não importe os dois no mesmo GPT). Em Cursor, use HTTP
+  gpt/blimber-meta (GPT separado, standby). Hub unificado: duas Ações
+  (openapi-marketing.yaml + openapi-ads.yaml). Em Cursor, use HTTP
   /api/gpt/meta/* ou MCP stdio opcional.
+  ChatGPT GPT personalizado + Ações em português (Brasil) — pack Ads em
+  gpt/blimber-meta (GPT separado, host app.*). Hub unificado: 2 Ações
+  (openapi-marketing.yaml em app.* + openapi-ads.yaml em ads.*).
+  Não importe o pack meta no GPT unificado (domínio duplicado).
+  Em Cursor, use HTTP /api/gpt/meta/* ou MCP stdio opcional.
   Sempre via tools — nunca SQL direto. Resolva tenantId por nome
   (searchTenants) se necessário; tools Meta ainda exigem tenantId.
 ---
@@ -15,7 +20,7 @@ description: >-
 
 > **Primário (PT-BR):** ChatGPT GPT personalizado + Ações + Habilidade em `gpt/blimber-meta/`.  
 > Docs: `docs/gpt-blimber-meta.md` e `docs/gpt-blimber-meta-TUTORIAL.md`  
-> **Hub unificado (Marketing + Meta, 1 Ação):** `gpt/blimber/openapi.yaml` — ver `docs/gpt-blimber-UNIFIED-PLAN.md`. Não importe este pack no mesmo GPT.  
+> **Hub unificado (Marketing + Meta, 2 Ações):** `openapi-marketing.yaml` + `openapi-ads.yaml` — ver `docs/gpt-blimber-ACTIONS.md`. Não importe este pack no GPT unificado.  
 > Este arquivo (Cursor) é **legado / espelho** — não é a entrega principal ao usuário.
 > Mantenha alinhado ao pack GPT; edite primeiro `gpt/blimber-meta/skills/blimber-meta-ads/SKILL.md`.
 
@@ -32,7 +37,7 @@ description: >-
 
 ## Como operar
 
-1. **Produção (usuário):** GPT no ChatGPT — **Configurar** → **Ações** → importar `gpt/blimber-meta/openapi.yaml` (GPT **só Ads**). Não importe junto com `gpt/blimber/openapi.yaml` no mesmo GPT (domínio duplicado). Hub unificado = só `gpt/blimber/openapi.yaml`.
+1. **Produção (usuário):** GPT no ChatGPT — **Configurar** → **Ações** → importar `gpt/blimber-meta/openapi.yaml` (GPT **só Ads**). Não importe no GPT unificado (domínio `app.*` duplicado com Marketing). Hub unificado = `openapi-marketing.yaml` + `openapi-ads.yaml`.
 2. **Neste repo (Cursor):** `GET/POST /api/gpt/meta/*` com Bearer `BLIMBER_MCP_API_KEY`, ou MCP stdio `pnpm mcp:meta` (opcional).
 3. Se só houver o **nome** do cliente: `GET /api/gpt/meta/tenants?q=Nome` → pegar `id` → usar como `tenantId`. Vários matches → confirmar. **Nunca** misture tenants.
 4. Tools Meta **sempre** exigem `tenantId` (UUID). Isolamento por tenant mantido.

@@ -1,17 +1,17 @@
 ---
 name: blimber-platform
 description: >-
-  Plataforma Blimber unificada no ChatGPT (Marketing editorial + Meta Ads
-  write + platform). Uma Ação só: gpt/blimber/openapi.yaml. Posts,
-  social_campaigns, brand, biblioteca e /api/gpt/meta/*. Pack
-  gpt/blimber-meta é GPT separado (domínio duplicado se importar os dois).
-  Sem SQL direto.
+  Plataforma Blimber no ChatGPT (Marketing editorial + Meta Ads + platform).
+  Duas Ações no mesmo GPT: openapi-marketing.yaml (app.blimber.com.br) e
+  openapi-ads.yaml (ads.blimber.com.br). Posts, social_campaigns, brand,
+  biblioteca e Meta completo (list/create/status/bulk/budget). Sem SQL direto.
 ---
 
 # Blimber Platform (MCP / GPT unificado)
 
-> Pack primário: `gpt/blimber/` — **uma Ação** (`openapi.yaml`).  
-> Pack `gpt/blimber-meta/` = **GPT separado** só de Ads (não importe no mesmo GPT).  
+> Pack primário: `gpt/blimber/` — **duas Ações** no mesmo GPT.  
+> Setup: `docs/gpt-blimber-ACTIONS.md`  
+> Pack `gpt/blimber-meta/` = **GPT separado** só de Ads (standby, host `app.*`).  
 > Docs: `docs/mcp-blimber-platform.md`
 
 ## Quando usar
@@ -19,39 +19,37 @@ description: >-
 - Conteúdo mensal / posts / calendário editorial
 - Campanhas `social_campaigns` (não pagas)
 - Brand Context / biblioteca de mídia
-- Descobrir `tenantId` por nome
-- Meta Ads pagos (insights, status, create/edit/bulk) via `/api/gpt/meta/*`
+- Descobrir `tenantId` por nome (`searchTenants` na Ação Marketing)
+- Meta Ads pagos via Ação Ads (`/api/gpt/meta/*`, host `ads.blimber.com.br`)
 
 ## Como operar
 
-1. Importar **apenas** `gpt/blimber/openapi.yaml` nas Ações do GPT.
-2. Bearer `BLIMBER_MCP_API_KEY`.
-3. Sempre `searchTenants` se faltar UUID.
-4. Mutações: dryRun → confirmar → `dryRun: false` + `confirm` + `confirmTenantId`.
-5. Respostas em **PT-BR**.
-6. **Não** adicione uma segunda Ação com `gpt/blimber-meta/openapi.yaml` (mesmo host).
+1. Importar `openapi-marketing.yaml` **e** `openapi-ads.yaml` (duas Ações).
+2. **Não** importe `openapi.yaml` (índice) nem `gpt/blimber-meta/openapi.yaml` (host `app.*` duplicado).
+3. Bearer `BLIMBER_MCP_API_KEY` nas duas Ações.
+4. Sempre `searchTenants` (Marketing) se faltar UUID.
+5. Mutações: dryRun → confirmar → `dryRun: false` + `confirm` + `confirmTenantId`.
+6. Respostas em **PT-BR**.
 
-## Tools (desta Ação)
+## Tools — Ação Marketing (13, host app.*)
 
 | Tool / operationId | Uso |
 |--------------------|-----|
 | `searchTenants` | nome → tenantId |
 | `listBlimberTools` | catálogo unificado |
-| `listPosts` / `createPost` / `updatePost` | conteúdo editorial |
-| `listEditorialCampaigns` / `createEditorialCampaign` | campanha mensal |
+| `listPosts` / `getPost` / `createPost` / `updatePost` | conteúdo editorial |
+| `listEditorialCampaigns` / `getEditorialCampaign` / `createEditorialCampaign` / `updateEditorialCampaign` | campanha mensal |
 | `getBrandContext` | Brand Center |
 | `listMediaAssets` / `listSocialAccounts` | biblioteca / contas |
-| `listIntegrations` / `listCampaigns` / `createCampaign` | Meta Ads |
-| `listAdsets` / `createAdset` / `listAds` / `createAd` | Meta Ads |
-| `getInsights` / `updateCampaignStatus` | insights / pause-activate |
-| `previewBulkDelete` / `executeBulkDelete` | exclusão em massa (IDs) |
-| `listAdsMetaTools` / `listMetaTools` | catálogo Meta |
-| `adsGoogleStatus` | stub Google |
 
-## Fora de escopo
+## Tools — Ação Ads (21, host ads.*)
 
-- CRM writes
-- Google Ads (além do stub)
-- Upload binário / geração de imagem por IA
-- Apagar Meta Ads por nome
-- Duas Ações no mesmo GPT (domínio `app.blimber.com.br` duplicado)
+| Tool / operationId | Uso |
+|--------------------|-----|
+| `listMetaTools` / `listIntegrations` / `listAdAccounts` | catálogo / status / contas |
+| `listCampaigns` / `getCampaign` / `createCampaign` / `updateCampaignStatus` | campanhas Meta |
+| `listAdsets` / `createAdset` / `updateAdsetStatus` / `updateAdsetBudget` / `updateAdsetTargeting` | adsets |
+| `listAds` / `createAd` / `updateAdStatus` / `updateAdCreativeCopy` / `updateAdMedia` | anúncios |
+| `getInsights` / `previewBulkDelete` / `executeBulkDelete` / `invokeMetaTool` | insights / bulk / invoke |
+
+Keep vs drop: `gpt/blimber/README.md`.

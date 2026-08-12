@@ -32,7 +32,7 @@ Alternativa aceita: `MARKETING_WORKER_SECRET` (mesmo valor no header Bearer).
 3. **Instruções**: cole o corpo de `instructions.md`
 4. **Ações** → **Criar nova ação** → cole / importe `openapi.yaml`
    - O schema já usa um único `servers.url`: `https://app.blimber.com.br` (não use placeholders)
-   - Este pack é um **GPT só de Ads**. **Não** importe também `gpt/blimber/openapi.yaml` neste GPT (mesmo host → *domínios duplicados*). Para Marketing + Meta no mesmo assistente, use **só** `gpt/blimber/openapi.yaml` em outro GPT.
+   - Este pack é um **GPT só de Ads** (standby). **Não** importe no GPT unificado (host `app.*` → *domínios duplicados* com Marketing). Para Marketing + Meta no mesmo assistente: `openapi-marketing.yaml` + `openapi-ads.yaml` (ver `docs/gpt-blimber-ACTIONS.md`).
 5. **Autenticação**:
    - Tipo: **Chave de API** (API Key)
    - Auth Type: **Bearer**

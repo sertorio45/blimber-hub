@@ -1,13 +1,14 @@
 ---
 name: blimber-hub
 description: >
-  Espelho do skill blimber-platform. Hub unificado Blimber (Marketing
-  editorial + Meta Ads). Uma Ação: gpt/blimber/openapi.yaml. Preferir
-  skills/blimber-platform/SKILL.md.
+  Espelho do skill blimber-platform. Hub Blimber (Marketing + Meta Ads).
+  Duas Ações: openapi-marketing.yaml (app.*) e openapi-ads.yaml (ads.*).
+  Preferir skills/blimber-platform/SKILL.md.
 ---
 
 # Blimber Hub
 
 Use [`../blimber-platform/SKILL.md`](../blimber-platform/SKILL.md) como fonte.
-Docs: `docs/mcp-blimber-platform.md`, `docs/gpt-blimber-MARKETING.md`.
-Não importe `gpt/blimber-meta/openapi.yaml` no mesmo GPT (domínio duplicado).
+Docs: `docs/mcp-blimber-platform.md`, `docs/gpt-blimber-ACTIONS.md`, `docs/gpt-blimber-MARKETING.md`.
+Não importe `gpt/blimber-meta/openapi.yaml` no mesmo GPT (domínio `app.*` duplicado com Marketing).
+Não importe `gpt/blimber/openapi.yaml` (índice, não é spec).

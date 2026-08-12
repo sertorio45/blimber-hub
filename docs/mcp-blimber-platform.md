@@ -41,22 +41,31 @@ lib/meta-ads/                # Graph write/read (reutilizado)
 
 Toda tool de domínio exige `tenantId`. Busca administrativa: `searchTenants` (também espelhada em `/api/gpt/meta/tenants` para o pack legado).
 
-### Custom GPT: uma Ação por GPT (domínio único)
+### Custom GPT: 2 Ações no mesmo GPT (hosts diferentes + ≤30 operations cada)
 
-O ChatGPT **não permite** duas Ações com o mesmo `servers.url`. Importar `gpt/blimber/openapi.yaml` **e** `gpt/blimber-meta/openapi.yaml` no **mesmo** GPT falha com:
+O ChatGPT **não permite** duas Ações com o mesmo `servers.url` e limita cada spec a **≤30 operations**.
 
-> Conjuntos de ações não podem ter domínios duplicados — app.blimber.com.br já existe em outra ação
+| Ação | Spec | Host | Ops |
+|------|------|------|-----|
+| Marketing | `gpt/blimber/openapi-marketing.yaml` | `https://app.blimber.com.br` | 13 |
+| Ads (Meta) | `gpt/blimber/openapi-ads.yaml` | `https://ads.blimber.com.br` | 21 |
+
+`ads.blimber.com.br` é **alias** do mesmo projeto Vercel (não outro app). Setup: [`gpt-blimber-ACTIONS.md`](./gpt-blimber-ACTIONS.md).
+
+**Não** importe `gpt/blimber/openapi.yaml` (índice). **Não** importe `gpt/blimber-meta/openapi.yaml` neste GPT (host `app.*` = duplicado com Marketing).
 
 | Abordagem | Quando | Como |
 |-----------|--------|------|
-| **Pack unificado** `gpt/blimber/openapi.yaml` | Marketing + Meta Ads no **mesmo** assistente | **Uma Ação só** — o YAML já inclui `/api/gpt/marketing/*` e `/api/gpt/meta/*` |
-| **Pack Meta** `gpt/blimber-meta/openapi.yaml` | GPT **separado** só de Ads | Outro GPT, não uma 2ª Ação no unificado |
+| **Pack unificado** `gpt/blimber/` | Marketing + Meta Ads no **mesmo** chat | **Duas Ações** — marketing.yaml + ads.yaml |
+| **Pack Meta** `gpt/blimber-meta/openapi.yaml` | GPT **separado** só de Ads (standby) | Outro GPT, host `app.blimber.com.br` |
 
-Ambos usam a **mesma** Bearer key (`BLIMBER_MCP_API_KEY`) e o **mesmo** host `https://app.blimber.com.br` — por isso não podem coexistir como duas Ações.
+Mesma Bearer key (`BLIMBER_MCP_API_KEY`). Backend `/api/gpt/*` **não perde rotas**.
+
+Keep vs drop: [`gpt/blimber/README.md`](../gpt/blimber/README.md).
 
 ## Roadmap
 
-1. **Fase 1 (esta):** fundação + Marketing editorial MVP + OpenAPI unificado (1 Ação)  
+1. **Fase 1 (esta):** fundação + Marketing editorial MVP + OpenAPI em 2 Ações (hosts app.* + ads.*)  
 2. **Fase 2:** Google Ads (OAuth + tools read)  
 3. **Fase 3:** CRM stubs → reads → writes com as mesmas confirmações  
 4. **Fase 4:** MCP stdio unificado opcional (`mcp/blimber`)
@@ -66,6 +75,7 @@ Ver [`mcp-blimber-platform-PLAN.md`](./mcp-blimber-platform-PLAN.md).
 ## Relacionados
 
 - Plano / ponte GPT Meta: [`gpt-blimber-UNIFIED-PLAN.md`](./gpt-blimber-UNIFIED-PLAN.md)
+- Setup 2 Ações + DNS alias: [`gpt-blimber-ACTIONS.md`](./gpt-blimber-ACTIONS.md)
 - Tutorial Marketing editorial: [`gpt-blimber-MARKETING.md`](./gpt-blimber-MARKETING.md)
 - Pack Meta Ads (GPT separado): [`gpt-blimber-meta.md`](./gpt-blimber-meta.md)
 - Tutorial Meta + erro de domínio duplicado: [`gpt-blimber-meta-TUTORIAL.md`](./gpt-blimber-meta-TUTORIAL.md)

@@ -1,7 +1,7 @@
 # Pack GPT — Blimber Meta Ads
 
-> **Plataforma unificada:** Marketing editorial + hub em `gpt/blimber/` e `docs/mcp-blimber-platform.md`.  
-> Este pack Meta **continua válido** — mesmas rotas `/api/gpt/meta/*` e `BLIMBER_MCP_API_KEY`.
+> **Plataforma unificada:** Marketing + Ads no mesmo GPT = `gpt/blimber/` (2 Ações, hosts `app.*` + `ads.*`). Ver `docs/gpt-blimber-ACTIONS.md`.  
+> Este pack Meta **continua válido** como GPT **Ads-only** (standby, host `app.blimber.com.br`). Não importe neste GPT unificado.
 
 Entrega **para ChatGPT** (Ações do GPT + Habilidade).  
 O plugin clássico ChatGPT (`ai-plugin.json`) está **descontinuado** — não use.
