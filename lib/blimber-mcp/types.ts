@@ -38,7 +38,10 @@ export interface BlimberMcpToolDescriptor {
 
 export interface BlimberMcpSupabaseLike {
   from: (table: string) => any
-  /** Optional Auth admin (service role) — used to verify actorUserId exists. */
+  /**
+   * Optional Auth admin. Execute must not depend on this — Nuxt/Vercel
+   * service clients often expose getUserById without a working fetch.
+   */
   auth?: {
     admin?: {
       getUserById: (id: string) => Promise<{

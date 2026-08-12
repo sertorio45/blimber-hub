@@ -2,8 +2,20 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   BlimberMcpError,
   marketingCreateCampaign,
+  marketingCreatePost,
   marketingListPosts,
 } from '../lib/blimber-mcp'
+
+const TENANT_ID = '11111111-1111-1111-1111-111111111111'
+const ACTOR_ID = '22222222-2222-2222-2222-222222222222'
+
+function insertResult(payload: Record<string, unknown>, id = 'camp-1') {
+  return {
+    select: () => ({
+      single: async () => ({ data: { id, ...payload }, error: null }),
+    }),
+  }
+}
 
 function createClient(opts: {
   tenantExists?: boolean
@@ -178,29 +190,122 @@ describe('blimber marketing tools (mocked)', () => {
     }
   })
 
-  it('create campaign execute with actor inserts', async () => {
-    const tenantId = '11111111-1111-1111-1111-111111111111'
-    const actorUserId = '22222222-2222-2222-2222-222222222222'
+  it('create campaign execute inserts via .from() without auth.admin', async () => {
     const previousActor = process.env.BLIMBER_MCP_ACTOR_USER_ID
     delete process.env.BLIMBER_MCP_ACTOR_USER_ID
+    const insert = vi.fn((payload: Record<string, unknown>) => insertResult(payload))
+    const client = {
+      from(table: string) {
+        expect(table).toBe('social_campaigns')
+        return { insert }
+      },
+    }
 
     try {
       const result = await marketingCreateCampaign(
-        { client: createClient({}) as any },
+        { client: client as any },
         {
-          tenantId,
+          tenantId: TENANT_ID,
           name: 'Farmaestética Agosto',
           confirm: true,
-          confirmTenantId: tenantId,
+          confirmTenantId: TENANT_ID,
           dryRun: false,
-          actorUserId,
+          actorUserId: ACTOR_ID,
         },
       )
+      expect(insert).toHaveBeenCalledTimes(1)
+      expect(insert.mock.calls[0][0]).toMatchObject({
+        tenant_id: TENANT_ID,
+        name: 'Farmaestética Agosto',
+        created_by: ACTOR_ID,
+        status: 'draft',
+      })
       expect(result).toMatchObject({
         dryRun: false,
         kind: 'editorial',
-        campaign: { name: 'Farmaestética Agosto' },
+        campaign: { name: 'Farmaestética Agosto', id: 'camp-1' },
       })
+    }
+    finally {
+      if (previousActor === undefined)
+        delete process.env.BLIMBER_MCP_ACTOR_USER_ID
+      else
+        process.env.BLIMBER_MCP_ACTOR_USER_ID = previousActor
+    }
+  })
+
+  it('create campaign execute skips broken auth.admin (fetch undefined) and still inserts', async () => {
+    const previousActor = process.env.BLIMBER_MCP_ACTOR_USER_ID
+    delete process.env.BLIMBER_MCP_ACTOR_USER_ID
+    const insert = vi.fn((payload: Record<string, unknown>) => insertResult(payload))
+    const getUserById = vi.fn(async () => {
+      throw new TypeError("Cannot read properties of undefined (reading 'fetch')")
+    })
+    const client = {
+      from: () => ({ insert }),
+      auth: { admin: { getUserById } },
+    }
+
+    try {
+      const result = await marketingCreateCampaign(
+        { client: client as any },
+        {
+          tenantId: TENANT_ID,
+          name: 'Farmaestética Agosto',
+          confirm: true,
+          confirmTenantId: TENANT_ID,
+          dryRun: false,
+          actorUserId: ACTOR_ID,
+        },
+      )
+      expect(getUserById).toHaveBeenCalledWith(ACTOR_ID)
+      expect(insert).toHaveBeenCalledTimes(1)
+      expect(insert.mock.calls[0][0]).toMatchObject({
+        tenant_id: TENANT_ID,
+        created_by: ACTOR_ID,
+      })
+      expect(result).toMatchObject({ dryRun: false, kind: 'editorial' })
+    }
+    finally {
+      if (previousActor === undefined)
+        delete process.env.BLIMBER_MCP_ACTOR_USER_ID
+      else
+        process.env.BLIMBER_MCP_ACTOR_USER_ID = previousActor
+    }
+  })
+
+  it('create campaign execute maps created_by FK violation to ACTOR_NOT_FOUND', async () => {
+    const previousActor = process.env.BLIMBER_MCP_ACTOR_USER_ID
+    delete process.env.BLIMBER_MCP_ACTOR_USER_ID
+    const client = {
+      from: () => ({
+        insert: () => ({
+          select: () => ({
+            single: async () => ({
+              data: null,
+              error: {
+                message: 'insert or update on table "social_campaigns" violates foreign key constraint "social_campaigns_created_by_fkey"',
+              },
+            }),
+          }),
+        }),
+      }),
+    }
+
+    try {
+      await expect(
+        marketingCreateCampaign(
+          { client: client as any },
+          {
+            tenantId: TENANT_ID,
+            name: 'Farmaestética Agosto',
+            confirm: true,
+            confirmTenantId: TENANT_ID,
+            dryRun: false,
+            actorUserId: ACTOR_ID,
+          },
+        ),
+      ).rejects.toMatchObject({ code: 'ACTOR_NOT_FOUND', statusCode: 400 })
     }
     finally {
       if (previousActor === undefined)
@@ -268,10 +373,8 @@ describe('blimber marketing tools (mocked)', () => {
   })
 
   it('create post dry-run works without actor and returns editorial kind', async () => {
-    const tenantId = '11111111-1111-1111-1111-111111111111'
     const previousActor = process.env.BLIMBER_MCP_ACTOR_USER_ID
     delete process.env.BLIMBER_MCP_ACTOR_USER_ID
-    const { marketingCreatePost } = await import('../lib/blimber-mcp')
 
     const chain: any = {
       select: () => chain,
@@ -288,15 +391,115 @@ describe('blimber marketing tools (mocked)', () => {
       const result = await marketingCreatePost(
         { client: { from: () => chain } as any },
         {
-          tenantId,
+          tenantId: TENANT_ID,
           title: 'Post GPT',
           content: 'Texto',
           confirm: true,
-          confirmTenantId: tenantId,
+          confirmTenantId: TENANT_ID,
           dryRun: true,
         },
       )
       expect(result).toMatchObject({ dryRun: true, kind: 'editorial', wouldMutate: true })
+    }
+    finally {
+      if (previousActor === undefined)
+        delete process.env.BLIMBER_MCP_ACTOR_USER_ID
+      else
+        process.env.BLIMBER_MCP_ACTOR_USER_ID = previousActor
+    }
+  })
+
+  it('create post execute inserts via .from() without auth.admin', async () => {
+    const previousActor = process.env.BLIMBER_MCP_ACTOR_USER_ID
+    delete process.env.BLIMBER_MCP_ACTOR_USER_ID
+    const insert = vi.fn((payload: Record<string, unknown>) => insertResult(payload, 'post-1'))
+    const chain: any = {
+      select: () => chain,
+      eq: () => chain,
+      is: () => chain,
+      lte: () => chain,
+      or: () => chain,
+      order: () => chain,
+      limit: () => chain,
+      maybeSingle: async () => ({ data: null, error: null }),
+      in: () => chain,
+      insert,
+    }
+
+    try {
+      const result = await marketingCreatePost(
+        { client: { from: () => chain } as any },
+        {
+          tenantId: TENANT_ID,
+          title: 'Post GPT',
+          content: 'Texto',
+          confirm: true,
+          confirmTenantId: TENANT_ID,
+          dryRun: false,
+          actorUserId: ACTOR_ID,
+        },
+      )
+      expect(insert).toHaveBeenCalledTimes(1)
+      expect(insert.mock.calls[0][0]).toMatchObject({
+        tenant_id: TENANT_ID,
+        title: 'Post GPT',
+        created_by: ACTOR_ID,
+      })
+      expect(result).toMatchObject({
+        dryRun: false,
+        kind: 'editorial',
+        post: { id: 'post-1', title: 'Post GPT' },
+      })
+    }
+    finally {
+      if (previousActor === undefined)
+        delete process.env.BLIMBER_MCP_ACTOR_USER_ID
+      else
+        process.env.BLIMBER_MCP_ACTOR_USER_ID = previousActor
+    }
+  })
+
+  it('create post execute skips broken auth.admin and still inserts', async () => {
+    const previousActor = process.env.BLIMBER_MCP_ACTOR_USER_ID
+    delete process.env.BLIMBER_MCP_ACTOR_USER_ID
+    const insert = vi.fn((payload: Record<string, unknown>) => insertResult(payload, 'post-1'))
+    const getUserById = vi.fn(async () => {
+      throw new TypeError("Cannot read properties of undefined (reading 'fetch')")
+    })
+    const chain: any = {
+      select: () => chain,
+      eq: () => chain,
+      is: () => chain,
+      lte: () => chain,
+      or: () => chain,
+      order: () => chain,
+      limit: () => chain,
+      maybeSingle: async () => ({ data: null, error: null }),
+      in: () => chain,
+      insert,
+    }
+
+    try {
+      const result = await marketingCreatePost(
+        {
+          client: {
+            from: () => chain,
+            auth: { admin: { getUserById } },
+          } as any,
+        },
+        {
+          tenantId: TENANT_ID,
+          title: 'Post GPT',
+          content: 'Texto',
+          confirm: true,
+          confirmTenantId: TENANT_ID,
+          dryRun: false,
+          actorUserId: ACTOR_ID,
+        },
+      )
+      expect(getUserById).toHaveBeenCalledWith(ACTOR_ID)
+      expect(insert).toHaveBeenCalledTimes(1)
+      expect(result).toMatchObject({ dryRun: false, kind: 'editorial' })
     }
     finally {
       if (previousActor === undefined)

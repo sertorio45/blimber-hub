@@ -7,6 +7,7 @@ import {
   type MarketingToolName,
 } from '~/lib/blimber-mcp'
 import { assertBlimberMcpApiKey } from '~/server/utils/blimber-gpt-auth'
+import { createBlimberServiceRoleClient } from '~/server/utils/blimber-service-client'
 import {
   optionalBool,
   optionalInt,
@@ -25,7 +26,7 @@ export async function runMarketingGptTool(
   args: Record<string, unknown>,
 ) {
   assertBlimberMcpApiKey(event)
-  const client = await serverSupabaseServiceRole(event)
+  const client = createBlimberServiceRoleClient() || await serverSupabaseServiceRole(event)
   const actorUserId = process.env.BLIMBER_MCP_ACTOR_USER_ID || undefined
 
   try {

@@ -48,6 +48,28 @@ function resolveOptionalActorUserId(
   return id
 }
 
+function isActorFkViolation(message: string): boolean {
+  return /created_by/i.test(message)
+}
+
+function throwWriteError(error: { message?: string } | null | undefined): never {
+  const message = error?.message || 'Falha ao gravar'
+  if (isActorFkViolation(message)) {
+    throw new BlimberMcpError(
+      'ACTOR_NOT_FOUND',
+      'actorUserId / BLIMBER_MCP_ACTOR_USER_ID não existe em auth.users.',
+      400,
+    )
+  }
+  throw new BlimberMcpError('DB_ERROR', message, 400)
+}
+
+/**
+ * Optional pre-check. Never call Auth Admin on a client without a working
+ * fetch (Nuxt `serverSupabaseServiceRole` on Vercel throws
+ * "Cannot read properties of undefined (reading 'fetch')").
+ * Skip when admin is missing/broken — `created_by` FK still enforces auth.users.
+ */
 async function assertActorUserExists(
   ctx: BlimberMcpToolContext,
   actorUserId: string,
@@ -56,13 +78,20 @@ async function assertActorUserExists(
   if (typeof getUserById !== 'function')
     return
 
-  const { data, error } = await getUserById(actorUserId)
-  if (error || !data?.user?.id) {
-    throw new BlimberMcpError(
-      'ACTOR_NOT_FOUND',
-      'actorUserId / BLIMBER_MCP_ACTOR_USER_ID não existe em auth.users.',
-      400,
-    )
+  try {
+    const { data, error } = await getUserById(actorUserId)
+    if (error || !data?.user?.id) {
+      throw new BlimberMcpError(
+        'ACTOR_NOT_FOUND',
+        'actorUserId / BLIMBER_MCP_ACTOR_USER_ID não existe em auth.users.',
+        400,
+      )
+    }
+  }
+  catch (error) {
+    if (error instanceof BlimberMcpError)
+      throw error
+    // Auth Admin unavailable (undefined fetch / non-service client) — skip.
   }
 }
 
@@ -579,7 +608,7 @@ export async function marketingCreatePost(
     .single()
 
   if (postError)
-    throw new BlimberMcpError('DB_ERROR', postError.message, 400)
+    throwWriteError(postError)
 
   try {
     if (input.accountId && input.platform) {
@@ -874,7 +903,7 @@ export async function marketingCreateCampaign(
     .single()
 
   if (error)
-    throw new BlimberMcpError('DB_ERROR', error.message, 400)
+    throwWriteError(error)
 
   return {
     dryRun: false as const,
