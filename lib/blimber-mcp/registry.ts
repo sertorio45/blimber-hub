@@ -78,7 +78,7 @@ export function listLegacyMetaToolDescriptors(): BlimberMcpToolDescriptor[] {
     description: META_TOOL_DESCRIPTIONS[name],
     status: 'ready' as const,
     httpPath: '/api/gpt/meta/*',
-    notes: 'Implementação em lib/meta-ads. Pack dedicado: gpt/blimber-meta.',
+    notes: 'Implementação em lib/meta-ads. ChatGPT: gpt/blimber/openapi-ads.yaml.',
   }))
 }
 

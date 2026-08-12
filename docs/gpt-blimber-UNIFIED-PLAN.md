@@ -21,7 +21,7 @@ Este arquivo resume a visão módulos **Marketing → Ads → CRM** para o hub G
 
 - Pack `gpt/blimber/` + rotas `/api/gpt/marketing/*` + `/api/gpt/tenants` + registry
 - OpenAPI em **2 Ações** no mesmo GPT: `openapi-marketing.yaml` (`app.blimber.com.br`) + `openapi-ads.yaml` (`ads.blimber.com.br`). Índice `openapi.yaml` **não** é importável. Setup: [`gpt-blimber-ACTIONS.md`](./gpt-blimber-ACTIONS.md)
-- Pack `gpt/blimber-meta/` permanece **standalone** (GPT Ads-only, host `app.*`). **Não** importe no GPT unificado (domínio duplicado com Marketing)
+- Pack standalone Ads-only **removido**. Ads no ChatGPT = `gpt/blimber/openapi-ads.yaml`
 - Keep vs drop: [`gpt/blimber/README.md`](../gpt/blimber/README.md)
 - Auth: `BLIMBER_MCP_API_KEY` + actor `BLIMBER_MCP_ACTOR_USER_ID` para creates editoriais
 - Backend Meta **não duplicado** — mesmas rotas `server/api/gpt/meta/*`
@@ -33,4 +33,4 @@ Este arquivo resume a visão módulos **Marketing → Ads → CRM** para o hub G
 3. Google Ads read
 4. CRM read → write com confirm
 
-Pack Meta: [`gpt-blimber-meta.md`](./gpt-blimber-meta.md).
+Ads (OpenAPI canônico): [`gpt/blimber/openapi-ads.yaml`](../gpt/blimber/openapi-ads.yaml). Doc: [`gpt-blimber-meta.md`](./gpt-blimber-meta.md).

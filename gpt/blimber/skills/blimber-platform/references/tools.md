@@ -2,7 +2,7 @@
 
 Duas Ações no mesmo GPT (hosts diferentes, cada uma ≤30 ops).
 Setup: `docs/gpt-blimber-ACTIONS.md`.
-Pack `gpt/blimber-meta` = GPT Ads-only (standby, host `app.*`).
+Ads no ChatGPT = `openapi-ads.yaml` (host `ads.*`). Pack standalone `gpt/blimber-meta/` removido.
 
 ## Ação Marketing — `openapi-marketing.yaml` (`app.blimber.com.br`)
 

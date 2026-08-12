@@ -21,8 +21,8 @@ Escrita mínima confiável e auditável: endurecer pause/activate de campanha e 
 | Helper compartilhado de status + ownership + dryRun + audit | `mutateOwnedObjectStatus` |
 | `write_readiness` em list integrations | `lib/meta-ads/integration.ts` |
 | Rotas GPT REST | `server/api/gpt/meta/adsets/[adsetId]/status.post.ts`, `.../ads/[adId]/status.post.ts` |
-| OpenAPI v1.2.0 | `gpt/blimber-meta/openapi.yaml` |
-| Instruções + Skill (fluxo mostrar → confirmar → mutar) | `gpt/blimber-meta/instructions.md`, skills |
+| OpenAPI v1.2.0 | hoje `gpt/blimber/openapi-ads.yaml` (pack standalone removido) |
+| Instruções + Skill (fluxo mostrar → confirmar → mutar) | `gpt/blimber/instructions.md`, `.agents/skills/blimber-meta-ads` |
 | Testes | `tests/meta-ads-tools.test.ts`, `tests/meta-write-guards.test.ts`, `tests/gpt-meta-openapi.test.ts` |
 
 ### Tools de status (ACTIVE \| PAUSED)

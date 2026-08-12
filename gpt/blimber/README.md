@@ -21,10 +21,9 @@ O ChatGPT aceita **no máximo 30 operations por Ação** e **recusa o mesmo host
    - Marketing: `openapi-marketing.yaml` → Bearer `BLIMBER_MCP_API_KEY`
    - Ads: `openapi-ads.yaml` → mesma Bearer key
 3. **Não** importe `openapi.yaml` (índice).
-4. **Não** importe `../blimber-meta/openapi.yaml` neste GPT (host `app.blimber.com.br` = duplicado com Marketing).
-5. Pack `gpt/blimber-meta` = **outro GPT** (só Ads, standby, host `app.*`).
-6. Env: `BLIMBER_MCP_API_KEY` + `BLIMBER_MCP_ACTOR_USER_ID` (creates editoriais)
-7. Domínio alias: adicione `ads.blimber.com.br` no Vercel (mesmo projeto). Ver `docs/gpt-blimber-ACTIONS.md`.
+4. Ads no ChatGPT = `openapi-ads.yaml`. Pack standalone `gpt/blimber-meta/` **removido**.
+5. Env: `BLIMBER_MCP_API_KEY` + `BLIMBER_MCP_ACTOR_USER_ID` (creates editoriais)
+6. Domínio alias: adicione `ads.blimber.com.br` no Vercel (mesmo projeto). Ver `docs/gpt-blimber-ACTIONS.md`.
 
 Docs: `docs/mcp-blimber-platform.md`, `docs/gpt-blimber-MARKETING.md`, `docs/gpt-blimber-UNIFIED-PLAN.md`.
 

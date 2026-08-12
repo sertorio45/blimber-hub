@@ -109,7 +109,7 @@ Writes (`create` / edit) usam `graphWrite` → `META_GRAPH_ERROR` com:
 |------|------|
 | Destination helpers | `lib/meta-ads/ad-destination.ts` |
 | Tools | `lib/meta-ads/tools.ts` |
-| OpenAPI | `gpt/blimber-meta/openapi.yaml` (v1.8.0) |
-| Instruções GPT | `gpt/blimber-meta/instructions.md` |
-| Skill | `gpt/blimber-meta/skills/blimber-meta-ads/SKILL.md` |
+| OpenAPI | `gpt/blimber/openapi-ads.yaml` |
+| Instruções GPT | `gpt/blimber/instructions.md` |
+| Skill | `.agents/skills/blimber-meta-ads/SKILL.md` |
 | Testes | `tests/meta-ads-tools.test.ts`, `tests/meta-graph.test.ts` |

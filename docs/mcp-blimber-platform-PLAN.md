@@ -9,8 +9,8 @@ Plano por etapas a partir da fundação em `docs/mcp-blimber-platform.md`.
 - [x] Namespace `ads.meta` (reuse `lib/meta-ads` + catálogo)
 - [x] Stub `ads.google`
 - [x] Pack `gpt/blimber/`
-- [x] Compat `gpt/blimber-meta` + `/api/gpt/meta/*`
-- [x] OpenAPI em 2 Ações (≤30 ops cada): `openapi-marketing.yaml` (app.*) + `openapi-ads.yaml` (ads.*) — pack meta = GPT Ads-only standby
+- [x] Compat `/api/gpt/meta/*` + `lib/meta-ads`
+- [x] OpenAPI em 2 Ações (≤30 ops cada): `openapi-marketing.yaml` (app.*) + `openapi-ads.yaml` (ads.*) — pack Ads-only standalone removido
 - [ ] Skill ZIP opcional para upload no ChatGPT
 - [ ] Hardening: signed upload URL via GPT (sem binário na Action)
 

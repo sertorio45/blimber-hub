@@ -1,11 +1,11 @@
-openapi: 3.0.3
+openapi: 3.1.1
 info:
   title: Blimber Meta Ads API
   description: >
     Ação 2 (Meta Ads). Host ads.blimber.com.br (mesmo app que app.*). tenantId
     via searchTenants da Ação Marketing. Nunca peça tokens. Mutações: confirm +
     confirmTenantId; create/edit/delete dryRun default true. Bulk: preview →
-    IDs → execute. Não importe gpt/blimber-meta neste GPT.
+    IDs → execute. Este YAML é o contrato Ads canônico no ChatGPT.
   version: 0.4.0
   contact:
     name: Blimber Hub

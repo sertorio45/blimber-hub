@@ -169,7 +169,7 @@ export default defineEventHandler((event) => {
     version: '1.0.0',
     primary: 'ChatGPT Custom GPT Actions',
     transport: {
-      openapi: 'gpt/blimber-meta/openapi.yaml',
+      openapi: 'gpt/blimber/openapi-ads.yaml',
       httpRest: '/api/gpt/meta/*',
       httpInvoke: 'POST /api/gpt/meta/invoke',
       stdioOptional: 'pnpm mcp:meta',

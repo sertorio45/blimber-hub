@@ -10,8 +10,7 @@ Solução: **dois OpenAPI**, **dois hosts**, **um GPT**.
 | Ads (Meta) | [`gpt/blimber/openapi-ads.yaml`](../gpt/blimber/openapi-ads.yaml) | `https://ads.blimber.com.br` | 21 |
 
 **Não importe** `gpt/blimber/openapi.yaml` (índice, não é spec).  
-**Não importe** `gpt/blimber-meta/openapi.yaml` neste GPT (host `app.*` = duplicado com Marketing).  
-Pack `gpt/blimber-meta/` = GPT **Ads-only** (standby), host `app.blimber.com.br`.
+Ads no ChatGPT = `openapi-ads.yaml` (host `ads.*`). O pack standalone `gpt/blimber-meta/` foi **removido**.
 
 ## Hosts
 

@@ -172,7 +172,7 @@ marketing_campaigns  → paid legado / live APIs → /ads/campaigns + reports
 | `components/ads/`, `composables/ads/`, `pages/ads/creatives.vue`, `types/ads-brand.ts`, `utils/ads-brand.ts`, `tests/ads-brand.test.ts` | ETAPA 7 |
 | `docs/.../ETAPA-7-ADS-BRAND.md` (+ este ETAPA-8) | docs |
 | `constants/{menus,marketing-audience,ads-domain}.ts`, páginas `/ads/*`, `tests/workspace-guard.test.ts` | ETAPA 7 wiring |
-| `gpt/blimber-meta/openapi.yaml` | ajustes curtos de description (não commitados) |
+| `gpt/blimber/openapi-ads.yaml` | contrato Ads canônico (pack standalone removido) |
 | `.env.example` | mudanças de exemplo (paralelas; não secret) |
 
 **Política:** commit/push **não** executados nesta etapa (conforme escopo — só revisão). OpenAPI note: descriptions GPT encurtadas prontas para commit quando o usuário pedir.

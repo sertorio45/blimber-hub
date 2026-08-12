@@ -21,7 +21,7 @@ export default defineEventHandler((event) => {
     server: 'blimber-ads-meta',
     version: '1.0.0',
     status: 'ready',
-    note: 'Namespace ads.meta. HTTP canônico: /api/gpt/meta/*. Pack legado gpt/blimber-meta continua válido.',
+    note: 'Namespace ads.meta. HTTP canônico: /api/gpt/meta/*. ChatGPT: gpt/blimber/openapi-ads.yaml.',
     tools: legacy,
     aliases: listAdsMetaAliasDescriptors(),
   }

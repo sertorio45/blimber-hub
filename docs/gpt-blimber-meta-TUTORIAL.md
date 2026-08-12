@@ -3,9 +3,8 @@
 Guia operacional completo para configurar e usar a integração **Meta Ads** do Blimber Hub dentro do **ChatGPT**, via **GPT personalizado** + **Ações** (Actions) + **Habilidade** (Skill).
 
 > Resumo técnico e arquitetura: [`gpt-blimber-meta.md`](./gpt-blimber-meta.md)  
-> Pack de arquivos: [`gpt/blimber-meta/`](../gpt/blimber-meta/)  
-> OpenAPI (fonte das tools deste GPT só Ads): [`gpt/blimber-meta/openapi.yaml`](../gpt/blimber-meta/openapi.yaml)  
-> **GPT unificado (Marketing + Meta):** duas Ações — [`openapi-marketing.yaml`](../gpt/blimber/openapi-marketing.yaml) + [`openapi-ads.yaml`](../gpt/blimber/openapi-ads.yaml). **Não** adicione este pack como 2ª Ação. Setup: [`gpt-blimber-ACTIONS.md`](./gpt-blimber-ACTIONS.md).
+> OpenAPI Ads (canônico): [`gpt/blimber/openapi-ads.yaml`](../gpt/blimber/openapi-ads.yaml) (host `ads.blimber.com.br`)  
+> **GPT unificado (Marketing + Meta):** duas Ações — [`openapi-marketing.yaml`](../gpt/blimber/openapi-marketing.yaml) + [`openapi-ads.yaml`](../gpt/blimber/openapi-ads.yaml). Pack standalone Ads-only **removido**. Setup: [`gpt-blimber-ACTIONS.md`](./gpt-blimber-ACTIONS.md).
 
 ---
 
@@ -50,7 +49,7 @@ Uma **Habilidade** (Skill) é um pacote de **conhecimento e procedimento** (arqu
 - Não autentica sozinha.
 - Complementa as **Instruções** com um roteiro operacional mais rico.
 
-No Blimber: `gpt/blimber-meta/skills/blimber-meta-ads/SKILL.md` (ou o ZIP gerado a partir dessa pasta).  
+No Blimber: `.agents/skills/blimber-meta-ads/SKILL.md` (Cursor) e `gpt/blimber/skills/blimber-platform/SKILL.md` (GPT unificado).  
 Na UI, o upload costuma aparecer em **Conhecimento** e/ou **Habilidades**, conforme a conta.
 
 ### Diferença rápida
@@ -81,10 +80,10 @@ Antes de configurar o GPT, confira:
    - `META_GRAPH_VERSION=v20.0` (opcional)
 5. **Tenant** com Meta **já conectado** em Integrações (OAuth no Hub). Sem isso, as tools de listagem/insights falham ou mostram integração inativa.
 6. Arquivos locais no repo:
-   - `gpt/blimber-meta/openapi.yaml`
-   - `gpt/blimber-meta/instructions.md`
-   - `gpt/blimber-meta/skills/blimber-meta-ads/` (ou ZIP da skill)
-   - Setup curto: `gpt/blimber-meta/gpt-actions.md`
+   - `gpt/blimber/openapi-ads.yaml` (Ação Ads, host `ads.*`)
+   - `gpt/blimber/openapi-marketing.yaml` (Ação Marketing, host `app.*`)
+   - `gpt/blimber/instructions.md`
+   - Setup: `docs/gpt-blimber-ACTIONS.md`
 
 Você também vai precisar identificar o cliente: pelo **nome** (o GPT chama `searchTenants`) ou pelo **`tenantId`** (UUID).
 
@@ -147,7 +146,7 @@ Rotas implementadas em `server/api/gpt/meta/*` (espelham o OpenAPI).
 
 ### 4. Colar as Instruções
 
-1. Abra `gpt/blimber-meta/instructions.md`.
+1. Abra `gpt/blimber/instructions.md`.
 2. Copie o texto **abaixo** do cabeçalho (a partir de “Você é o assistente…”).
 3. Cole no campo **Instruções** do editor do GPT (aba **Configurar**).
 
@@ -155,19 +154,20 @@ Essas regras mandam o GPT pedir `tenantId`, nunca misturar tenants, nunca expor 
 
 ### 5. Configurar Ações (OpenAPI + auth)
 
-1. Na aba **Configurar** → seção **Ações** → **Criar nova ação**.
-2. Importe / cole o conteúdo de `gpt/blimber-meta/openapi.yaml` no campo do **esquema** (Schema).
-3. Confirme `servers.url` (já vem fixo, **um único** hostname):
-   - Produção: `https://app.blimber.com.br`
-   - Não adicione um segundo `servers` com placeholder — o ChatGPT rejeita “multiple hostnames”.
-4. **Autenticação**:
+1. Na aba **Configurar** → seção **Ações** → **Criar nova ação** (repita para as **duas** specs).
+2. Importe / cole `gpt/blimber/openapi-marketing.yaml` (host `https://app.blimber.com.br`) e `gpt/blimber/openapi-ads.yaml` (host `https://ads.blimber.com.br`).
+3. Confirme `servers.url` em cada Ação (**hosts diferentes**):
+   - Marketing: `https://app.blimber.com.br`
+   - Ads: `https://ads.blimber.com.br`
+   - Não use o mesmo hostname nas duas Ações — o ChatGPT rejeita “domínios duplicados”.
+4. **Autenticação** (nas duas Ações):
    - Tipo: **Chave de API** (API Key)
    - Tipo de autenticação / Auth Type: **Bearer**
    - Chave: valor de `BLIMBER_MCP_API_KEY`  
      (**sem** digitar o prefixo `Bearer ` no campo — o ChatGPT adiciona).
 5. Salve / valide o esquema. Se o esquema for inválido, as ações não aparecem (ver Troubleshooting).
 
-Detalhes também em `gpt/blimber-meta/gpt-actions.md`.
+Detalhes também em `docs/gpt-blimber-ACTIONS.md`.
 
 ### 6. Anexar / carregar a Habilidade (Skill)
 
@@ -175,18 +175,17 @@ Detalhes também em `gpt/blimber-meta/gpt-actions.md`.
 
 Anexe / faça upload da pasta:
 
-`gpt/blimber-meta/skills/blimber-meta-ads`
+`gpt/blimber/skills/blimber-platform`
 
 (incluindo o `SKILL.md`).
 
 **Opção B — ZIP**
 
 ```bash
-cd gpt/blimber-meta/skills
-zip -r ../blimber-meta-ads.skill.zip blimber-meta-ads
+cd gpt/blimber/skills
+zip -r ../blimber-platform.skill.zip blimber-platform
 ```
 
-O arquivo fica em `gpt/blimber-meta/blimber-meta-ads.skill.zip`.  
 Faça upload via **Habilidades** e/ou **Conhecimento** na aba **Configurar** (o rótulo exato varia conforme a conta OpenAI).
 
 A habilidade reforça o fluxo: integrações → campanhas/insights → pausar/ativar só com confirmação.
@@ -327,9 +326,9 @@ Nunca misture dados de empresas diferentes na mesma conversa sem deixar o client
 | Ação falha / host errado | `servers.url` desatualizado | No esquema OpenAPI do GPT, aponte para o host HTTPS real do Blimber. |
 | **localhost não funciona** | ChatGPT não alcança sua máquina | Use deploy / túnel **HTTPS público**. |
 | Meta “não conectado” / erro de ownership | Tenant sem OAuth ou UUID errado | Reconecte Meta em Integrações no Hub; confira o `tenantId`. |
-| Ação não aparece / esquema inválido | YAML quebrado, paths inválidos, security mal definido, `$ref` em parameters, múltiplos `servers` | Reimporte `openapi.yaml` (3.0.3, parameters inline, um único `https://app.blimber.com.br`); um scheme Bearer só. |
-| **Domínios duplicados** (`app.blimber.com.br já existe em outra ação`) | Duas Ações com o mesmo `servers.url` (ex.: Marketing + `gpt/blimber-meta/openapi.yaml`) | GPT unificado = `openapi-marketing.yaml` (`app.*`) + `openapi-ads.yaml` (`ads.*`). Não importe o pack meta no mesmo GPT. Ver `docs/gpt-blimber-ACTIONS.md`. |
-| Habilidade “não carregada” | Upload incompleto / ZIP sem `SKILL.md` | Reenvie a pasta `blimber-meta-ads` ou regenere o ZIP a partir de `skills/blimber-meta-ads`. |
+| Ação não aparece / esquema inválido | YAML quebrado, paths inválidos, security mal definido, `$ref` em parameters, múltiplos `servers` | Reimporte `openapi-marketing.yaml` / `openapi-ads.yaml` (3.0.3, parameters inline, um host por Ação); um scheme Bearer só. |
+| **Domínios duplicados** (`app.blimber.com.br já existe em outra ação`) | Duas Ações com o mesmo `servers.url` | GPT unificado = `openapi-marketing.yaml` (`app.*`) + `openapi-ads.yaml` (`ads.*`). Ver `docs/gpt-blimber-ACTIONS.md`. |
+| Habilidade “não carregada” | Upload incompleto / ZIP sem `SKILL.md` | Reenvie a pasta `gpt/blimber/skills/blimber-platform` ou regenere o ZIP. |
 | Mutação recusada | Falta `confirm` / `confirmTenantId` diferente | Confirme no chat; o GPT deve enviar `confirm: true` e IDs iguais. |
 | Timeout / resposta cortada | Insights muito grandes ou Meta lenta | Reduza `limit`, período ou `level`; repita em fatias. |
 
@@ -345,7 +344,7 @@ pnpm test tests/meta-ads-tools.test.ts tests/gpt-meta-openapi.test.ts
 
 ### Operations (OpenAPI)
 
-Fonte canônica: [`gpt/blimber-meta/openapi.yaml`](../gpt/blimber-meta/openapi.yaml). Não reinventar o contrato — ajustes de schema vão nesse arquivo.
+Fonte canônica Ads: [`gpt/blimber/openapi-ads.yaml`](../gpt/blimber/openapi-ads.yaml). Não reinventar o contrato — ajustes de schema vão nesse arquivo. `searchTenants` fica em `openapi-marketing.yaml`.
 
 | operationId | Método | Path |
 |-------------|--------|------|
@@ -373,10 +372,11 @@ Implementação Nuxt: `server/api/gpt/meta/*`.
 |----------|---------|
 | Tutorial (este arquivo) | `docs/gpt-blimber-meta-TUTORIAL.md` |
 | Doc curto / arquitetura | `docs/gpt-blimber-meta.md` |
-| OpenAPI | `gpt/blimber-meta/openapi.yaml` |
-| Instruções (texto para colar na UI) | `gpt/blimber-meta/instructions.md` |
-| Setup Ações | `gpt/blimber-meta/gpt-actions.md` |
-| Skill | `gpt/blimber-meta/skills/blimber-meta-ads/SKILL.md` |
+| OpenAPI Ads | `gpt/blimber/openapi-ads.yaml` |
+| OpenAPI Marketing | `gpt/blimber/openapi-marketing.yaml` |
+| Instruções (texto para colar na UI) | `gpt/blimber/instructions.md` |
+| Setup Ações | `docs/gpt-blimber-ACTIONS.md` |
+| Skill (Cursor) | `.agents/skills/blimber-meta-ads/SKILL.md` |
 | Env exemplo | `.env.example` (`BLIMBER_MCP_API_KEY`) |
 | Auth server | `server/utils/meta-gpt-auth.ts` |
 | MCP opcional (Cursor) | `docs/mcp-blimber-meta.md` |
@@ -387,7 +387,7 @@ Implementação Nuxt: `server/api/gpt/meta/*`.
 |------|--------|
 | `pnpm mcp:meta` (stdio) | Dev local Cursor / Claude Desktop |
 | `POST /api/internal/mcp/meta/invoke` | Bridge legado de agents |
-| Skill Cursor `.agents/skills/blimber-meta-ads` | Legado — aponta para este fluxo GPT |
+| Skill Cursor `.agents/skills/blimber-meta-ads` | Aponta para `gpt/blimber/openapi-ads.yaml` |
 
 ---
 

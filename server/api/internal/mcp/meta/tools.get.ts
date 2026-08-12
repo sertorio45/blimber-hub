@@ -171,7 +171,7 @@ export default defineEventHandler((event) => {
   return {
     server: 'blimber-meta',
     version: '0.1.0',
-    deprecated: 'Use /api/gpt/meta/* and gpt/blimber-meta/openapi.yaml for ChatGPT.',
+    deprecated: 'Use /api/gpt/meta/* and gpt/blimber/openapi-ads.yaml for ChatGPT.',
     transport: {
       primary: 'POST /api/gpt/meta/* (OpenAPI ChatGPT Actions)',
       http: 'POST /api/internal/mcp/meta/invoke',

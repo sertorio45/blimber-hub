@@ -8,8 +8,7 @@
 #   1. openapi-marketing.yaml  → https://app.blimber.com.br
 #   2. openapi-ads.yaml        → https://ads.blimber.com.br
 #
-# NÃO importe gpt/blimber-meta/openapi.yaml neste GPT (host app.* duplicado
-# com a Ação Marketing). Pack meta = GPT Ads-only (standby).
+# Pack Ads-only standalone foi removido. Ads no ChatGPT = openapi-ads.yaml.
 #
 # Setup: docs/gpt-blimber-ACTIONS.md
 # =============================================================================

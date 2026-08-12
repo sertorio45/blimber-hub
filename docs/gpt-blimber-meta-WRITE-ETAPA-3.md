@@ -20,8 +20,8 @@
 | Templates de targeting | `lib/meta-ads/targeting-templates.ts` |
 | Tool `meta_create_adset` | `lib/meta-ads/tools.ts` |
 | Rota GPT REST | `server/api/gpt/meta/adsets.post.ts` |
-| OpenAPI v1.4.0 | `gpt/blimber-meta/openapi.yaml` (`createAdset`) |
-| Instruções + Skill | `gpt/blimber-meta/instructions.md`, skills + Cursor espelho |
+| OpenAPI v1.4.0 | hoje `gpt/blimber/openapi-ads.yaml` (`createAdset`) |
+| Instruções + Skill | `gpt/blimber/instructions.md`, `.agents/skills/blimber-meta-ads` |
 | Testes | `tests/meta-ads-tools.test.ts`, `tests/gpt-meta-openapi.test.ts` |
 
 ### Tool

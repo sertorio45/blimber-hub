@@ -20,7 +20,7 @@ Preparar `lib/meta-ads` + contrato GPT para mutações seguras: confirmação, o
 | Limites via env | `lib/meta-ads/write-limits.ts` |
 | Audit estruturado (+ espelho `audit_events`) | `lib/meta-ads/write-audit.ts` |
 | Refator `meta_update_campaign_status` | `lib/meta-ads/tools.ts` |
-| OpenAPI `dryRun` opcional | `gpt/blimber-meta/openapi.yaml` |
+| OpenAPI `dryRun` opcional | `gpt/blimber/openapi-ads.yaml` (pack standalone removido) |
 | Rota GPT passa `dryRun` | `server/api/gpt/meta/campaigns/[campaignId]/status.post.ts` |
 | Testes unitários | `tests/meta-write-guards.test.ts`, `tests/meta-ads-tools.test.ts` |
 

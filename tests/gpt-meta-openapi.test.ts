@@ -15,12 +15,13 @@ import {
 } from '../server/utils/meta-gpt-tenants'
 
 const ROOT = join(import.meta.dirname, '..')
-const OPENAPI_PATH = join(ROOT, 'gpt/blimber-meta/openapi.yaml')
-const SKILL_PATH = join(ROOT, 'gpt/blimber-meta/skills/blimber-meta-ads/SKILL.md')
+const OPENAPI_PATH = join(ROOT, 'gpt/blimber/openapi-ads.yaml')
+const SKILL_PATH = join(ROOT, '.agents/skills/blimber-meta-ads/SKILL.md')
+const INSTRUCTIONS_PATH = join(ROOT, 'gpt/blimber/instructions.md')
+const ACTIONS_DOC_PATH = join(ROOT, 'docs/gpt-blimber-ACTIONS.md')
 
-/** Maps OpenAPI path templates to Nuxt server route files under server/api. */
+/** Maps OpenAPI Ads path templates to Nuxt server route files under server/api. */
 const EXPECTED_ROUTE_FILES: Record<string, string[]> = {
-  '/api/gpt/meta/tenants': ['server/api/gpt/meta/tenants.get.ts'],
   '/api/gpt/meta/tools': ['server/api/gpt/meta/tools.get.ts'],
   '/api/gpt/meta/integrations': ['server/api/gpt/meta/integrations.get.ts'],
   '/api/gpt/meta/ad-accounts': ['server/api/gpt/meta/ad-accounts.get.ts'],
@@ -119,7 +120,7 @@ function extractDescriptionLengths(yamlText: string): Array<{ length: number, pr
   return out
 }
 
-describe('gpt/blimber-meta OpenAPI pack', () => {
+describe('gpt/blimber Ads OpenAPI (openapi-ads.yaml)', () => {
   it('OpenAPI YAML is ChatGPT-Actions friendly (parse shape + description limits)', () => {
     const yaml = readFileSync(OPENAPI_PATH, 'utf8')
     // Regression: contact.name fused with servers key → invalid YAML ("Hubservers:")
@@ -127,7 +128,7 @@ describe('gpt/blimber-meta OpenAPI pack', () => {
     expect(yaml).toMatch(/^ {4}name: Blimber Hub\s*$/m)
     expect(yaml).toMatch(/^servers:\s*$/m)
     expect(yaml.match(/^servers:\s*$/gm)?.length ?? 0).toBe(1)
-    expect(yaml).toContain('openapi: 3.0.3')
+    expect(yaml).toMatch(/^openapi: ['"]?3\.(0\.3|1\.1)['"]?\s*$/m)
     expect(yaml).not.toContain('additionalProperties:')
     expect(yaml).not.toMatch(/^\s+(oneOf|anyOf|allOf|nullable):/m)
     expect(yaml).not.toMatch(/parameters:\s*\n\s*-\s*\$ref:/)
@@ -156,9 +157,10 @@ describe('gpt/blimber-meta OpenAPI pack', () => {
   it('OpenAPI exists and declares Bearer auth + consequential mutation', () => {
     expect(existsSync(OPENAPI_PATH)).toBe(true)
     const yaml = readFileSync(OPENAPI_PATH, 'utf8')
-    expect(yaml).toContain('openapi: 3.0.3')
+    expect(yaml).toMatch(/^openapi: ['"]?3\.(0\.3|1\.1)['"]?\s*$/m)
     expect(yaml).toContain('servers:')
-    expect(yaml).toContain('https://app.blimber.com.br')
+    expect(yaml).toContain('https://ads.blimber.com.br')
+    expect(yaml).not.toContain('https://app.blimber.com.br')
     expect(yaml).not.toContain('YOUR_PUBLIC_HTTPS_HOST')
     expect(yaml).not.toMatch(/parameters:\s*\n\s*-\s*\$ref:/)
     expect(yaml).toContain('BearerAuth:')
@@ -177,8 +179,8 @@ describe('gpt/blimber-meta OpenAPI pack', () => {
     expect(yaml).toContain('operationId: updateAdsetStatus')
     expect(yaml).toContain('operationId: updateAdStatus')
     expect(yaml).toContain('operationId: getInsights')
-    expect(yaml).toContain('operationId: searchTenants')
-    expect(yaml).toContain('/api/gpt/meta/tenants')
+    expect(yaml).not.toContain('operationId: searchTenants')
+    expect(yaml).not.toContain('/api/gpt/meta/tenants')
     expect(yaml).toContain('/api/gpt/meta/bulk-delete/preview')
     expect(yaml).toContain('meta_update_adset_status')
     expect(yaml).toContain('meta_update_ad_status')
@@ -243,14 +245,16 @@ describe('gpt/blimber-meta OpenAPI pack', () => {
     expect(skill.toLowerCase()).toContain('nunca invent')
     expect(skill.toLowerCase()).toContain('nunca')
     expect(skill).toContain('previewToken')
-    expect(existsSync(join(ROOT, 'gpt/blimber-meta/instructions.md'))).toBe(true)
-    expect(existsSync(join(ROOT, 'gpt/blimber-meta/gpt-actions.md'))).toBe(true)
-    const skillDir = join(ROOT, 'gpt/blimber-meta/skills/blimber-meta-ads')
+    expect(existsSync(INSTRUCTIONS_PATH)).toBe(true)
+    expect(existsSync(ACTIONS_DOC_PATH)).toBe(true)
+    const skillDir = join(ROOT, '.agents/skills/blimber-meta-ads')
     const entries = readdirSync(skillDir)
     expect(entries).toContain('SKILL.md')
+    expect(existsSync(join(ROOT, 'gpt/blimber-meta'))).toBe(false)
   })
 
   it('não inclui ai-plugin.json (plugin clássico deprecated)', () => {
+    expect(existsSync(join(ROOT, 'gpt/blimber/ai-plugin.json'))).toBe(false)
     expect(existsSync(join(ROOT, 'gpt/blimber-meta/ai-plugin.json'))).toBe(false)
   })
 })

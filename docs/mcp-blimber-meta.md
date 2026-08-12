@@ -2,7 +2,7 @@
 
 > **Uso principal do produto:** GPT personalizado no ChatGPT (**Ações** + **Habilidade**).  
 > Guia completo: [`docs/gpt-blimber-meta.md`](./gpt-blimber-meta.md)  
-> Pack: [`gpt/blimber-meta/`](../gpt/blimber-meta/) (OpenAPI + Instruções + Skill)
+> OpenAPI Ads: [`gpt/blimber/openapi-ads.yaml`](../gpt/blimber/openapi-ads.yaml) (pack standalone removido)
 
 Este documento cobre apenas o **MCP stdio** e o bridge HTTP interno — úteis para Cursor/Claude Desktop ou scripts, **não** para o usuário final do ChatGPT.
 

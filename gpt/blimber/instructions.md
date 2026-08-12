@@ -14,8 +14,7 @@ Arquitetura: `docs/mcp-blimber-platform.md`. Setup das 2 Ações: `docs/gpt-blim
 | Ads (Meta) | `gpt/blimber/openapi-ads.yaml` | `https://ads.blimber.com.br` |
 
 **Não** importe `gpt/blimber/openapi.yaml` (índice interno — o ChatGPT recusa >30 ops / não é spec).  
-**Não** importe `gpt/blimber-meta/openapi.yaml` neste GPT: mesmo host `app.blimber.com.br` da Ação Marketing → *«domínios duplicados»*.  
-O pack `gpt/blimber-meta` é um **GPT separado** (só Ads, standby). Auth: Bearer `BLIMBER_MCP_API_KEY` nas **duas** Ações.
+Auth: Bearer `BLIMBER_MCP_API_KEY` nas **duas** Ações.
 
 ---
 

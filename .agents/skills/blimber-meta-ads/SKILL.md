@@ -3,26 +3,20 @@ name: blimber-meta-ads
 description: >-
   Gestão e insights de Meta Ads no Blimber Hub (campanhas, adsets, ads,
   insights, status, create, edits e bulk delete com preview). Uso principal =
-  ChatGPT GPT personalizado + Ações em português (Brasil) — pack Ads em
-  gpt/blimber-meta (GPT separado, standby). Hub unificado: duas Ações
-  (openapi-marketing.yaml + openapi-ads.yaml). Em Cursor, use HTTP
-  /api/gpt/meta/* ou MCP stdio opcional.
-  ChatGPT GPT personalizado + Ações em português (Brasil) — pack Ads em
-  gpt/blimber-meta (GPT separado, host app.*). Hub unificado: 2 Ações
+  ChatGPT GPT personalizado + Ações em português (Brasil) — Ads em
+  gpt/blimber/openapi-ads.yaml (host ads.blimber.com.br). Hub unificado: 2 Ações
   (openapi-marketing.yaml em app.* + openapi-ads.yaml em ads.*).
-  Não importe o pack meta no GPT unificado (domínio duplicado).
   Em Cursor, use HTTP /api/gpt/meta/* ou MCP stdio opcional.
   Sempre via tools — nunca SQL direto. Resolva tenantId por nome
-  (searchTenants) se necessário; tools Meta ainda exigem tenantId.
+  (searchTenants na Ação Marketing) se necessário; tools Meta ainda exigem tenantId.
 ---
 
 # Blimber Meta Ads
 
-> **Primário (PT-BR):** ChatGPT GPT personalizado + Ações + Habilidade em `gpt/blimber-meta/`.  
-> Docs: `docs/gpt-blimber-meta.md` e `docs/gpt-blimber-meta-TUTORIAL.md`  
-> **Hub unificado (Marketing + Meta, 2 Ações):** `openapi-marketing.yaml` + `openapi-ads.yaml` — ver `docs/gpt-blimber-ACTIONS.md`. Não importe este pack no GPT unificado.  
-> Este arquivo (Cursor) é **legado / espelho** — não é a entrega principal ao usuário.
-> Mantenha alinhado ao pack GPT; edite primeiro `gpt/blimber-meta/skills/blimber-meta-ads/SKILL.md`.
+> **Primário (PT-BR):** ChatGPT GPT unificado + 2 Ações. Ads = `gpt/blimber/openapi-ads.yaml`.  
+> Setup: `docs/gpt-blimber-ACTIONS.md`. Docs: `docs/gpt-blimber-meta.md` e `docs/gpt-blimber-meta-TUTORIAL.md`.  
+> Pack standalone Ads-only foi **removido**.  
+> Em Cursor, este skill aponta para o mesmo contrato HTTP `/api/gpt/meta/*`.
 
 ## Quando usar
 
@@ -33,13 +27,13 @@ description: >-
 - Editar budget/targeting do adset; copy/mídia do ad (dryRun default true)
 - Excluir em massa com preview → execute (IDs explícitos; nunca por nome)
 - Ver se Meta está conectado / write-ready (`write_readiness`)
-- Descobrir `tenantId` a partir do nome do cliente (`GET /api/gpt/meta/tenants?q=`)
+- Descobrir `tenantId` a partir do nome do cliente (`searchTenants` / `GET /api/gpt/tenants?q=`)
 
 ## Como operar
 
-1. **Produção (usuário):** GPT no ChatGPT — **Configurar** → **Ações** → importar `gpt/blimber-meta/openapi.yaml` (GPT **só Ads**). Não importe no GPT unificado (domínio `app.*` duplicado com Marketing). Hub unificado = `openapi-marketing.yaml` + `openapi-ads.yaml`.
+1. **Produção (usuário):** GPT no ChatGPT — **Configurar** → **Ações** → importar `gpt/blimber/openapi-marketing.yaml` (host `app.*`) **e** `gpt/blimber/openapi-ads.yaml` (host `ads.*`).
 2. **Neste repo (Cursor):** `GET/POST /api/gpt/meta/*` com Bearer `BLIMBER_MCP_API_KEY`, ou MCP stdio `pnpm mcp:meta` (opcional).
-3. Se só houver o **nome** do cliente: `GET /api/gpt/meta/tenants?q=Nome` → pegar `id` → usar como `tenantId`. Vários matches → confirmar. **Nunca** misture tenants.
+3. Se só houver o **nome** do cliente: `searchTenants` (`GET /api/gpt/tenants?q=Nome`) → pegar `id` → usar como `tenantId`. Vários matches → confirmar. **Nunca** misture tenants.
 4. Tools Meta **sempre** exigem `tenantId` (UUID). Isolamento por tenant mantido.
 5. **Não** peça/revele `access_token`.
 6. Escrita: fluxo **mostrar → confirmar → mutar** com `confirm: true` e `confirmTenantId === tenantId`.
@@ -50,14 +44,14 @@ description: >-
 
 | Tool | Uso |
 |------|-----|
-| `searchTenants` (HTTP) | Nome/slug → `{ tenants: [{ id, name, slug }] }` |
+| `searchTenants` (HTTP Marketing) | Nome/slug → `{ tenants: [{ id, name, slug }] }` |
 | `meta_list_integrations` | Status + `write_readiness` (ads_management / page token) |
 | `meta_list_ad_accounts` | Contas de anúncio do OAuth |
 | `meta_list_campaigns` | Campanhas |
 | `meta_get_campaign` | Detalhe |
 | `meta_create_campaign` | Criar campanha (PAUSED / dryRun default true) |
 | `meta_list_adsets` | Conjuntos de anúncios |
-| `meta_create_adset` | Criar adset (templates BR_* / destination WEBSITE\|WHATSAPP) |
+| `meta_create_adset` | Criar adset (templates `BR_18_65` / `BR_*` / destination WEBSITE\|WHATSAPP) |
 | `meta_update_adset_budget` | Budget adset (dryRun default true) |
 | `meta_update_adset_targeting` | Targeting BR_* |
 | `meta_list_ads` | Anúncios |
@@ -71,7 +65,7 @@ description: >-
 | `meta_update_adset_status` | ACTIVE / PAUSED |
 | `meta_update_ad_status` | ACTIVE / PAUSED |
 
-OpenAPI: `gpt/blimber-meta/openapi.yaml`  
+OpenAPI: `gpt/blimber/openapi-ads.yaml` (`updateAdsetStatus`, `createCampaign`, `createAdset`, `createAd`, `updateAdsetBudget`, `updateAdCreativeCopy`, `previewBulkDelete`, `executeBulkDelete`)  
 Catálogo: `GET /api/gpt/meta/tools`
 
 ## Fluxo sugerido

@@ -11,7 +11,7 @@ description: >-
 
 > Pack primário: `gpt/blimber/` — **duas Ações** no mesmo GPT.  
 > Setup: `docs/gpt-blimber-ACTIONS.md`  
-> Pack `gpt/blimber-meta/` = **GPT separado** só de Ads (standby, host `app.*`).  
+> Ads = `openapi-ads.yaml` (host `ads.*`). Pack standalone `gpt/blimber-meta/` removido.  
 > Docs: `docs/mcp-blimber-platform.md`
 
 ## Quando usar
@@ -25,7 +25,7 @@ description: >-
 ## Como operar
 
 1. Importar `openapi-marketing.yaml` **e** `openapi-ads.yaml` (duas Ações).
-2. **Não** importe `openapi.yaml` (índice) nem `gpt/blimber-meta/openapi.yaml` (host `app.*` duplicado).
+2. **Não** importe `openapi.yaml` (índice). Ads = `openapi-ads.yaml`.
 3. Bearer `BLIMBER_MCP_API_KEY` nas duas Ações.
 4. Sempre `searchTenants` (Marketing) se faltar UUID.
 5. Mutações: dryRun → confirmar → `dryRun: false` + `confirm` + `confirmTenantId`.

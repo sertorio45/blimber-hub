@@ -31,7 +31,7 @@ O usuário quer, via GPT/MCP:
 | Graph helper | `lib/meta-ads/graph.ts` | URL, fetch, date query (GET + body→query para POST) |
 | Credenciais | `lib/meta-ads/integration.ts` | Token AES por tenant em `marketing_integrations` |
 | HTTP GPT | `server/api/gpt/meta/*` | Bearer `BLIMBER_MCP_API_KEY` → `runMetaGptTool` |
-| OpenAPI / Skill | `gpt/blimber-meta/` | Actions ChatGPT |
+| OpenAPI / Skill | `gpt/blimber/openapi-ads.yaml` (pack standalone removido) | Actions ChatGPT |
 | Docs | `docs/gpt-blimber-meta.md`, tutorial, `docs/mcp-blimber-meta.md` |
 
 ### 2.2 Tools expostas hoje
@@ -445,8 +445,8 @@ Etapa 6  Bulk delete (preview → execute) ✅
 |----------|------|
 | `lib/meta-ads/tools.ts` (+ poss. módulos `writes/*.ts`) | Novos handlers |
 | `server/api/gpt/meta/*` | Rotas REST espelho OpenAPI |
-| `gpt/blimber-meta/openapi.yaml` | Novas operations |
-| `gpt/blimber-meta/instructions.md` + Skill | Fluxos PT + segurança |
+| `gpt/blimber/openapi-ads.yaml` | Novas operations |
+| `gpt/blimber/instructions.md` + Skill | Fluxos PT + segurança |
 | `docs/gpt-blimber-meta.md` + tutorial | Remover “fora de escopo create/delete” gradualmente |
 | `docs/mcp-blimber-meta.md` | Espelho MCP |
 | `.agents/skills/blimber-meta-ads/SKILL.md` | Espelho Cursor |
@@ -488,7 +488,7 @@ Antes de avançar qualquer etapa:
 
 | Trabalho | Onde |
 |----------|------|
-| Este plano write GPT/MCP | `docs/gpt-blimber-meta-WRITE-PLAN.md` + implementação futura em `lib/meta-ads` / `gpt/blimber-meta` |
+| Este plano write GPT/MCP | `docs/gpt-blimber-meta-WRITE-PLAN.md` + implementação em `lib/meta-ads` / `gpt/blimber/openapi-ads.yaml` |
 | Brand Context + UI criativos | Já em ETAPA 7; consumo AI depois |
 | Revisão final Marketing epic | ETAPA 8 — **outro agente**; não misturar PRs |
 
@@ -518,4 +518,4 @@ Inclusão futura saudável: após Etapa 4 estável, documentar bridge “GPT sug
 - Status write atual: `server/api/gpt/meta/campaigns/[campaignId]/status.post.ts`  
 - Audit: `server/utils/audit-events.ts`  
 - Brand bridge: `types/ads-brand.ts`, `docs/marketing-ads-brand-reorg/ETAPA-7-ADS-BRAND.md`  
-- Pack GPT: `gpt/blimber-meta/`, `docs/gpt-blimber-meta.md`
+- Pack GPT Ads: `gpt/blimber/openapi-ads.yaml`, `docs/gpt-blimber-meta.md`

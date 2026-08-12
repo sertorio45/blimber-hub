@@ -1,10 +1,10 @@
-openapi: 3.0.3
+openapi: 3.1.1
 info:
   title: Blimber Marketing API
   description: >
     Ação 1 (Marketing + platform + brand). Auth Bearer BLIMBER_MCP_API_KEY.
     Ads pagos: Ação 2 (openapi-ads.yaml, host ads.blimber.com.br). Não importe
-    este índice openapi.yaml nem gpt/blimber-meta no mesmo GPT.
+    o índice openapi.yaml no mesmo GPT.
   version: 0.4.0
   contact:
     name: Blimber Hub

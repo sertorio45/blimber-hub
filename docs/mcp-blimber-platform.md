@@ -52,12 +52,11 @@ O ChatGPT **não permite** duas Ações com o mesmo `servers.url` e limita cada 
 
 `ads.blimber.com.br` é **alias** do mesmo projeto Vercel (não outro app). Setup: [`gpt-blimber-ACTIONS.md`](./gpt-blimber-ACTIONS.md).
 
-**Não** importe `gpt/blimber/openapi.yaml` (índice). **Não** importe `gpt/blimber-meta/openapi.yaml` neste GPT (host `app.*` = duplicado com Marketing).
+**Não** importe `gpt/blimber/openapi.yaml` (índice). Ads no ChatGPT = `openapi-ads.yaml`. Pack standalone Ads-only **removido**.
 
 | Abordagem | Quando | Como |
 |-----------|--------|------|
 | **Pack unificado** `gpt/blimber/` | Marketing + Meta Ads no **mesmo** chat | **Duas Ações** — marketing.yaml + ads.yaml |
-| **Pack Meta** `gpt/blimber-meta/openapi.yaml` | GPT **separado** só de Ads (standby) | Outro GPT, host `app.blimber.com.br` |
 
 Mesma Bearer key (`BLIMBER_MCP_API_KEY`). Backend `/api/gpt/*` **não perde rotas**.
 
@@ -77,11 +76,11 @@ Ver [`mcp-blimber-platform-PLAN.md`](./mcp-blimber-platform-PLAN.md).
 - Plano / ponte GPT Meta: [`gpt-blimber-UNIFIED-PLAN.md`](./gpt-blimber-UNIFIED-PLAN.md)
 - Setup 2 Ações + DNS alias: [`gpt-blimber-ACTIONS.md`](./gpt-blimber-ACTIONS.md)
 - Tutorial Marketing editorial: [`gpt-blimber-MARKETING.md`](./gpt-blimber-MARKETING.md)
-- Pack Meta Ads (GPT separado): [`gpt-blimber-meta.md`](./gpt-blimber-meta.md)
-- Tutorial Meta + erro de domínio duplicado: [`gpt-blimber-meta-TUTORIAL.md`](./gpt-blimber-meta-TUTORIAL.md)
+- Meta Ads (OpenAPI `openapi-ads.yaml`): [`gpt-blimber-meta.md`](./gpt-blimber-meta.md)
+- Tutorial Meta + DNS alias `ads.*`: [`gpt-blimber-meta-TUTORIAL.md`](./gpt-blimber-meta-TUTORIAL.md)
 
 ## Compatibilidade
 
-- **Não quebrar** `gpt/blimber-meta` nem `/api/gpt/meta/*` (pack standalone para GPT só Ads)
+- **Não quebrar** `/api/gpt/meta/*` nem `lib/meta-ads/` (HTTP Ads + Graph)
 - Registry lista tools Meta (`meta_*`) e aliases (`ads_meta_*`)
-- Docs Meta antigos continuam válidos; este doc é o hub da plataforma
+- Pack GPT standalone Ads-only removido; contrato ChatGPT = `gpt/blimber/openapi-ads.yaml`

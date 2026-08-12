@@ -20,8 +20,8 @@
 | Guard Page | `assertMetaPageCreativeReady` em `lib/meta-ads/write-guards.ts` |
 | Tool `meta_create_ad` | `lib/meta-ads/tools.ts` |
 | Rota GPT REST | `server/api/gpt/meta/ads.post.ts` |
-| OpenAPI v1.5.0 | `gpt/blimber-meta/openapi.yaml` (`createAd`) |
-| Instruções + Skill | `gpt/blimber-meta/instructions.md`, skills + Cursor espelho |
+| OpenAPI v1.5.0 | hoje `gpt/blimber/openapi-ads.yaml` (`createAd`) |
+| Instruções + Skill | `gpt/blimber/instructions.md`, `.agents/skills/blimber-meta-ads` |
 | Testes | `tests/meta-ads-tools.test.ts`, `tests/meta-write-guards.test.ts`, `tests/gpt-meta-openapi.test.ts` |
 
 ### Tool

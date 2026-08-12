@@ -20,7 +20,7 @@ Updates pontuais com tools whitelist separadas: budget e targeting de adset; cop
 | Guard aumento % | `assertBudgetIncreaseAllowed` + `META_GPT_BUDGET_INCREASE_MAX_PERCENT` |
 | Tools | `meta_update_adset_budget`, `meta_update_adset_targeting`, `meta_update_ad_creative_copy`, `meta_update_ad_media` |
 | Rotas GPT REST | `adsets/[adsetId]/budget|targeting.post.ts`, `ads/[adId]/creative-copy|media.post.ts` |
-| OpenAPI v1.6.0 | `gpt/blimber-meta/openapi.yaml` |
+| OpenAPI v1.6.0 | hoje `gpt/blimber/openapi-ads.yaml` (pack standalone removido) |
 | Instruções + Skill | pack GPT + espelho Cursor |
 | Doc | este arquivo |
 | Testes | `meta-ads-tools`, `meta-write-guards`, `gpt-meta-openapi` |

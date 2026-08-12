@@ -22,8 +22,8 @@
 | Guards budget + confirmActive | `lib/meta-ads/write-guards.ts` |
 | Erros Graph enriquecidos | `lib/meta-ads/graph.ts` (`extractMetaGraphErrorFields`, `enrichMetaGraphWriteError`) |
 | Rota GPT REST | `server/api/gpt/meta/campaigns/index.post.ts` |
-| OpenAPI v1.7.1 | `gpt/blimber-meta/openapi.yaml` (`createCampaign` + `ErrorToolResponse`) |
-| Instruções + Skill | `gpt/blimber-meta/instructions.md`, skills + Cursor espelho |
+| OpenAPI v1.7.1 | hoje `gpt/blimber/openapi-ads.yaml` (`createCampaign` + `ErrorToolResponse`) |
+| Instruções + Skill | `gpt/blimber/instructions.md`, `.agents/skills/blimber-meta-ads` |
 | Testes | `tests/meta-ads-tools.test.ts`, `tests/meta-graph.test.ts`, `tests/meta-write-guards.test.ts`, `tests/gpt-meta-openapi.test.ts` |
 
 ### Tool

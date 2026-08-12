@@ -20,7 +20,7 @@ Exclusão/arquivamento em lote com **preview obrigatório**, `previewToken` (TTL
 | Preview token HMAC + TTL | `lib/meta-ads/bulk-delete-preview.ts` + `META_GPT_BULK_PREVIEW_TTL_MS` |
 | Tools | `meta_preview_bulk_delete`, `meta_execute_bulk_delete` |
 | Rotas GPT REST | `bulk-delete/preview.post.ts`, `bulk-delete/execute.post.ts` |
-| OpenAPI v1.7.0 | `gpt/blimber-meta/openapi.yaml` |
+| OpenAPI v1.7.0 | hoje `gpt/blimber/openapi-ads.yaml` (pack standalone removido) |
 | Instruções + Skill | avisos fortes PT-BR |
 | Doc | este arquivo |
 | Testes | `meta-ads-tools`, `meta-write-guards`, `gpt-meta-openapi` |

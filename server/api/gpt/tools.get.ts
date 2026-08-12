@@ -17,7 +17,8 @@ export default defineEventHandler((event) => {
     primary: 'ChatGPT Custom GPT Actions (unified hub)',
     transport: {
       openapi: 'gpt/blimber/openapi.yaml',
-      metaOpenapiCoexist: 'gpt/blimber-meta/openapi.yaml',
+      openapiMarketing: 'gpt/blimber/openapi-marketing.yaml',
+      openapiAds: 'gpt/blimber/openapi-ads.yaml',
       httpMarketing: '/api/gpt/marketing/*',
       httpMeta: '/api/gpt/meta/*',
       httpAdsMetaAlias: '/api/gpt/ads/meta/*',

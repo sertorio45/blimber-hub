@@ -4,7 +4,7 @@ Experiência **primária**: GPT personalizado + **Ações** (Actions / OpenAPI) 
 MCP stdio (Cursor / Claude Desktop) é **opcional** — ver [`mcp-blimber-meta.md`](./mcp-blimber-meta.md).
 
 > **Hub unificado (Marketing + Meta Ads):** [`mcp-blimber-platform.md`](./mcp-blimber-platform.md) e pack `gpt/blimber/` — **duas Ações** (`openapi-marketing.yaml` + `openapi-ads.yaml`, hosts `app.*` e `ads.*`). Setup: [`gpt-blimber-ACTIONS.md`](./gpt-blimber-ACTIONS.md).  
-> Este pack `gpt/blimber-meta/` é um **GPT separado** só de Ads (standby, host `app.blimber.com.br`). **Não** importe no GPT unificado: conflito com a Ação Marketing.
+> Ads no ChatGPT = [`gpt/blimber/openapi-ads.yaml`](../gpt/blimber/openapi-ads.yaml). Pack standalone Ads-only **removido**.
 
 > Plano: [`gpt-blimber-UNIFIED-PLAN.md`](./gpt-blimber-UNIFIED-PLAN.md) · marketing [`gpt-blimber-MARKETING.md`](./gpt-blimber-MARKETING.md)
 
@@ -39,23 +39,23 @@ lib/meta-ads (tools tipadas — sem alteração de domínio)
     └─ Meta Graph API
 ```
 
-Pack importável: [`gpt/blimber-meta/`](../gpt/blimber-meta/)
+Contrato Ads: [`gpt/blimber/openapi-ads.yaml`](../gpt/blimber/openapi-ads.yaml) (host `ads.blimber.com.br`).
 
 | Artefato | Caminho |
 |----------|---------|
 | **Tutorial** | `docs/gpt-blimber-meta-TUTORIAL.md` |
-| OpenAPI 3.0.3 | `gpt/blimber-meta/openapi.yaml` |
-| Instruções (colar na UI) | `gpt/blimber-meta/instructions.md` |
-| Skill | `gpt/blimber-meta/skills/blimber-meta-ads/SKILL.md` |
-| Setup Ações | `gpt/blimber-meta/gpt-actions.md` |
+| OpenAPI Ads 3.0.3 | `gpt/blimber/openapi-ads.yaml` |
+| OpenAPI Marketing | `gpt/blimber/openapi-marketing.yaml` |
+| Instruções (colar na UI) | `gpt/blimber/instructions.md` |
+| Skill (Cursor) | `.agents/skills/blimber-meta-ads/SKILL.md` |
+| Setup 2 Ações | `docs/gpt-blimber-ACTIONS.md` |
 
 ## Setup rápido
 
-1. Deploy HTTPS público + `BLIMBER_MCP_API_KEY` (ver `.env.example`)
-2. **Criar** GPT → colar `instructions.md` em **Instruções**
-3. **Ações** → **Criar nova ação** → importar `openapi.yaml` → `servers.url` → **Autenticação**: **Chave de API** + **Bearer**
-4. Anexar Habilidade em **Conhecimento** / **Habilidades** (`skills/blimber-meta-ads` ou ZIP)
-5. Testar: nome do cliente → `searchTenants` → insights / campanhas (ou `tenantId` direto)
+1. Deploy HTTPS público + `BLIMBER_MCP_API_KEY` (ver `.env.example`) + alias DNS `ads.blimber.com.br`
+2. **Criar** GPT → colar `gpt/blimber/instructions.md` em **Instruções**
+3. **Ações** → duas Ações: `openapi-marketing.yaml` (`app.*`) + `openapi-ads.yaml` (`ads.*`) → **Autenticação**: **Chave de API** + **Bearer**
+4. Testar: nome do cliente → `searchTenants` (Marketing) → insights / campanhas na Ação Ads (ou `tenantId` direto)
 
 Passo a passo numerado, prompts e troubleshooting: **[Tutorial](./gpt-blimber-meta-TUTORIAL.md)**.
 
@@ -82,7 +82,7 @@ Passo a passo numerado, prompts e troubleshooting: **[Tutorial](./gpt-blimber-me
 
 `searchTenants` resolve nome → `tenantId` (só id/name/slug; busca administrativa com a API key global).  
 Todas as Ações Meta ainda exigem `tenantId`. Mutações exigem `confirm: true` + `confirmTenantId === tenantId`.  
-Contrato completo: `gpt/blimber-meta/openapi.yaml`.
+Contrato completo: `gpt/blimber/openapi-ads.yaml` (host `ads.blimber.com.br`). `searchTenants` canônico: Ação Marketing (`GET /api/gpt/tenants`).
 
 ## Segurança (resumo)
 

@@ -10,5 +10,5 @@ description: >
 
 Use [`../blimber-platform/SKILL.md`](../blimber-platform/SKILL.md) como fonte.
 Docs: `docs/mcp-blimber-platform.md`, `docs/gpt-blimber-ACTIONS.md`, `docs/gpt-blimber-MARKETING.md`.
-Não importe `gpt/blimber-meta/openapi.yaml` no mesmo GPT (domínio `app.*` duplicado com Marketing).
+Ads no ChatGPT = `openapi-ads.yaml` (host `ads.*`). Pack standalone `gpt/blimber-meta/` removido.
 Não importe `gpt/blimber/openapi.yaml` (índice, não é spec).
