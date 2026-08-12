@@ -2,13 +2,13 @@
  * Blimber MCP — Streamable HTTP endpoint for ChatGPT Developer Mode plugins.
  *
  * URL: POST/GET https://app.blimber.com.br/api/mcp
- * Auth: Authorization Bearer BLIMBER_MCP_API_KEY (same as GPT Actions)
+ * Auth: OAuth 2.1 access token (ChatGPT plugin) OR legacy Bearer BLIMBER_MCP_API_KEY
  */
 
 import type { H3Event } from 'h3'
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js'
 import { createError, defineEventHandler, readRawBody, setResponseHeader, setResponseStatus } from 'h3'
-import { assertBlimberMcpApiKey, extractBlimberMcpApiKey } from '~/server/utils/blimber-gpt-auth'
+import { assertMcpEndpointAuth } from '~/server/utils/blimber-mcp-oauth'
 import { getBlimberMcpTransport } from '~/server/utils/blimber-mcp-transport'
 
 const MCP_CORS_HEADERS = {
@@ -36,6 +36,22 @@ function parseJsonBody(raw: string | Buffer | undefined): unknown {
   }
 }
 
+function applyAuthChallenge(event: H3Event, error: unknown) {
+  if (
+    error
+    && typeof error === 'object'
+    && 'statusCode' in error
+    && (error as { statusCode: unknown }).statusCode === 401
+    && 'data' in error
+    && error.data
+    && typeof error.data === 'object'
+    && 'wwwAuthenticate' in error.data
+    && typeof (error.data as { wwwAuthenticate: unknown }).wwwAuthenticate === 'string'
+  ) {
+    setResponseHeader(event, 'WWW-Authenticate', (error.data as { wwwAuthenticate: string }).wwwAuthenticate)
+  }
+}
+
 export default defineEventHandler(async (event) => {
   applyMcpCors(event)
 
@@ -51,10 +67,12 @@ export default defineEventHandler(async (event) => {
     })
   }
 
+  let authInfo
   try {
-    assertBlimberMcpApiKey(event)
+    authInfo = assertMcpEndpointAuth(event)
   }
   catch (error) {
+    applyAuthChallenge(event, error)
     if (
       error
       && typeof error === 'object'
@@ -74,15 +92,14 @@ export default defineEventHandler(async (event) => {
     parsedBody = parseJsonBody(raw ?? undefined)
   }
 
-  const token = extractBlimberMcpApiKey(event)
-  const authInfo: AuthInfo = {
-    token,
-    clientId: 'blimber-mcp-api-key',
-    scopes: ['mcp:tools'],
+  const mcpAuthInfo: AuthInfo = {
+    token: authInfo.token,
+    clientId: authInfo.clientId,
+    scopes: authInfo.scopes,
   }
 
   const req = event.node.req as typeof event.node.req & { auth?: AuthInfo }
-  req.auth = authInfo
+  req.auth = mcpAuthInfo
 
   await transport.handleRequest(req, event.node.res, parsedBody)
 

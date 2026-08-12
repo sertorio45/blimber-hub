@@ -72,6 +72,15 @@ export default defineNuxtConfig({
       '/api/mcp': {
         headers: { 'Cache-Control': 'no-store' },
       },
+      '/api/mcp/oauth/**': {
+        headers: { 'Cache-Control': 'no-store' },
+      },
+      '/.well-known/oauth-protected-resource/**': {
+        headers: { 'Cache-Control': 'public, max-age=300' },
+      },
+      '/.well-known/oauth-authorization-server/**': {
+        headers: { 'Cache-Control': 'public, max-age=300' },
+      },
     },
   },
 
