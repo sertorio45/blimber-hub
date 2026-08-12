@@ -17,6 +17,7 @@ export default defineEventHandler(async (event) => {
     startsAt: body.startsAt === null ? null : optionalString(body.startsAt),
     endsAt: body.endsAt === null ? null : optionalString(body.endsAt),
     briefingSummary: optionalString(body.briefingSummary),
+    actorUserId: optionalString(body.actorUserId),
     confirmTenantId: optionalString(body.confirmTenantId),
     confirm: body.confirm === true ? true : body.confirm,
     dryRun: optionalBool(body.dryRun),

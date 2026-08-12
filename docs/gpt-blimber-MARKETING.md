@@ -11,9 +11,9 @@ Como usar as tools de **Marketing** do hub unificado (`gpt/blimber/`).
 | Env | Uso |
 |-----|-----|
 | `BLIMBER_MCP_API_KEY` | Bearer nas Ações |
-| `BLIMBER_MCP_ACTOR_USER_ID` | UUID de `auth.users` usado em `created_by` nas criações |
+| `BLIMBER_MCP_ACTOR_USER_ID` | UUID de `auth.users` (staff/sistema) usado em `created_by` nas criações |
 
-Sem actor, creates retornam `503 ACTOR_REQUIRED` (ou envie `actorUserId` no body).
+Preview (`dryRun=true`, default) **não** exige actor. Execute (`dryRun=false`) sem actor retorna `503 ACTOR_REQUIRED` — defina o env **ou** envie `actorUserId` no body.
 
 ## Endpoints
 

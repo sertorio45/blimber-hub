@@ -38,6 +38,15 @@ export interface BlimberMcpToolDescriptor {
 
 export interface BlimberMcpSupabaseLike {
   from: (table: string) => any
+  /** Optional Auth admin (service role) — used to verify actorUserId exists. */
+  auth?: {
+    admin?: {
+      getUserById: (id: string) => Promise<{
+        data: { user?: { id?: string } | null } | null
+        error: unknown
+      }>
+    }
+  }
   storage?: {
     from: (bucket: string) => {
       createSignedUrls: (

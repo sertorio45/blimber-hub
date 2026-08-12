@@ -12,6 +12,7 @@ export function resolveBlimberMcpApiSecret(): string {
 /**
  * Optional system actor for marketing writes (created_by FK → auth.users).
  * Prefer actorUserId per call; env is a deployment-level fallback.
+ * Required only when executing (dryRun=false); preview does not need an actor.
  */
 export function resolveMcpActorUserId(explicit?: string | null): string | null {
   const fromArgs = typeof explicit === 'string' ? explicit.trim() : ''

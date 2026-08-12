@@ -1,4 +1,3 @@
-import process from 'node:process'
 import { z } from 'zod'
 import { fetchBrandContextForTenant } from '~/server/utils/brand-context'
 import { assertPackageAllowsNewPost } from '~/server/utils/social-packages'
@@ -8,6 +7,7 @@ import {
   blimberWriteDryRunField,
   resolveDryRun,
 } from './confirm'
+import { resolveMcpActorUserId } from './auth'
 import { BlimberMcpError } from './errors'
 import type { BlimberMcpToolContext } from './types'
 import {
@@ -31,23 +31,62 @@ const socialCampaignStatus = z.enum([
 const platformEnum = z.enum(['facebook', 'instagram', 'linkedin'])
 const formatEnum = z.enum(['static', 'carousel', 'video', 'story'])
 
-function requireActorUserId(ctx: BlimberMcpToolContext, override?: string): string {
-  const id = (override || ctx.actorUserId || process.env.BLIMBER_MCP_ACTOR_USER_ID || '').trim()
-  if (!id) {
-    throw new BlimberMcpError(
-      'ACTOR_REQUIRED',
-      'Defina BLIMBER_MCP_ACTOR_USER_ID (UUID de auth.users) ou envie actorUserId nas criações.',
-      503,
-    )
-  }
-  if (!z.string().uuid().safeParse(id).success) {
+function resolveOptionalActorUserId(
+  ctx: BlimberMcpToolContext,
+  override?: string,
+): string | null {
+  const id = resolveMcpActorUserId(override || ctx.actorUserId)
+  if (!id)
+    return null
+  if (!uuid.safeParse(id).success) {
     throw new BlimberMcpError(
       'ACTOR_INVALID',
-      'actorUserId / BLIMBER_MCP_ACTOR_USER_ID deve ser um UUID válido.',
+      'actorUserId / BLIMBER_MCP_ACTOR_USER_ID deve ser um UUID válido de auth.users.',
       400,
     )
   }
   return id
+}
+
+async function assertActorUserExists(
+  ctx: BlimberMcpToolContext,
+  actorUserId: string,
+): Promise<void> {
+  const getUserById = ctx.client.auth?.admin?.getUserById
+  if (typeof getUserById !== 'function')
+    return
+
+  const { data, error } = await getUserById(actorUserId)
+  if (error || !data?.user?.id) {
+    throw new BlimberMcpError(
+      'ACTOR_NOT_FOUND',
+      'actorUserId / BLIMBER_MCP_ACTOR_USER_ID não existe em auth.users.',
+      400,
+    )
+  }
+}
+
+/** Actor is required only on execute (dryRun=false). Preview never requires it. */
+async function requireActorUserId(
+  ctx: BlimberMcpToolContext,
+  override?: string,
+): Promise<string> {
+  const id = resolveOptionalActorUserId(ctx, override)
+  if (!id) {
+    throw new BlimberMcpError(
+      'ACTOR_REQUIRED',
+      'Para gravar (dryRun=false), envie actorUserId (UUID de auth.users) ou defina BLIMBER_MCP_ACTOR_USER_ID no servidor. Preview (dryRun=true) não exige actor.',
+      503,
+    )
+  }
+  await assertActorUserExists(ctx, id)
+  return id
+}
+
+function actorPreviewNote(actorUserId: string | null): string {
+  return actorUserId
+    ? `created_by=${actorUserId}`
+    : 'Execute (dryRun=false) exige actorUserId no body ou BLIMBER_MCP_ACTOR_USER_ID no servidor.'
 }
 
 function mapCampaignRow(row: Record<string, any>, postsCount?: number) {
@@ -158,6 +197,7 @@ export const marketingUpdatePostSchema = z.object({
   campaignId: uuid.nullable().optional(),
   scheduledAt: z.string().datetime({ offset: true }).nullable().optional(),
   timezone: z.string().min(1).max(80).optional(),
+  actorUserId: uuid.optional(),
   ...blimberWriteConfirmationFields,
   ...blimberWriteDryRunField,
 })
@@ -196,6 +236,7 @@ export const marketingUpdateCampaignSchema = z.object({
   startsAt: z.string().nullable().optional(),
   endsAt: z.string().nullable().optional(),
   briefingSummary: z.string().max(10000).optional(),
+  actorUserId: uuid.optional(),
   ...blimberWriteConfirmationFields,
   ...blimberWriteDryRunField,
 })
@@ -219,11 +260,11 @@ export const MARKETING_TOOL_DESCRIPTIONS: Record<MarketingToolName, string> = {
   marketing_get_brand_context: 'Lê Brand Context (tom, CTAs, restrições) do Brand Center do tenant.',
   marketing_list_posts: 'Lista posts editoriais (social_posts) do tenant.',
   marketing_get_post: 'Detalhe de um post editorial por postId.',
-  marketing_create_post: 'Cria rascunho de post editorial (dryRun default true; confirm + confirmTenantId).',
+  marketing_create_post: 'Cria rascunho de post editorial (dryRun default true sem actor; execute exige actorUserId ou env).',
   marketing_update_post: 'Atualiza campos de um post draft (dryRun default true).',
   marketing_list_campaigns: 'Lista campanhas EDITORIAIS (social_campaigns) — não são Meta Ads.',
   marketing_get_campaign: 'Detalhe de campanha editorial + posts vinculados.',
-  marketing_create_campaign: 'Cria campanha editorial (social_campaigns). Não cria campanha Meta Ads.',
+  marketing_create_campaign: 'Cria campanha editorial (dryRun default true sem actor; execute exige actorUserId ou env).',
   marketing_update_campaign: 'Atualiza campanha editorial (nome, status, briefing, datas).',
 }
 
@@ -429,7 +470,9 @@ export async function marketingCreatePost(
   const input = marketingCreatePostSchema.parse(raw)
   assertBlimberWriteConfirmation(input)
   const dryRun = resolveDryRun(input.dryRun, true)
-  const actorUserId = requireActorUserId(ctx, input.actorUserId)
+  const actorUserId = dryRun
+    ? resolveOptionalActorUserId(ctx, input.actorUserId)
+    : await requireActorUserId(ctx, input.actorUserId)
 
   if (input.campaignId) {
     const { data: campaign } = await ctx.client
@@ -523,6 +566,7 @@ export async function marketingCreatePost(
       notes: [
         'Post editorial (social_posts), não anúncio Meta.',
         'Default dryRun=true — reenvie com dryRun=false após confirmação.',
+        actorPreviewNote(actorUserId),
         `Hub: ${MARKETING_CONTENT_URL}`,
       ],
     }
@@ -791,7 +835,9 @@ export async function marketingCreateCampaign(
   const input = marketingCreateCampaignSchema.parse(raw)
   assertBlimberWriteConfirmation(input)
   const dryRun = resolveDryRun(input.dryRun, true)
-  const actorUserId = requireActorUserId(ctx, input.actorUserId)
+  const actorUserId = dryRun
+    ? resolveOptionalActorUserId(ctx, input.actorUserId)
+    : await requireActorUserId(ctx, input.actorUserId)
 
   const insertPayload = {
     tenant_id: input.tenantId,
@@ -816,6 +862,7 @@ export async function marketingCreateCampaign(
         'Campanha EDITORIAL (social_campaigns) — NÃO é Meta Ads / marketing_campaigns paid.',
         'Para campanha paga Meta use meta_create_campaign.',
         'Reenvie com dryRun=false após confirmação.',
+        actorPreviewNote(actorUserId),
       ],
     }
   }

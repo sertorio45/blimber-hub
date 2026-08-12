@@ -33,6 +33,7 @@ const TOOL_INPUT_HINTS: Record<MarketingToolName, string[]> = {
     'content?',
     'campaignId?',
     'dryRun? (default true)',
+    'actorUserId?',
   ],
   marketing_list_campaigns: ['tenantId', 'status?', 'search?', 'limit?'],
   marketing_get_campaign: ['tenantId', 'campaignId'],
@@ -56,6 +57,7 @@ const TOOL_INPUT_HINTS: Record<MarketingToolName, string[]> = {
     'status?',
     'briefingSummary?',
     'dryRun? (default true)',
+    'actorUserId?',
   ],
 }
 

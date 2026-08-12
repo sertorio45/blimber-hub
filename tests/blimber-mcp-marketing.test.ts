@@ -107,7 +107,7 @@ describe('blimber marketing tools (mocked)', () => {
     }
 
     const result = await marketingCreateCampaign(
-      { client: client as any, actorUserId: '22222222-2222-2222-2222-222222222222' },
+      { client: client as any },
       {
         tenantId,
         name: 'Campanha Março',
@@ -119,6 +119,133 @@ describe('blimber marketing tools (mocked)', () => {
 
     expect(result).toMatchObject({ dryRun: true, wouldMutate: true, kind: 'editorial' })
     expect(insert).not.toHaveBeenCalled()
+  })
+
+  it('create campaign dry-run works without actor', async () => {
+    const tenantId = '11111111-1111-1111-1111-111111111111'
+    const previousActor = process.env.BLIMBER_MCP_ACTOR_USER_ID
+    delete process.env.BLIMBER_MCP_ACTOR_USER_ID
+
+    try {
+      const result = await marketingCreateCampaign(
+        { client: { from: () => ({}) } as any },
+        {
+          tenantId,
+          name: 'Farmaestética Agosto',
+          confirm: true,
+          confirmTenantId: tenantId,
+          dryRun: true,
+        },
+      )
+      expect(result).toMatchObject({ dryRun: true, wouldMutate: true, kind: 'editorial' })
+      expect((result as { preview: { created_by: string | null } }).preview.created_by).toBeNull()
+    }
+    finally {
+      if (previousActor === undefined)
+        delete process.env.BLIMBER_MCP_ACTOR_USER_ID
+      else
+        process.env.BLIMBER_MCP_ACTOR_USER_ID = previousActor
+    }
+  })
+
+  it('create campaign execute without actor returns ACTOR_REQUIRED', async () => {
+    const tenantId = '11111111-1111-1111-1111-111111111111'
+    const previousActor = process.env.BLIMBER_MCP_ACTOR_USER_ID
+    delete process.env.BLIMBER_MCP_ACTOR_USER_ID
+
+    try {
+      await expect(
+        marketingCreateCampaign(
+          { client: createClient({}) as any },
+          {
+            tenantId,
+            name: 'Farmaestética Agosto',
+            confirm: true,
+            confirmTenantId: tenantId,
+            dryRun: false,
+          },
+        ),
+      ).rejects.toMatchObject({
+        code: 'ACTOR_REQUIRED',
+        statusCode: 503,
+      })
+    }
+    finally {
+      if (previousActor === undefined)
+        delete process.env.BLIMBER_MCP_ACTOR_USER_ID
+      else
+        process.env.BLIMBER_MCP_ACTOR_USER_ID = previousActor
+    }
+  })
+
+  it('create campaign execute with actor inserts', async () => {
+    const tenantId = '11111111-1111-1111-1111-111111111111'
+    const actorUserId = '22222222-2222-2222-2222-222222222222'
+    const previousActor = process.env.BLIMBER_MCP_ACTOR_USER_ID
+    delete process.env.BLIMBER_MCP_ACTOR_USER_ID
+
+    try {
+      const result = await marketingCreateCampaign(
+        { client: createClient({}) as any },
+        {
+          tenantId,
+          name: 'Farmaestética Agosto',
+          confirm: true,
+          confirmTenantId: tenantId,
+          dryRun: false,
+          actorUserId,
+        },
+      )
+      expect(result).toMatchObject({
+        dryRun: false,
+        kind: 'editorial',
+        campaign: { name: 'Farmaestética Agosto' },
+      })
+    }
+    finally {
+      if (previousActor === undefined)
+        delete process.env.BLIMBER_MCP_ACTOR_USER_ID
+      else
+        process.env.BLIMBER_MCP_ACTOR_USER_ID = previousActor
+    }
+  })
+
+  it('create campaign execute rejects unknown actor in auth.users', async () => {
+    const tenantId = '11111111-1111-1111-1111-111111111111'
+    const actorUserId = '22222222-2222-2222-2222-222222222222'
+    const previousActor = process.env.BLIMBER_MCP_ACTOR_USER_ID
+    delete process.env.BLIMBER_MCP_ACTOR_USER_ID
+
+    const client = {
+      ...createClient({}),
+      auth: {
+        admin: {
+          getUserById: async () => ({ data: { user: null }, error: null }),
+        },
+      },
+    }
+
+    try {
+      await expect(
+        marketingCreateCampaign(
+          { client: client as any },
+          {
+            tenantId,
+            name: 'Farmaestética Agosto',
+            confirm: true,
+            confirmTenantId: tenantId,
+            dryRun: false,
+            actorUserId,
+          },
+        ),
+      ).rejects.toMatchObject({ code: 'ACTOR_NOT_FOUND', statusCode: 400 })
+    }
+    finally {
+      if (previousActor === undefined)
+        delete process.env.BLIMBER_MCP_ACTOR_USER_ID
+      else
+        process.env.BLIMBER_MCP_ACTOR_USER_ID = previousActor
+    }
   })
 
   it('rejects create without confirmation', async () => {
@@ -140,8 +267,10 @@ describe('blimber marketing tools (mocked)', () => {
     ).rejects.toBeInstanceOf(BlimberMcpError)
   })
 
-  it('create post dry-run requires actor and returns editorial kind', async () => {
+  it('create post dry-run works without actor and returns editorial kind', async () => {
     const tenantId = '11111111-1111-1111-1111-111111111111'
+    const previousActor = process.env.BLIMBER_MCP_ACTOR_USER_ID
+    delete process.env.BLIMBER_MCP_ACTOR_USER_ID
     const { marketingCreatePost } = await import('../lib/blimber-mcp')
 
     const chain: any = {
@@ -155,20 +284,25 @@ describe('blimber marketing tools (mocked)', () => {
       in: () => chain,
     }
 
-    const result = await marketingCreatePost(
-      {
-        client: { from: () => chain } as any,
-        actorUserId: '22222222-2222-2222-2222-222222222222',
-      },
-      {
-        tenantId,
-        title: 'Post GPT',
-        content: 'Texto',
-        confirm: true,
-        confirmTenantId: tenantId,
-        dryRun: true,
-      },
-    )
-    expect(result).toMatchObject({ dryRun: true, kind: 'editorial', wouldMutate: true })
+    try {
+      const result = await marketingCreatePost(
+        { client: { from: () => chain } as any },
+        {
+          tenantId,
+          title: 'Post GPT',
+          content: 'Texto',
+          confirm: true,
+          confirmTenantId: tenantId,
+          dryRun: true,
+        },
+      )
+      expect(result).toMatchObject({ dryRun: true, kind: 'editorial', wouldMutate: true })
+    }
+    finally {
+      if (previousActor === undefined)
+        delete process.env.BLIMBER_MCP_ACTOR_USER_ID
+      else
+        process.env.BLIMBER_MCP_ACTOR_USER_ID = previousActor
+    }
   })
 })

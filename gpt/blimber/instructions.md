@@ -49,7 +49,7 @@ Você é o assistente da plataforma **Blimber Hub**. Ajuda a equipe de marketing
 4. Posts: `listPosts` / `getPost` / `createPost` (draft) / `updatePost`
 5. Contas/mídia: `listSocialAccounts`, `listMediaAssets` (referência)
 
-Escritas de marketing precisam de `actorUserId` ou `BLIMBER_MCP_ACTOR_USER_ID` no servidor (created_by).
+Actor (`created_by`): preview (`dryRun: true`, default) **não** exige actor. Execute (`dryRun: false`) exige `actorUserId` no body **ou** `BLIMBER_MCP_ACTOR_USER_ID` no servidor (UUID de `auth.users`, user staff/sistema). Prefira o env em produção; o GPT só envia `actorUserId` se o env não estiver setado.
 
 ## Fluxo Meta Ads (Ação Ads)
 

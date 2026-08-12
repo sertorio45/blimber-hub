@@ -310,6 +310,18 @@ describe('blimber unified MCP registry + openapi', () => {
     expect(paths).toContain('/api/gpt/marketing/posts')
     expect(paths).toContain('/api/gpt/marketing/campaigns')
     expect(paths.some(p => p.startsWith('/api/gpt/meta/'))).toBe(false)
+
+    const doc = parseYaml(yaml)
+    const pathsDoc = doc.paths as Record<string, Record<string, { requestBody?: { content?: { 'application/json'?: { schema?: { properties?: Record<string, unknown> } } } } }>>
+    for (const [path, method] of [
+      ['/api/gpt/marketing/posts', 'post'],
+      ['/api/gpt/marketing/posts/{postId}', 'put'],
+      ['/api/gpt/marketing/campaigns', 'post'],
+      ['/api/gpt/marketing/campaigns/{campaignId}', 'put'],
+    ] as const) {
+      const props = pathsDoc[path]?.[method]?.requestBody?.content?.['application/json']?.schema?.properties
+      expect(props?.actorUserId, `${method.toUpperCase()} ${path} actorUserId`).toBeTruthy()
+    }
   })
 
   it('ads Action spec is ChatGPT-friendly (≤30 ops, ads host, no tenant duplicate)', () => {

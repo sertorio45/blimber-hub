@@ -209,8 +209,9 @@ paths:
       operationId: createPost
       summary: Criar post editorial (draft)
       description: >
-        Cria rascunho em social_posts. dryRun default true. Exige confirm=true e
-        confirmTenantId=tenantId. Actor: actorUserId ou BLIMBER_MCP_ACTOR_USER_ID.
+        Cria rascunho em social_posts. dryRun default true (preview, sem actor).
+        Exige confirm=true e confirmTenantId=tenantId. Execute (dryRun=false)
+        exige actorUserId ou BLIMBER_MCP_ACTOR_USER_ID.
       requestBody:
         required: true
         content:
@@ -244,6 +245,7 @@ paths:
                 actorUserId:
                   type: string
                   format: uuid
+                  description: UUID de auth.users (created_by). Só exigido em dryRun=false se o servidor não tiver BLIMBER_MCP_ACTOR_USER_ID. Preview não exige.
                 confirmTenantId:
                   type: string
                   format: uuid
@@ -289,7 +291,7 @@ paths:
       summary: Atualizar post draft
       description: >
         Atualiza campos de post draft. dryRun default true. Exige confirm +
-        confirmTenantId.
+        confirmTenantId. actorUserId opcional (created_by só em create).
       parameters:
         - name: postId
           in: path
@@ -316,6 +318,10 @@ paths:
                 campaignId:
                   type: string
                   format: uuid
+                actorUserId:
+                  type: string
+                  format: uuid
+                  description: UUID de auth.users. Opcional em update. Só exigido em create com dryRun=false se faltar BLIMBER_MCP_ACTOR_USER_ID.
                 confirmTenantId:
                   type: string
                   format: uuid
@@ -365,8 +371,9 @@ paths:
       operationId: createEditorialCampaign
       summary: Criar campanha editorial
       description: >
-        Cria social_campaigns. dryRun default true. Ads pagos: Ação Ads
-        (openapi-ads.yaml — createCampaign, etc.).
+        Cria social_campaigns. dryRun default true (preview, sem actor). Ads
+        pagos: Ação Ads. Execute (dryRun=false) exige actorUserId ou
+        BLIMBER_MCP_ACTOR_USER_ID.
       requestBody:
         required: true
         content:
@@ -392,6 +399,7 @@ paths:
                 actorUserId:
                   type: string
                   format: uuid
+                  description: UUID de auth.users (created_by). Só exigido em dryRun=false se o servidor não tiver BLIMBER_MCP_ACTOR_USER_ID. Preview não exige.
                 confirmTenantId:
                   type: string
                   format: uuid
@@ -435,7 +443,7 @@ paths:
     put:
       operationId: updateEditorialCampaign
       summary: Atualizar campanha editorial
-      description: Atualiza nome/status/briefing. dryRun default true + confirm.
+      description: Atualiza nome/status/briefing. dryRun default true + confirm. actorUserId opcional.
       parameters:
         - name: campaignId
           in: path
@@ -462,6 +470,10 @@ paths:
                   enum: [draft, active, paused, completed, cancelled]
                 briefingSummary:
                   type: string
+                actorUserId:
+                  type: string
+                  format: uuid
+                  description: UUID de auth.users. Opcional em update. Só exigido em create com dryRun=false se faltar BLIMBER_MCP_ACTOR_USER_ID.
                 confirmTenantId:
                   type: string
                   format: uuid
