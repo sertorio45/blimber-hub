@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { MarketingPostScheduleInput } from '~/types/marketing-schedules'
 import type {
   ApprovalPolicy,
   MediaAsset,
@@ -8,10 +9,16 @@ import type {
   SocialPostVariantInput,
   SocialProductionPriority,
 } from '~/types/marketing-social'
-import type { MarketingPostScheduleInput } from '~/types/marketing-schedules'
 
-import ScheduleSlotsEditor from '~/components/marketing/content/ScheduleSlotsEditor.vue'
 import ProductionMetaFields from '~/components/marketing/content/ProductionMetaFields.vue'
+import ScheduleSlotsEditor from '~/components/marketing/content/ScheduleSlotsEditor.vue'
+import SocialPostComposer from '~/components/marketing/social/SocialPostComposer.vue'
+import SocialPostPreviewPanel from '~/components/marketing/social/SocialPostPreviewPanel.vue'
+import {
+  buildCaptionWithHashtags,
+  formatHashtagsInline,
+  parseHashtags,
+} from '~/utils/social-hashtags'
 
 const props = defineProps<{
   initialValue?: SocialPostInput
@@ -22,13 +29,13 @@ const emit = defineEmits<{
   save: [value: SocialPostInput]
 }>()
 
-type TeamMemberOption = {
+interface TeamMemberOption {
   userId: string
   name: string
   email: string
 }
 
-type CampaignOption = {
+interface CampaignOption {
   id: string
   name: string
   status: string
@@ -42,7 +49,8 @@ const title = ref(props.initialValue?.title || '')
 const content = ref(props.initialValue?.content || '')
 const artText = ref(props.initialValue?.artText || '')
 const cta = ref(props.initialValue?.cta || '')
-const hashtagsText = ref((props.initialValue?.hashtags || []).join(' '))
+const hashtags = ref<string[]>([...(props.initialValue?.hashtags || [])])
+const showLinkField = ref(Boolean(props.initialValue?.variants?.[0]?.linkUrl))
 const campaignId = ref(props.initialValue?.campaignId || 'none')
 const assignedTo = ref(props.initialValue?.assignedTo || 'none')
 const customizeVariants = ref(false)
@@ -91,7 +99,7 @@ const { data: assets, pending: assetsPending, refresh: refreshAssets } = useMark
   watch: [social.tenantId],
   enabled: () => Boolean(social.tenantId.value),
 })
-const { data: campaigns, pending: campaignsPending } = useMarketingFetch({
+const { data: campaigns, pending: _campaignsPending } = useMarketingFetch({
   key: () => `marketing-social-form-campaigns-${social.tenantId.value}`,
   handler: async () => {
     const response = await $fetch<{ data: CampaignOption[] }>('/api/marketing/social/campaigns', {
@@ -103,7 +111,7 @@ const { data: campaigns, pending: campaignsPending } = useMarketingFetch({
   watch: [social.tenantId],
   enabled: () => Boolean(social.tenantId.value),
 })
-const { data: members, pending: membersPending } = useMarketingFetch({
+const { data: members, pending: _membersPending } = useMarketingFetch({
   key: () => `marketing-social-form-members-${social.tenantId.value}`,
   handler: async () => {
     const response = await $fetch<{ data: TeamMemberOption[] }>(
@@ -117,6 +125,37 @@ const { data: members, pending: membersPending } = useMarketingFetch({
   enabled: () => !isClientExperience.value && Boolean(social.tenantId.value),
 })
 const formDataPending = computed(() => accountsPending.value || assetsPending.value)
+
+const { draft: brandGuide } = useBrandGuide()
+const suggestedHashtags = computed(() => brandGuide.value?.hashtags || [])
+
+const previewAccount = computed(() => {
+  const first = variants.value[0]
+  if (!first)
+    return { name: 'Sua página', platform: 'facebook' as const }
+  const account = accounts.value?.find(item => item.id === first.accountId)
+  return {
+    name: account?.name || platformLabel(first.platform),
+    platform: first.platform,
+  }
+})
+
+const previewMedia = computed(() => {
+  const assetId = publicationAssetIds.value[0]
+  if (!assetId)
+    return { url: null, type: null as 'image' | 'video' | null }
+  const asset = publicationAssetById(assetId)
+  const mime = asset?.mimeType || asset?.mime_type || ''
+  const url = asset?.previewUrl || asset?.preview_url || null
+  return {
+    url,
+    type: mime.startsWith('video/') ? 'video' as const : mime.startsWith('image/') ? 'image' as const : null,
+  }
+})
+
+const composedCaptionPreview = computed(() =>
+  buildCaptionWithHashtags(content.value, hashtags.value),
+)
 
 const selectedCampaignName = computed(() => {
   if (campaignId.value === 'none')
@@ -174,7 +213,8 @@ watch(
     content.value = value.content || ''
     artText.value = value.artText || ''
     cta.value = value.cta || ''
-    hashtagsText.value = (value.hashtags || []).join(' ')
+    hashtags.value = [...(value.hashtags || [])]
+    showLinkField.value = Boolean(value.variants?.[0]?.linkUrl)
     campaignId.value = value.campaignId || 'none'
     assignedTo.value = value.assignedTo || 'none'
     scheduledAt.value = value.scheduledAt?.slice(0, 16) || ''
@@ -208,17 +248,6 @@ watch(
   { deep: true },
 )
 
-function parseHashtags(raw: string): string[] {
-  return [...new Set(
-    raw
-      .split(/[\s,]+/)
-      .map(token => token.trim())
-      .filter(Boolean)
-      .map(token => (token.startsWith('#') ? token : `#${token}`))
-      .slice(0, 30),
-  )]
-}
-
 function accountSelected(accountId: string) {
   return variants.value.some(variant => variant.accountId === accountId)
 }
@@ -235,7 +264,7 @@ function ensureVariantDefaults(variant: SocialPostVariantInput): SocialPostVaria
   return {
     ...variant,
     caption: variant.caption || content.value,
-    hashtags: variant.hashtags?.length ? variant.hashtags : parseHashtags(hashtagsText.value),
+    hashtags: variant.hashtags?.length ? variant.hashtags : [...hashtags.value],
     platformConfig: {
       ...(variant.platformConfig || {}),
       artText: String(variant.platformConfig?.artText || artText.value || ''),
@@ -254,7 +283,7 @@ function toggleAccount(account: SocialAccount) {
     platform: account.platform,
     format: publicationFormat.value,
     caption: content.value,
-    hashtags: parseHashtags(hashtagsText.value),
+    hashtags: [...hashtags.value],
     platformConfig: {
       artText: artText.value || '',
       cta: cta.value || '',
@@ -286,7 +315,7 @@ function updateVariantField(
 }
 
 function variantHashtagsText(variant: SocialPostVariantInput) {
-  return (variant.hashtags || []).join(' ')
+  return formatHashtagsInline(variant.hashtags || [])
 }
 
 function toggleAllAccounts() {
@@ -301,7 +330,7 @@ function toggleAllAccounts() {
     platform: account.platform,
     format: publicationFormat.value,
     caption: content.value,
-    hashtags: parseHashtags(hashtagsText.value),
+    hashtags: [...hashtags.value],
     platformConfig: {
       artText: artText.value || '',
       cta: cta.value || '',
@@ -436,7 +465,7 @@ function submit() {
   if (hasFormatConflict.value)
     return
 
-  const sharedHashtags = parseHashtags(hashtagsText.value)
+  const sharedHashtags = [...hashtags.value]
   const sharedArtText = artText.value.trim()
   const sharedCta = cta.value.trim()
   const normalizedSchedules = schedules.value
@@ -530,112 +559,145 @@ function submit() {
       </StepperItem>
     </Stepper>
 
-    <Card v-if="currentStep === 1">
-      <CardHeader>
-        <CardTitle>Conteúdo da publicação</CardTitle>
-        <CardDescription>
-          Defina o texto-base. Depois você pode adaptar por rede, se precisar.
-        </CardDescription>
-      </CardHeader>
-      <CardContent class="space-y-5">
-        <div class="space-y-2">
-          <Label for="social-title">Título interno</Label>
-          <Input
-            id="social-title"
-            v-model="title"
-            maxlength="180"
-            placeholder="Ex.: Campanha de inverno — lançamento"
-          />
-          <p class="text-xs text-muted-foreground">
-            Usado apenas para organização interna.
-          </p>
-        </div>
-        <div class="space-y-2">
-          <Label for="social-content">Legenda da publicação</Label>
-          <Textarea
-            id="social-content"
-            v-model="content"
-            class="min-h-44"
-            maxlength="10000"
-            placeholder="Escreva a legenda que será publicada nas redes sociais"
-          />
-          <p class="text-right text-xs text-muted-foreground">
-            {{ content.length }}/10.000
-          </p>
-        </div>
-        <div class="space-y-2">
-          <Label for="social-art-text">Texto da arte</Label>
-          <Textarea
-            id="social-art-text"
-            v-model="artText"
-            class="min-h-24"
-            maxlength="2000"
-            placeholder="Texto que aparece na peça visual (opcional)"
-          />
-        </div>
-        <div class="grid gap-4 md:grid-cols-2">
+    <div v-if="currentStep === 1" class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+      <Card class="border-muted/80 shadow-sm">
+        <CardHeader class="pb-4">
+          <CardTitle class="text-lg">
+            Detalhes do post
+          </CardTitle>
+          <CardDescription>
+            Escreva a legenda, adicione hashtags e configure o conteúdo base da publicação.
+          </CardDescription>
+        </CardHeader>
+        <CardContent class="space-y-5">
           <div class="space-y-2">
-            <Label for="social-hashtags">Hashtags</Label>
+            <Label for="social-title">Título interno</Label>
             <Input
-              id="social-hashtags"
-              v-model="hashtagsText"
-              placeholder="#marca #campanha"
+              id="social-title"
+              v-model="title"
+              maxlength="180"
+              placeholder="Ex.: Campanha de inverno — lançamento"
+            />
+            <p class="text-xs text-muted-foreground">
+              Usado apenas para organização interna.
+            </p>
+          </div>
+
+          <div class="space-y-2">
+            <Label for="social-content">Legenda da publicação</Label>
+            <SocialPostComposer
+              v-model="content"
+              v-model:hashtags="hashtags"
+              :suggested-hashtags="suggestedHashtags"
+              @insert-link="showLinkField = true"
             />
           </div>
-          <div class="space-y-2">
-            <Label for="social-cta">CTA</Label>
+
+          <div v-if="showLinkField" class="space-y-2">
+            <Label for="publication-link-step1">Link opcional</Label>
             <Input
-              id="social-cta"
-              v-model="cta"
-              maxlength="240"
-              placeholder="Ex.: Saiba mais, Compre agora"
+              id="publication-link-step1"
+              v-model="publicationLink"
+              type="url"
+              placeholder="https://..."
             />
           </div>
-        </div>
-        <div class="grid gap-4 md:grid-cols-2">
-          <div class="space-y-2">
-            <Label>Campanha</Label>
-            <Select v-model="campaignId">
-              <SelectTrigger>
-                <SelectValue placeholder="Vincular campanha" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">
-                  Sem campanha
-                </SelectItem>
-                <SelectItem
-                  v-for="campaign in campaigns"
-                  :key="campaign.id"
-                  :value="campaign.id"
-                >
-                  {{ campaign.name }}
-                </SelectItem>
-              </SelectContent>
-            </Select>
+
+          <div class="flex items-center justify-between gap-4 border rounded-xl bg-muted/20 px-4 py-3">
+            <div class="min-w-0">
+              <p class="text-sm font-medium">
+                Personalizar post por rede
+              </p>
+              <p class="text-xs text-muted-foreground">
+                Adapte legenda, hashtags, CTA e texto da arte para cada canal.
+              </p>
+            </div>
+            <Switch
+              :checked="customizeVariants"
+              :disabled="!variants.length"
+              @update:checked="customizeVariants = $event"
+            />
           </div>
-          <div v-if="!isClientExperience" class="space-y-2">
-            <Label>Responsável</Label>
-            <Select v-model="assignedTo">
-              <SelectTrigger>
-                <SelectValue placeholder="Atribuir responsável" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">
-                  Sem responsável
-                </SelectItem>
-                <SelectItem
-                  v-for="member in members"
-                  :key="member.userId"
-                  :value="member.userId"
-                >
-                  {{ member.name }}
-                </SelectItem>
-              </SelectContent>
-            </Select>
+
+          <div class="grid gap-4 md:grid-cols-2">
+            <div class="space-y-2">
+              <Label for="social-art-text">Texto da arte</Label>
+              <Textarea
+                id="social-art-text"
+                v-model="artText"
+                class="min-h-24"
+                maxlength="2000"
+                placeholder="Texto que aparece na peça visual (opcional)"
+              />
+            </div>
+            <div class="space-y-2">
+              <Label for="social-cta">CTA</Label>
+              <Input
+                id="social-cta"
+                v-model="cta"
+                maxlength="240"
+                placeholder="Ex.: Saiba mais, Compre agora"
+              />
+            </div>
           </div>
-        </div>
-      </CardContent>
-    </Card>
+
+          <div class="grid gap-4 md:grid-cols-2">
+            <div class="space-y-2">
+              <Label>Campanha</Label>
+              <Select v-model="campaignId">
+                <SelectTrigger>
+                  <SelectValue placeholder="Vincular campanha" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">
+                    Sem campanha
+                  </SelectItem>
+                  <SelectItem
+                    v-for="campaign in campaigns"
+                    :key="campaign.id"
+                    :value="campaign.id"
+                  >
+                    {{ campaign.name }}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div v-if="!isClientExperience" class="space-y-2">
+              <Label>Responsável</Label>
+              <Select v-model="assignedTo">
+                <SelectTrigger>
+                  <SelectValue placeholder="Atribuir responsável" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">
+                    Sem responsável
+                  </SelectItem>
+                  <SelectItem
+                    v-for="member in members"
+                    :key="member.userId"
+                    :value="member.userId"
+                  >
+                    {{ member.name }}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div class="lg:sticky lg:top-6 lg:self-start">
+        <SocialPostPreviewPanel
+          :caption="content"
+          :hashtags="hashtags"
+          :platform="previewAccount.platform"
+          :account-name="previewAccount.name"
+          :media-url="previewMedia.url"
+          :media-type="previewMedia.type"
+          :link-url="publicationLink || null"
+        />
+      </div>
+    </div>
 
     <Card v-else-if="currentStep === 2">
       <CardHeader>
@@ -944,33 +1006,33 @@ function submit() {
           />
 
           <div v-if="!isClientExperience" class="space-y-2">
-              <Label>Política de aprovação</Label>
-              <Select v-model="approvalPolicy">
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="any">
-                    Uma aprovação
-                  </SelectItem>
-                  <SelectItem value="all">
-                    Todos devem aprovar
-                  </SelectItem>
-                  <SelectItem value="minimum">
-                    Quantidade mínima
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-              <Input
-                v-if="approvalPolicy === 'minimum'"
-                v-model.number="minimumApprovals"
-                type="number"
-                min="1"
-                max="100"
-                aria-label="Mínimo de aprovações"
-              />
-            </div>
-            <div v-else class="space-y-2 rounded-lg border border-dashed p-4 text-sm text-muted-foreground">
-              Sem fluxo de aprovação — você agenda ou publica direto.
-            </div>
+            <Label>Política de aprovação</Label>
+            <Select v-model="approvalPolicy">
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="any">
+                  Uma aprovação
+                </SelectItem>
+                <SelectItem value="all">
+                  Todos devem aprovar
+                </SelectItem>
+                <SelectItem value="minimum">
+                  Quantidade mínima
+                </SelectItem>
+              </SelectContent>
+            </Select>
+            <Input
+              v-if="approvalPolicy === 'minimum'"
+              v-model.number="minimumApprovals"
+              type="number"
+              min="1"
+              max="100"
+              aria-label="Mínimo de aprovações"
+            />
+          </div>
+          <div v-else class="border rounded-lg border-dashed p-4 text-sm text-muted-foreground space-y-2">
+            Sem fluxo de aprovação — você agenda ou publica direto.
+          </div>
         </CardContent>
       </Card>
     </div>
@@ -991,13 +1053,10 @@ function submit() {
             {{ title }}
           </p>
           <p class="mt-3 whitespace-pre-wrap text-sm text-muted-foreground">
-            {{ content || 'Sem legenda' }}
+            {{ composedCaptionPreview || 'Sem legenda' }}
           </p>
           <p v-if="artText" class="mt-2 text-sm">
             <span class="text-muted-foreground">Arte:</span> {{ artText }}
-          </p>
-          <p v-if="hashtagsText" class="mt-1 text-sm text-muted-foreground">
-            {{ hashtagsText }}
           </p>
           <p v-if="cta" class="mt-1 text-sm">
             <span class="text-muted-foreground">CTA:</span> {{ cta }}

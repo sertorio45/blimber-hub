@@ -3,6 +3,7 @@ import process from 'node:process'
 import { createError } from 'h3'
 
 import { decryptSecret } from '~/server/utils/marketing'
+import { buildCaptionWithHashtags } from '~/utils/social-hashtags'
 
 interface MetaPublishInput {
   client: any
@@ -135,10 +136,7 @@ async function publishInstagram(input: MetaPublishInput, token: string, graphBas
   if (!media.length)
     throw createError({ statusCode: 400, statusMessage: 'Instagram exige ao menos uma mídia' })
 
-  const caption = [
-    input.variant.caption || '',
-    ...(input.variant.hashtags || []).map((tag: string) => tag.startsWith('#') ? tag : `#${tag}`),
-  ].filter(Boolean).join('\n\n')
+  const caption = buildCaptionWithHashtags(input.variant.caption, input.variant.hashtags)
 
   const children: string[] = []
   for (const asset of media) {
@@ -286,10 +284,7 @@ async function publishFacebook(input: MetaPublishInput, token: string, graphBase
     return publishFacebookStory(input, token, graphBase)
 
   const media = await getSignedAssetUrls(input.client, input.assets)
-  const message = [
-    input.variant.caption || '',
-    ...(input.variant.hashtags || []).map((tag: string) => tag.startsWith('#') ? tag : `#${tag}`),
-  ].filter(Boolean).join('\n\n')
+  const message = buildCaptionWithHashtags(input.variant.caption, input.variant.hashtags)
 
   if (!media.length) {
     const post = await $fetch<any>(`${graphBase}/${input.account.external_account_id}/feed`, {

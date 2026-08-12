@@ -2,6 +2,7 @@
 import type { ApprovalChangeCategory, ApprovalDecision } from '~/types/marketing-social'
 import ApprovalMediaPreview from '@/components/marketing/social/ApprovalMediaPreview.vue'
 import ApprovalVersionCompare from '@/components/marketing/social/ApprovalVersionCompare.vue'
+import { buildCaptionWithHashtags } from '~/utils/social-hashtags'
 import {
   APPROVAL_CHANGE_CATEGORY_LABELS,
   APPROVAL_REQUEST_STATUS_LABELS,
@@ -558,10 +559,7 @@ const showStickyActions = computed(() => {
                       </Badge>
                     </div>
                     <p class="whitespace-pre-wrap text-sm leading-relaxed">
-                      {{ variant.caption || 'Sem legenda' }}
-                    </p>
-                    <p v-if="variant.hashtags?.length" class="mt-2 text-xs text-muted-foreground">
-                      {{ (variant.hashtags || []).join(' ') }}
+                      {{ buildCaptionWithHashtags(variant.caption, variant.hashtags) || 'Sem legenda' }}
                     </p>
                     <p v-if="variant.cta || variant.call_to_action" class="mt-2 text-xs">
                       <span class="text-muted-foreground">CTA:</span>

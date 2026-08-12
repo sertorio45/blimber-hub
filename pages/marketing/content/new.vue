@@ -53,11 +53,11 @@ async function save(input: SocialPostInput) {
         {{ isClientExperience ? 'Voltar para publicações' : 'Voltar para conteúdos' }}
       </Button>
       <h1 class="text-2xl font-bold tracking-tight">
-        Novo conteúdo
+        {{ isClientExperience ? 'Criar post' : 'Novo conteúdo' }}
       </h1>
       <p class="mt-1 text-muted-foreground">
         {{ isClientExperience
-          ? 'Prepare o conteúdo, escolha os canais e agende ou publique na hora.'
+          ? 'Escreva a legenda, escolha os canais e veja a pré-visualização antes de publicar.'
           : 'Título, legenda, variantes por rede, anexos, campanha e responsáveis.' }}
       </p>
     </div>

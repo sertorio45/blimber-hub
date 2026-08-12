@@ -3,6 +3,7 @@ import process from 'node:process'
 import { createError } from 'h3'
 
 import { decryptSecret } from '~/server/utils/marketing'
+import { buildCaptionWithHashtags } from '~/utils/social-hashtags'
 
 interface LinkedinPublishInput {
   client: any
@@ -69,10 +70,7 @@ export async function publishToLinkedin(input: LinkedinPublishInput) {
     'X-Restli-Protocol-Version': '2.0.0',
   }
   const owner = `urn:li:organization:${input.account.external_account_id}`
-  const commentary = [
-    input.variant.caption || '',
-    ...(input.variant.hashtags || []).map((tag: string) => tag.startsWith('#') ? tag : `#${tag}`),
-  ].filter(Boolean).join('\n\n')
+  const commentary = buildCaptionWithHashtags(input.variant.caption, input.variant.hashtags)
 
   const images = []
   for (const asset of input.assets) {
