@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  organicMetricFetchGroups,
+  organicMetricsForPlatform,
+} from '~/constants/marketing-organic-metrics'
+import {
   aggregateOrganicMetrics,
   computeOrganicMetricDeltas,
   mapGraphInsightsToSeries,
@@ -26,45 +30,72 @@ describe('meta-organic-insights', () => {
   it('mapGraphInsightsToSeries merges metrics by end date', () => {
     const series = mapGraphInsightsToSeries([
       {
-        name: 'impressions',
+        name: 'page_media_view',
         values: [
           { value: 10, end_time: '2026-08-11T07:00:00+0000' },
           { value: 20, end_time: '2026-08-12T07:00:00+0000' },
         ],
       },
       {
-        name: 'reach',
+        name: 'page_total_media_view_unique',
         values: [
           { value: 5, end_time: '2026-08-11T07:00:00+0000' },
           { value: 8, end_time: '2026-08-12T07:00:00+0000' },
         ],
       },
-    ], ['impressions', 'reach'])
+    ], ['page_media_view', 'page_total_media_view_unique'])
 
     expect(series).toHaveLength(2)
-    expect(series[0]).toMatchObject({ date: '2026-08-11', impressions: 10, reach: 5 })
-    expect(series[1]).toMatchObject({ date: '2026-08-12', impressions: 20, reach: 8 })
+    expect(series[0]).toMatchObject({ date: '2026-08-11', page_media_view: 10, page_total_media_view_unique: 5 })
+    expect(series[1]).toMatchObject({ date: '2026-08-12', page_media_view: 20, page_total_media_view_unique: 8 })
+  })
+
+  it('mapGraphInsightsToSeries maps total_value metrics to anchor date', () => {
+    const series = mapGraphInsightsToSeries([
+      {
+        name: 'views',
+        total_value: { value: 42 },
+      },
+    ], ['views'], '2026-08-12')
+
+    expect(series).toEqual([{ date: '2026-08-12', views: 42 }])
   })
 
   it('aggregateOrganicMetrics sums flow metrics and snapshots follower counts', () => {
     const series = [
-      { date: '2026-08-11', impressions: 10, reach: 5, follower_count: 100 },
-      { date: '2026-08-12', impressions: 15, reach: 7, follower_count: 110 },
+      { date: '2026-08-11', views: 10, reach: 5, follower_count: 100 },
+      { date: '2026-08-12', views: 15, reach: 7, follower_count: 110 },
     ]
     const metrics = aggregateOrganicMetrics(series, 'instagram')
-    expect(metrics.impressions).toBe(25)
+    expect(metrics.views).toBe(25)
     expect(metrics.reach).toBe(12)
     expect(metrics.follower_count).toBe(110)
   })
 
   it('computeOrganicMetricDeltas returns percent change', () => {
     const deltas = computeOrganicMetricDeltas(
-      { impressions: 200, reach: 50, profile_views: 0, follower_count: 120, email_contacts: 0, website_clicks: 0 },
-      { impressions: 100, reach: 50, profile_views: 0, follower_count: 100, email_contacts: 0, website_clicks: 0 },
+      { views: 200, reach: 50, profile_views: 0, follower_count: 120, website_clicks: 0, accounts_engaged: 0 },
+      { views: 100, reach: 50, profile_views: 0, follower_count: 100, website_clicks: 0, accounts_engaged: 0 },
       'instagram',
     )
-    expect(deltas?.impressions).toBe(100)
+    expect(deltas?.views).toBe(100)
     expect(deltas?.reach).toBe(0)
     expect(deltas?.follower_count).toBe(20)
+  })
+
+  it('organicMetricFetchGroups splits instagram total_value metrics', () => {
+    const groups = organicMetricFetchGroups('instagram')
+    expect(groups).toHaveLength(2)
+    expect(groups[0]?.graphMetricType).toBe('time_series')
+    expect(groups[0]?.metrics).toEqual(['reach', 'follower_count'])
+    expect(groups[1]?.graphMetricType).toBe('total_value')
+    expect(groups[1]?.metrics).toEqual(['views', 'profile_views', 'website_clicks', 'accounts_engaged'])
+  })
+
+  it('facebook metrics use current Graph API names', () => {
+    const keys = organicMetricsForPlatform('facebook').map(m => m.key)
+    expect(keys).toContain('page_media_view')
+    expect(keys).not.toContain('page_impressions')
+    expect(keys).not.toContain('page_fans')
   })
 })

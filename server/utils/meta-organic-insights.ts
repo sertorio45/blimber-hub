@@ -9,6 +9,7 @@ import type {
 
 import {
   organicMetricApiNames,
+  organicMetricFetchGroups,
   organicMetricsForPlatform,
 } from '~/constants/marketing-organic-metrics'
 
@@ -20,6 +21,7 @@ interface GraphInsightValue {
 interface GraphInsightRow {
   name?: string
   values?: GraphInsightValue[]
+  total_value?: { value?: number | Record<string, number> }
 }
 
 export interface MetaOrganicFetchContext {
@@ -142,6 +144,7 @@ function insightEndDate(endTime?: string): string {
 export function mapGraphInsightsToSeries(
   rows: GraphInsightRow[] | null | undefined,
   metricKeys: string[],
+  anchorDate?: string,
 ): MetaOrganicSeriesPoint[] {
   const byDate = new Map<string, MetaOrganicSeriesPoint>()
 
@@ -149,6 +152,17 @@ export function mapGraphInsightsToSeries(
     const metric = String(row.name || '')
     if (!metricKeys.includes(metric))
       continue
+
+    if (row.total_value != null) {
+      const date = anchorDate || ''
+      if (!date)
+        continue
+      const point = byDate.get(date) || { date }
+      point[metric] = parseInsightNumericValue(row.total_value.value)
+      byDate.set(date, point as MetaOrganicSeriesPoint)
+      continue
+    }
+
     for (const bucket of row.values || []) {
       const date = insightEndDate(bucket.end_time)
       if (!date)
@@ -212,25 +226,79 @@ async function fetchGraphInsights(
   ctx: MetaOrganicFetchContext,
   window: ResolvedOrganicDateWindow,
 ): Promise<GraphInsightRow[]> {
-  const metrics = organicMetricApiNames(ctx.platform).join(',')
-  const base = `https://graph.facebook.com/${ctx.apiVersion}/${ctx.externalAccountId}/insights`
-  const res = await $fetch<{ data?: GraphInsightRow[], error?: { message?: string } }>(base, {
-    query: {
-      metric: metrics,
+  const groups = organicMetricFetchGroups(ctx.platform)
+  const rows: GraphInsightRow[] = []
+
+  for (const group of groups) {
+    if (!group.metrics.length)
+      continue
+
+    const base = `https://graph.facebook.com/${ctx.apiVersion}/${ctx.externalAccountId}/insights`
+    const query: Record<string, string> = {
+      metric: group.metrics.join(','),
       period: window.metaPeriod,
       since: window.since,
       until: window.until,
       access_token: ctx.accessToken,
-    },
-  }).catch((err: any) => {
-    const message = err?.data?.error?.message || err?.message || 'Erro ao consultar insights orgânicos da Meta.'
-    throw new Error(message)
-  })
+    }
+    if (group.graphMetricType === 'total_value')
+      query.metric_type = 'total_value'
 
-  if (res?.error?.message)
-    throw new Error(res.error.message)
+    const res = await $fetch<{ data?: GraphInsightRow[], error?: { message?: string } }>(base, {
+      query,
+    }).catch((err: any) => {
+      const message = err?.data?.error?.message || err?.message || 'Erro ao consultar insights orgânicos da Meta.'
+      throw new Error(message)
+    })
 
-  return res?.data || []
+    if (res?.error?.message)
+      throw new Error(res.error.message)
+
+    rows.push(...(res?.data || []))
+  }
+
+  return rows
+}
+
+/** Resolve a Page access token for the given external page id (multi-page tenants). */
+export async function resolveMetaPageAccessToken(params: {
+  userAccessToken: string
+  storedPageAccessToken: string
+  configuredPageId?: string
+  externalAccountId: string
+  apiVersion: string
+}): Promise<string> {
+  const {
+    userAccessToken,
+    storedPageAccessToken,
+    configuredPageId,
+    externalAccountId,
+    apiVersion,
+  } = params
+
+  if (
+    storedPageAccessToken
+    && configuredPageId
+    && configuredPageId === externalAccountId
+  ) {
+    return storedPageAccessToken
+  }
+
+  if (userAccessToken) {
+    try {
+      const res = await $fetch<{ access_token?: string, error?: { message?: string } }>(
+        `https://graph.facebook.com/${apiVersion}/${externalAccountId}`,
+        { query: { fields: 'access_token', access_token: userAccessToken } },
+      )
+      if (res?.access_token)
+        return res.access_token
+    }
+    catch {
+      // fall through to stored token
+    }
+  }
+
+  return storedPageAccessToken || userAccessToken
 }
 
 export async function fetchMetaOrganicReport(
@@ -251,9 +319,9 @@ export async function fetchMetaOrganicReport(
       fetchGraphInsights(ctx, previousWindow).catch(() => []),
     ])
 
-    const series = mapGraphInsightsToSeries(currentRows, metricKeys)
+    const series = mapGraphInsightsToSeries(currentRows, metricKeys, window.until)
     const metrics = aggregateOrganicMetrics(series, ctx.platform)
-    const previousSeries = mapGraphInsightsToSeries(previousRows, metricKeys)
+    const previousSeries = mapGraphInsightsToSeries(previousRows, metricKeys, previousWindow.until)
     const previous_metrics = previousSeries.length
       ? aggregateOrganicMetrics(previousSeries, ctx.platform)
       : null

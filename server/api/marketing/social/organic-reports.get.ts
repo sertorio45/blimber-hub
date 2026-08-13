@@ -10,6 +10,7 @@ import {
 import {
   fetchMetaOrganicReport,
   parseOrganicReportsQuery,
+  resolveMetaPageAccessToken,
 } from '~/server/utils/meta-organic-insights'
 import {
   filterConnectedOrganicPlatforms,
@@ -18,7 +19,7 @@ import {
 import { syncSocialAccountsFromIntegrations } from '~/server/utils/social-accounts'
 import type { OrganicReportsPayload } from '~/types/marketing-organic-reports'
 
-const ORGANIC_REPORTS_CALC_VERSION = 'organic_v1'
+const ORGANIC_REPORTS_CALC_VERSION = 'organic_v2'
 
 function buildOrganicCacheKey(
   platform: string,
@@ -85,11 +86,22 @@ export default defineEventHandler(async (event) => {
     .maybeSingle()
 
   const metaConfig = metaIntegration?.config || {}
-  const accessToken
-    = decryptSecret(metaConfig.page_access_token_enc)
-      || decryptSecret(metaConfig.access_token_enc)
-      || ''
+  const userAccessToken = decryptSecret(metaConfig.access_token_enc) || ''
+  const storedPageAccessToken = decryptSecret(metaConfig.page_access_token_enc) || ''
+  const configuredPageId = String(metaConfig.page_id || '')
   const apiVersion = metaConfig.api_version || process.env.META_GRAPH_VERSION || 'v20.0'
+
+  async function resolveAccessTokenForAccount(externalAccountId: string): Promise<string> {
+    if (!userAccessToken && !storedPageAccessToken)
+      return ''
+    return resolveMetaPageAccessToken({
+      userAccessToken,
+      storedPageAccessToken,
+      configuredPageId,
+      externalAccountId,
+      apiVersion,
+    })
+  }
 
   const payload: OrganicReportsPayload = {
     platforms,
@@ -126,6 +138,7 @@ export default defineEventHandler(async (event) => {
     const account = findAccountForPlatform(accounts, 'facebook')
     if (!account)
       return null
+    const accessToken = await resolveAccessTokenForAccount(account.external_account_id)
     if (!accessToken) {
       return {
         platform: 'facebook' as const,
@@ -163,6 +176,7 @@ export default defineEventHandler(async (event) => {
     const account = findAccountForPlatform(accounts, 'instagram')
     if (!account)
       return null
+    const accessToken = await resolveAccessTokenForAccount(account.external_account_id)
     if (!accessToken) {
       return {
         platform: 'instagram' as const,

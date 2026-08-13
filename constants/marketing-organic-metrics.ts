@@ -7,38 +7,32 @@ import type { OrganicMetricDef } from '~/types/marketing-organic-reports'
  */
 export const FACEBOOK_PAGE_ORGANIC_METRICS: OrganicMetricDef[] = [
   {
-    key: 'page_impressions',
-    label: 'Impressões',
+    key: 'page_media_view',
+    label: 'Visualizações de mídia',
     format: 'integer',
     primary: true,
-    description: 'Total de vezes que o conteúdo da Página foi exibido.',
+    description: 'Total de vezes que mídia da Página foi exibida (substitui page_impressions).',
   },
   {
-    key: 'page_impressions_unique',
+    key: 'page_total_media_view_unique',
     label: 'Alcance',
     format: 'integer',
     primary: true,
-    description: 'Pessoas únicas que viram qualquer conteúdo da Página.',
-  },
-  {
-    key: 'page_engaged_users',
-    label: 'Usuários engajados',
-    format: 'integer',
-    primary: true,
-    description: 'Pessoas que interagiram com a Página (curtidas, comentários, compartilhamentos etc.).',
+    description: 'Pessoas únicas que viram mídia da Página.',
   },
   {
     key: 'page_post_engagements',
     label: 'Engajamentos em publicações',
     format: 'integer',
+    primary: true,
     description: 'Interações com publicações da Página no período.',
   },
   {
-    key: 'page_fans',
+    key: 'page_follows',
     label: 'Seguidores',
     format: 'integer',
     snapshot: true,
-    description: 'Total de fãs/seguidores da Página (valor no fim do período).',
+    description: 'Total de seguidores da Página (valor no fim do período).',
   },
   {
     key: 'page_views_total',
@@ -50,13 +44,6 @@ export const FACEBOOK_PAGE_ORGANIC_METRICS: OrganicMetricDef[] = [
 
 export const INSTAGRAM_ORGANIC_METRICS: OrganicMetricDef[] = [
   {
-    key: 'impressions',
-    label: 'Impressões',
-    format: 'integer',
-    primary: true,
-    description: 'Total de vezes que mídia ou stories foram exibidos.',
-  },
-  {
     key: 'reach',
     label: 'Alcance',
     format: 'integer',
@@ -64,10 +51,19 @@ export const INSTAGRAM_ORGANIC_METRICS: OrganicMetricDef[] = [
     description: 'Contas únicas que viram mídia ou stories.',
   },
   {
+    key: 'views',
+    label: 'Visualizações',
+    format: 'integer',
+    primary: true,
+    graphMetricType: 'total_value',
+    description: 'Reproduções ou exibições de reels, posts e stories.',
+  },
+  {
     key: 'profile_views',
     label: 'Visualizações do perfil',
     format: 'integer',
     primary: true,
+    graphMetricType: 'total_value',
     description: 'Usuários que visitaram o perfil comercial.',
   },
   {
@@ -78,16 +74,18 @@ export const INSTAGRAM_ORGANIC_METRICS: OrganicMetricDef[] = [
     description: 'Total de seguidores (valor no fim do período).',
   },
   {
-    key: 'email_contacts',
-    label: 'Contatos por e-mail',
-    format: 'integer',
-    description: 'Toques no botão de e-mail do perfil.',
-  },
-  {
     key: 'website_clicks',
     label: 'Cliques no site',
     format: 'integer',
+    graphMetricType: 'total_value',
     description: 'Toques no link do site no perfil.',
+  },
+  {
+    key: 'accounts_engaged',
+    label: 'Contas engajadas',
+    format: 'integer',
+    graphMetricType: 'total_value',
+    description: 'Contas que interagiram com o conteúdo no período.',
   },
 ]
 
@@ -105,4 +103,26 @@ export function primaryOrganicMetrics(platform: 'facebook' | 'instagram'): Organ
 
 export function detailOrganicMetrics(platform: 'facebook' | 'instagram'): OrganicMetricDef[] {
   return organicMetricsForPlatform(platform).filter(m => !m.primary)
+}
+
+export interface OrganicMetricFetchGroup {
+  metrics: string[]
+  graphMetricType?: 'time_series' | 'total_value'
+}
+
+/** Graph API batching — Instagram mixes time-series and total_value metrics. */
+export function organicMetricFetchGroups(platform: 'facebook' | 'instagram'): OrganicMetricFetchGroup[] {
+  const defs = organicMetricsForPlatform(platform)
+  if (platform === 'facebook') {
+    return [{ metrics: defs.map(m => m.key), graphMetricType: 'time_series' }]
+  }
+
+  const timeSeries = defs.filter(m => m.graphMetricType !== 'total_value').map(m => m.key)
+  const totalValue = defs.filter(m => m.graphMetricType === 'total_value').map(m => m.key)
+  const groups: OrganicMetricFetchGroup[] = []
+  if (timeSeries.length)
+    groups.push({ metrics: timeSeries, graphMetricType: 'time_series' })
+  if (totalValue.length)
+    groups.push({ metrics: totalValue, graphMetricType: 'total_value' })
+  return groups
 }

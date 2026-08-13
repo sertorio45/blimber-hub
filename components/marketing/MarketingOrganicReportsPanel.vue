@@ -59,7 +59,7 @@ function reportsQuery() {
 
 const forceRefreshOnce = ref(false)
 
-const { data, pending, showSkeleton, refresh } = useMarketingFetch<{ data: OrganicReportsPayload } | OrganicReportsPayload>({
+const { data, pending, showSkeleton, refresh, error: loadError } = useMarketingFetch<{ data: OrganicReportsPayload } | OrganicReportsPayload>({
   key: () =>
     `marketing-organic-reports-${tenantId.value}-${platform.value}-${datePreset.value}-${dateStart.value}-${dateEnd.value}-${metaPeriod.value}`,
   handler: async () => {
@@ -86,6 +86,21 @@ watch(connectedPlatforms, (platforms) => {
 
 const showSidebar = computed(() => connectedPlatforms.value.length > 1)
 const hasAccounts = computed(() => connectedPlatforms.value.length > 0)
+
+const loadErrorMessage = computed(() => {
+  const err = loadError.value as {
+    data?: { statusMessage?: string, message?: string }
+    statusMessage?: string
+    message?: string
+  } | null
+  if (!err)
+    return ''
+  return err.data?.statusMessage
+    || err.data?.message
+    || err.statusMessage
+    || err.message
+    || 'Não foi possível carregar os relatórios orgânicos.'
+})
 
 const activeBlock = computed(() => {
   if (platform.value === 'facebook')
@@ -121,6 +136,24 @@ async function refreshReports() {
     </div>
 
     <MarketingPageSkeleton v-if="showSkeleton" variant="reports" content-only />
+
+    <div
+      v-else-if="loadErrorMessage"
+      class="flex flex-col items-center justify-center gap-4 rounded-xl border border-destructive/30 bg-destructive/5 px-6 py-16 text-center"
+    >
+      <Icon name="lucide:alert-circle" class="h-10 w-10 text-destructive" />
+      <div class="max-w-md space-y-2">
+        <p class="font-medium text-destructive">
+          Erro ao carregar relatórios
+        </p>
+        <p class="text-sm text-muted-foreground">
+          {{ loadErrorMessage }}
+        </p>
+      </div>
+      <Button variant="outline" :disabled="pending" @click="refreshReports">
+        Tentar novamente
+      </Button>
+    </div>
 
     <div
       v-else-if="!hasAccounts"

@@ -66,4 +66,6 @@ export interface OrganicMetricDef extends ReportMetricDef {
   /** When true, totals use the latest bucket value instead of summing the series */
   snapshot?: boolean
   format: ReportMetricFormat
+  /** Instagram Insights: some metrics require metric_type=total_value on Graph API */
+  graphMetricType?: 'time_series' | 'total_value'
 }

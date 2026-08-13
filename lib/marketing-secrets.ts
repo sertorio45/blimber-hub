@@ -34,14 +34,19 @@ export function decryptSecret(value?: string | null) {
   if (!ivB64 || !tagB64 || !encryptedB64)
     return null
 
-  const key = getEncryptionKey()
-  const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(ivB64, 'base64'))
-  decipher.setAuthTag(Buffer.from(tagB64, 'base64'))
-  const decrypted = Buffer.concat([
-    decipher.update(Buffer.from(encryptedB64, 'base64')),
-    decipher.final(),
-  ])
-  return decrypted.toString('utf8')
+  try {
+    const key = getEncryptionKey()
+    const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(ivB64, 'base64'))
+    decipher.setAuthTag(Buffer.from(tagB64, 'base64'))
+    const decrypted = Buffer.concat([
+      decipher.update(Buffer.from(encryptedB64, 'base64')),
+      decipher.final(),
+    ])
+    return decrypted.toString('utf8')
+  }
+  catch {
+    return null
+  }
 }
 
 export function maskSensitiveValue(value?: string | null) {
