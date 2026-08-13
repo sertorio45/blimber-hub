@@ -5,6 +5,7 @@ import process from 'node:process'
 import { serverSupabaseServiceRole } from '#supabase/server'
 
 import { createError, getQuery, getRequestURL, sendRedirect } from 'h3'
+import { resolveMetaGraphVersion } from '~/lib/meta-ads/graph'
 import { clearMarketingCampaignCacheForTenant, encryptSecret } from '~/server/utils/marketing'
 import { recordSocialAudit } from '~/server/utils/social-audit'
 
@@ -211,7 +212,7 @@ export async function handleOAuthProviderCallback(
     if (!process.env.META_APP_ID || !process.env.META_APP_SECRET) {
       throw createError({ statusCode: 500, statusMessage: 'META_APP_ID/META_APP_SECRET não configurados' })
     }
-    const graphVersion = process.env.META_GRAPH_VERSION || 'v20.0'
+    const graphVersion = resolveMetaGraphVersion()
     const tokenResponse = await $fetch<any>(`https://graph.facebook.com/${graphVersion}/oauth/access_token`, {
       query: {
         client_id: process.env.META_APP_ID,

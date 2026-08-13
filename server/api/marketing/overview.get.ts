@@ -21,6 +21,7 @@ import {
   fuzzyGroupsForMetaTemplate,
   resultActionPriorityForMetaTemplate,
 } from '~/server/utils/marketing-reports'
+import { resolveMetaGraphVersion } from '~/lib/meta-ads/graph'
 import type { MetaReportTemplateId } from '~/types/marketing-reports'
 
 const MARKETING_OVERVIEW_CALC_VERSION = 'calc_v7'
@@ -458,7 +459,7 @@ async function fetchMetaData(
     }
   }
 
-  const apiVersion = config.api_version || 'v20.0'
+  const apiVersion = resolveMetaGraphVersion(config.api_version)
   const base = `https://graph.facebook.com/${apiVersion}/act_${adAccountId}`
   const insightFields
     = 'campaign_id,campaign_name,impressions,clicks,spend,cpc,reach,ctr,cpm,actions,cost_per_action_type,action_values,purchase_roas'

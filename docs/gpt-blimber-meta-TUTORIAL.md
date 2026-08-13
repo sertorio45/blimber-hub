@@ -77,7 +77,8 @@ Antes de configurar o GPT, confira:
    - `SUPABASE_URL`
    - `SUPABASE_SERVICE_KEY` (ou `SUPABASE_SERVICE_ROLE_KEY`)
    - `MARKETING_ENCRYPTION_SECRET`
-   - `META_GRAPH_VERSION=v20.0` (opcional)
+   - `META_ADS_GRAPH_VERSION=v25.0` (preferido para Ads/Marketing; opcional)
+   - `META_GRAPH_VERSION=v25.0` (fallback Ads + default CAPI; opcional)
 5. **Tenant** com Meta **já conectado** em Integrações (OAuth no Hub). Sem isso, as tools de listagem/insights falham ou mostram integração inativa.
 6. Arquivos locais no repo:
    - `gpt/blimber/openapi-ads.yaml` (Ação Ads, host `ads.*`)

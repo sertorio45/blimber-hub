@@ -15,6 +15,7 @@ export default defineEventHandler(async (event) => {
     name: body.name,
     targetingTemplate: body.targetingTemplate,
     targeting: body.targeting,
+    advantageAudience: body.advantageAudience,
     billingEvent: body.billingEvent,
     optimizationGoal: body.optimizationGoal,
     destinationType: body.destinationType,

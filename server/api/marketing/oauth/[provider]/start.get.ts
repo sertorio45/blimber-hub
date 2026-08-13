@@ -3,6 +3,7 @@ import process from 'node:process'
 
 import { createError, defineEventHandler, getQuery } from 'h3'
 
+import { resolveMetaGraphVersion } from '~/lib/meta-ads/graph'
 import { resolveOAuthCallbackUrl, toOAuthProvider } from '~/server/utils/oauth-callback'
 import { requireSocialContext } from '~/server/utils/social-context'
 
@@ -67,7 +68,7 @@ export default defineEventHandler(async (event) => {
       'instagram_manage_comments',
       'instagram_manage_contents',
     ].join(',')
-    const graphVersion = process.env.META_GRAPH_VERSION || 'v20.0'
+    const graphVersion = resolveMetaGraphVersion()
     const url = new URL(`https://www.facebook.com/${graphVersion}/dialog/oauth`)
     url.searchParams.set('client_id', clientId)
     url.searchParams.set('redirect_uri', callbackUrl)

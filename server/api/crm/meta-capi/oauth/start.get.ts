@@ -78,7 +78,7 @@ export default defineEventHandler(async (event) => {
   ].join(',')
 
   // Prefer Facebook Login for Business dialog when available.
-  const graphVersion = process.env.META_GRAPH_VERSION || 'v21.0'
+  const graphVersion = process.env.META_GRAPH_VERSION || 'v25.0'
   const url = new URL(`https://www.facebook.com/${graphVersion}/dialog/oauth`)
   url.searchParams.set('client_id', clientId)
   url.searchParams.set('redirect_uri', callbackUrl)

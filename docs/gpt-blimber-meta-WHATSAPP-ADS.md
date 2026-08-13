@@ -1,7 +1,8 @@
 # Meta Ads — Click-to-WhatsApp (CTWA)
 
 **Data:** 2026-08-11  
-**Graph default no projeto:** `META_GRAPH_VERSION` ou `v20.0` (`lib/meta-ads/graph.ts`)  
+**Graph default Ads:** `META_ADS_GRAPH_VERSION` → `META_GRAPH_VERSION` → `v25.0` (`lib/meta-ads/graph.ts`)  
+**CAPI:** `META_GRAPH_VERSION` → `v25.0`  
 **Docs Meta consultadas:** [Ads that Click to WhatsApp](https://developers.facebook.com/docs/marketing-api/ad-creative/messaging-ads/click-to-whatsapp/) (Marketing API; exemplos em v25.0 — contrato estável `destination_type` / `WHATSAPP_MESSAGE`)
 
 ---

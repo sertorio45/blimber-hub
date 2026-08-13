@@ -2,6 +2,7 @@ import process from 'node:process'
 
 import { createError, defineEventHandler, getQuery } from 'h3'
 
+import { resolveMetaGraphVersion } from '~/lib/meta-ads/graph'
 import {
   getGoogleAccessToken,
   listGoogleAdsAccounts,
@@ -38,7 +39,7 @@ export default defineEventHandler(async (event): Promise<any> => {
   if (!token && provider !== 'google_ads' && provider !== 'google_analytics') {
     return { data: [] }
   }
-  const graphVersion = process.env.META_GRAPH_VERSION || 'v20.0'
+  const graphVersion = resolveMetaGraphVersion()
 
   if (provider === 'meta' && resource === 'pages') {
     const res = await $fetch<any>(`https://graph.facebook.com/${graphVersion}/me/accounts`, {

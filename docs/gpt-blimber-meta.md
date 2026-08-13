@@ -105,7 +105,11 @@ Contrato completo: `gpt/blimber/openapi-ads.yaml` (host `ads.blimber.com.br`). `
 
 ## META CREATIVE CAPABILITIES
 
-Graph default do projeto: `META_GRAPH_VERSION` ou **v20.0** (`lib/meta-ads/graph.ts`). Não subir versão silenciosamente.
+Graph default Ads/Marketing: `config.api_version` → `META_ADS_GRAPH_VERSION` → `META_GRAPH_VERSION` → **v25.0** (`lib/meta-ads/graph.ts` `resolveMetaGraphVersion`).  
+CAPI (CRM): `META_GRAPH_VERSION` → **v25.0** (não usa `META_ADS_GRAPH_VERSION`).  
+WhatsApp Cloud API: permanece em v21 hardcoded (fora deste upgrade).
+
+Create/update adset sempre envia `targeting.targeting_automation.advantage_audience` (obrigatório Graph v23+). Default `0` (BAU com idade/geo); opcional `advantageAudience: 1` para Advantage+ audience.
 
 | Capacidade | Status | Notas |
 |------------|--------|-------|
@@ -115,12 +119,13 @@ Graph default do projeto: `META_GRAPH_VERSION` ou **v20.0** (`lib/meta-ads/graph
 | Ad a partir de `creativeId` | ✅ | XOR com campos de criativo novo |
 | Advantage+ Creative | ✅ | `degreesOfFreedomSpec` tipado (`pac_relaxation`, `text_optimizations`, …) |
 | Mídia flexível (Ads Manager) | ✅ | = Advantage+ `pac_relaxation` — **não** é Dynamic Creative |
-| Flexible Ad Format | ❌ | `creative_asset_groups_spec` não modelado; `META_GRAPH_VERSION` sobe Graph sem mudar default v20 e **não** habilita sozinho |
+| Flexible Ad Format | ❌ | `creative_asset_groups_spec` não modelado; subir Graph (META_ADS_GRAPH_VERSION / META_GRAPH_VERSION) **não** habilita sozinho |
 | DYNAMIC_CREATIVE_LEGACY | ✅ | `asset_feed_spec` + adset `is_dynamic_creative=true` (`createAdset.isDynamicCreative`); WEBSITE only |
 | Catalog / Advantage+ Catalog | ✅ | `meta_list_catalogs` + `meta_list_product_sets` + creativeType `CATALOG` |
 | Collection | ❌ | Instant Experience/canvas não implementado |
 | A/B Experiments | ✅ | `meta_create_experiment` / get / stop — `SPLIT_TEST_V2` (ads) e `SPLIT_TEST` (adsets) |
 | WEBSITE + WHATSAPP CTWA | ✅ | Preservados |
+| advantage_audience (adset targeting) | ✅ | Sempre enviado; default `0`; campo opcional `advantageAudience` |
 
 Descoberta runtime: `meta_get_capabilities` / `GET /api/gpt/meta/tools` / `invokeMetaTool` (overflow ≤30 ops OpenAPI).
 

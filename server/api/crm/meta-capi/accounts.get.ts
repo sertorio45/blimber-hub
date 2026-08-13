@@ -14,8 +14,9 @@ function normalizeMetaAdAccountId(raw: string) {
   return String(raw || '').replace(/^act_/i, '')
 }
 
+/** CAPI uses META_GRAPH_VERSION (not META_ADS_GRAPH_VERSION). Default v25.0. */
 function graphVersion() {
-  return process.env.META_GRAPH_VERSION || 'v21.0'
+  return process.env.META_GRAPH_VERSION || 'v25.0'
 }
 
 function mapGraphError(error: any, fallback: string) {

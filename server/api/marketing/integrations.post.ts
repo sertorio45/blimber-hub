@@ -2,6 +2,7 @@ import process from 'node:process'
 
 import { createError, defineEventHandler, readBody } from 'h3'
 
+import { resolveMetaGraphVersion } from '~/lib/meta-ads/graph'
 import { normalizeGoogleCustomerId } from '~/server/utils/google-ads'
 import { normalizeGa4PropertyId } from '~/server/utils/marketing-reports'
 import { clearMarketingCampaignCacheForTenant, decryptSecret, encryptSecret } from '~/server/utils/marketing'
@@ -110,7 +111,7 @@ export default defineEventHandler(async (event) => {
     const pageId = String(incomingConfig.page_id || '').trim()
     const userToken = decryptSecret(config.access_token_enc)
     if (pageId && userToken) {
-      const graphVersion = process.env.META_GRAPH_VERSION || 'v20.0'
+      const graphVersion = resolveMetaGraphVersion()
       const res = await $fetch<{ data?: Array<{ id?: string, access_token?: string, tasks?: string[] }> }>(
         `https://graph.facebook.com/${graphVersion}/me/accounts`,
         {
@@ -158,7 +159,7 @@ export default defineEventHandler(async (event) => {
   await clearMarketingCampaignCacheForTenant(client, tenantId)
 
   if (provider === 'meta') {
-    const graphVersion = process.env.META_GRAPH_VERSION || 'v20.0'
+    const graphVersion = resolveMetaGraphVersion()
     const userToken = decryptSecret(config.access_token_enc)
     const pageId = String(config.page_id || '')
     const instagramId = String(config.instagram_business_account_id || '')

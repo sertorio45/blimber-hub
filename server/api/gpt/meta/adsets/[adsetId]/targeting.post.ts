@@ -18,6 +18,7 @@ export default defineEventHandler(async (event) => {
     adsetId,
     targetingTemplate: body.targetingTemplate,
     targeting: body.targeting,
+    advantageAudience: body.advantageAudience,
     confirmTenantId: body.confirmTenantId,
     confirm: body.confirm,
     dryRun: body.dryRun,

@@ -754,10 +754,12 @@ describe('meta-ads MCP tools', () => {
     expect((result as any).adsetId).toBeNull()
     expect((result as any).status).toBe('PAUSED')
     expect((result as any).targetingTemplate).toBe('BR_25_54')
+    expect((result as any).advantageAudience).toBe(0)
     expect((result as any).targeting).toEqual({
       geo_locations: { countries: ['BR'] },
       age_min: 25,
       age_max: 54,
+      targeting_automation: { advantage_audience: 0 },
     })
     expect((result as any).preview?.body).toMatchObject({
       name: 'Adset BR',
@@ -767,8 +769,12 @@ describe('meta-ads MCP tools', () => {
       billing_event: 'IMPRESSIONS',
       optimization_goal: 'LINK_CLICKS',
       bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
+      targeting: {
+        targeting_automation: { advantage_audience: 0 },
+      },
     })
     expect((result as any).preview?.notes?.some((n: string) => n.includes('BR_25_54'))).toBe(true)
+    expect((result as any).preview?.notes?.some((n: string) => n.includes('advantage_audience=0'))).toBe(true)
     expect(graphFetch).not.toHaveBeenCalled()
   })
 
@@ -912,10 +918,12 @@ describe('meta-ads MCP tools', () => {
       genders: [2],
       geo_locations: { countries: ['BR'] },
       flexible_spec: [{ interests: [{ id: '6003139266461', name: 'Cosmetics' }] }],
+      targeting_automation: { advantage_audience: 0 },
     })
     expect((result as any).preview?.body?.targeting).toMatchObject({
       genders: [2],
       flexible_spec: [{ interests: [{ id: '6003139266461', name: 'Cosmetics' }] }],
+      targeting_automation: { advantage_audience: 0 },
     })
     expect((result as any).preview?.notes?.some((n: string) => n.includes('custom'))).toBe(true)
     expect(graphFetch).not.toHaveBeenCalled()
@@ -1049,6 +1057,7 @@ describe('meta-ads MCP tools', () => {
         geo_locations: { countries: ['BR'] },
         age_min: 35,
         age_max: 65,
+        targeting_automation: { advantage_audience: 0 },
       },
     })
     expect(audits.some((a: any) =>
@@ -1899,7 +1908,9 @@ describe('meta-ads MCP tools', () => {
       geo_locations: { countries: ['BR'] },
       age_min: 25,
       age_max: 54,
+      targeting_automation: { advantage_audience: 0 },
     })
+    expect((result as any).advantageAudience).toBe(0)
     expect(graphFetch.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(0)
   })
 
@@ -1939,8 +1950,40 @@ describe('meta-ads MCP tools', () => {
       age_min: 30,
       age_max: 50,
       custom_audiences: [{ id: 'aud_123' }],
+      targeting_automation: { advantage_audience: 0 },
     })
     expect(graphFetch.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(0)
+  })
+
+  it('update adset targeting advantageAudience=1 dryRun', async () => {
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret('tok'),
+      ad_account_id: '555',
+    })
+    const graphFetch = vi.fn(async () => ({
+      id: 'adset_1',
+      name: 'Adset',
+      account_id: '555',
+      targeting: { geo_locations: { countries: ['BR'] }, age_min: 18, age_max: 65 },
+    }))
+
+    const result = await metaUpdateAdsetTargeting(
+      { client, graphFetch },
+      {
+        tenantId: 'tenant-1',
+        adsetId: 'adset_1',
+        targetingTemplate: 'BR_18_65',
+        advantageAudience: 1,
+        confirmTenantId: 'tenant-1',
+        confirm: true,
+      },
+    )
+
+    expect((result as any).advantageAudience).toBe(1)
+    expect((result as any).after.targeting.targeting_automation).toEqual({ advantage_audience: 1 })
+    expect((result as any).preview?.body?.targeting?.targeting_automation).toEqual({
+      advantage_audience: 1,
+    })
   })
 
   it('update ad creative copy dryRun merges fields and skips POST', async () => {

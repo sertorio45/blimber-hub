@@ -15,8 +15,18 @@ export function actPath(adAccountId: string) {
   return `act_${id}`
 }
 
+/**
+ * Resolve Marketing / Ads Graph API version.
+ * Order: explicit (e.g. config.api_version) → META_ADS_GRAPH_VERSION → META_GRAPH_VERSION → v25.0
+ * WhatsApp Cloud API keeps its own hardcoded version and must not use this helper.
+ */
 export function resolveMetaGraphVersion(explicit?: string | null) {
-  return String(explicit || process.env.META_GRAPH_VERSION || 'v20.0').replace(/^\/*/, '')
+  return String(
+    explicit
+    || process.env.META_ADS_GRAPH_VERSION
+    || process.env.META_GRAPH_VERSION
+    || 'v25.0',
+  ).replace(/^\/*/, '')
 }
 
 export function buildMetaDateQuery(

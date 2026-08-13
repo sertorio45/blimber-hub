@@ -1275,6 +1275,12 @@ components:
           description: Preset geo+idade. XOR com targeting — envie um OU outro.
         targeting:
           $ref: "#/components/schemas/MetaCustomTargeting"
+        advantageAudience:
+          type: integer
+          enum: [0, 1]
+          description: >
+            targeting_automation.advantage_audience (Graph v23+). Default 0 (BAU com idade/geo).
+            Use 1 só para optar em Advantage+ audience.
         billingEvent:
           type: string
           enum: [IMPRESSIONS, LINK_CLICKS]
@@ -1645,6 +1651,12 @@ components:
           description: Preset BR_*. XOR com targeting.
         targeting:
           $ref: "#/components/schemas/MetaCustomTargeting"
+        advantageAudience:
+          type: integer
+          enum: [0, 1]
+          description: >
+            targeting_automation.advantage_audience (Graph v23+). Default 0.
+            Use 1 para Advantage+ audience.
         confirmTenantId:
           type: string
           format: uuid

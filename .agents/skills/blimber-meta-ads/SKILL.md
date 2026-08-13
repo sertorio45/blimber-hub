@@ -76,11 +76,13 @@ OpenAPI: `gpt/blimber/openapi-ads.yaml` (`createCampaign`, `createAdset`, `creat
 Catálogo: `GET /api/gpt/meta/tools`
 
 `createAd.creativeType`: IMAGE (default) | VIDEO | CAROUSEL | DYNAMIC_CREATIVE_LEGACY | CATALOG — ou `creativeId` XOR. Upload HTTPS opcional (`imageUrl`/`videoUrl`) com SSRF; dryRun não faz upload.  
-`createAdset.isDynamicCreative`: opcional → `is_dynamic_creative=true` (só WEBSITE; ads com DYNAMIC_CREATIVE_LEGACY).
+`createAdset.isDynamicCreative`: opcional → `is_dynamic_creative=true` (só WEBSITE; ads com DYNAMIC_CREATIVE_LEGACY).  
+`createAdset` / `updateAdsetTargeting.advantageAudience`: opcional `0|1` (default `0`) → `targeting_automation.advantage_audience`.
 
 **Clarificações:**
 - **Mídia flexível** (Ads Manager) = Advantage+ `pac_relaxation` (`degreesOfFreedomSpec`) — implementado.
-- **Flexible Ad Format** (`creative_asset_groups_spec`) = capability=false (não implementado; `META_GRAPH_VERSION` sobe Graph sem mudar default v20 e **não** habilita o campo sozinho).
+- **Flexible Ad Format** (`creative_asset_groups_spec`) = capability=false (não implementado; `META_ADS_GRAPH_VERSION` / `META_GRAPH_VERSION` sobem Graph sem habilitar o campo; default Ads **v25.0**).
+- **advantage_audience**: create/update adset sempre envia `targeting_automation.advantage_audience` (default `0`; opcional `advantageAudience: 1`).
 - **Dynamic Creative** = `DYNAMIC_CREATIVE_LEGACY` (`asset_feed_spec` + adset `is_dynamic_creative` via `isDynamicCreative`).
 - **Teste de criativo** = `meta_create_experiment` (SPLIT_TEST_V2).
 - **Competição prática:** vários ads IMAGE|VIDEO no mesmo adset.
@@ -97,11 +99,11 @@ Catálogo: `GET /api/gpt/meta/tools`
 
 ## Fora de escopo
 
-- Inventar IDs de interest/city — sempre buscar via `meta_search_*`
-- Flexible Ad Format (`creative_asset_groups_spec`) na Graph v20 do projeto
+- Flexible Ad Format (`creative_asset_groups_spec`) — capability false mesmo em Graph v25
 - Collection / Instant Experience canvas
 - Targeting sem geo mínimo
 - Delete por nome/filtro sem lista de IDs
 - Brand Center / geração de imagem por IA
 - Campanhas orgânicas (`social_campaigns`) — ver Marketing `createPost` (format static|carousel|video|story)
 - Meta CAPI (CRM)
+- WhatsApp Cloud API version (fica em v21 hardcoded)

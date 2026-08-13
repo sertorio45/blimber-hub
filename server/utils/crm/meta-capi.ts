@@ -80,8 +80,9 @@ function resolveCapiAccessToken(config: MetaIntegrationConfig): string | null {
     || null
 }
 
+/** CAPI uses META_GRAPH_VERSION (not META_ADS_GRAPH_VERSION). Default v25.0. */
 function graphVersion() {
-  return process.env.META_GRAPH_VERSION || 'v21.0'
+  return process.env.META_GRAPH_VERSION || 'v25.0'
 }
 
 function sha256(value: string) {

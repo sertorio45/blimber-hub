@@ -299,6 +299,13 @@ export const metaCreateAdsetSchema = tenantContextSchema
     targeting: metaCustomTargetingSchema
       .optional()
       .describe('Targeting Graph customizado (geo/idade/gênero/interesses/audiences). XOR com targetingTemplate.'),
+    advantageAudience: z
+      .union([z.literal(0), z.literal(1)])
+      .optional()
+      .describe(
+        'targeting_automation.advantage_audience (Graph v23+). Default 0 (BAU com idade/geo). '
+        + 'Use 1 só para optar em Advantage+ audience.',
+      ),
     billingEvent: z
       .enum(META_ADSET_BILLING_EVENTS)
       .describe('Evento de cobrança whitelisted (IMPRESSIONS|LINK_CLICKS). CTWA exige IMPRESSIONS.'),
@@ -810,6 +817,12 @@ export const metaUpdateAdsetTargetingSchema = tenantContextSchema
     targeting: metaCustomTargetingSchema
       .optional()
       .describe('Targeting Graph customizado. XOR com targetingTemplate.'),
+    advantageAudience: z
+      .union([z.literal(0), z.literal(1)])
+      .optional()
+      .describe(
+        'targeting_automation.advantage_audience (Graph v23+). Default 0. Use 1 para Advantage+ audience.',
+      ),
     ...metaWriteConfirmationFields,
     ...metaWriteDryRunField,
   })
@@ -1997,6 +2010,7 @@ export async function metaCreateAdset(
   const resolved = resolveAdsetTargeting({
     targetingTemplate: input.targetingTemplate,
     targeting: input.targeting,
+    advantageAudience: input.advantageAudience,
   })
 
   let pageId: string | null = null
@@ -2104,6 +2118,7 @@ export async function metaCreateAdset(
   const targetingNote = resolved.source === 'template'
     ? `targetingTemplate: ${resolved.targetingTemplate} — ${resolved.summary}`
     : `targeting: custom — ${resolved.summary}`
+  const advantageNote = `advantage_audience=${resolved.advantageAudience}`
 
   const run = await withDryRun(
     dryRun,
@@ -2117,6 +2132,7 @@ export async function metaCreateAdset(
         `destinationType: ${destinationType}`,
         input.isDynamicCreative === true ? 'isDynamicCreative: true' : null,
         targetingNote,
+        advantageNote,
         `billing_event=${input.billingEvent} · optimization_goal=${input.optimizationGoal}`,
         `ad_account: ${creds.adAccountId}${currency ? ` (${currency})` : ''}`,
         ...budgetNotes,
@@ -2157,6 +2173,7 @@ export async function metaCreateAdset(
         targeting: resolved.targeting,
         targetingSummary: resolved.summary,
         targetingSource: resolved.source,
+        advantageAudience: resolved.advantageAudience,
         dailyBudget: input.dailyBudget ?? null,
         lifetimeBudget: input.lifetimeBudget ?? null,
         startTime: input.startTime ?? null,
@@ -2183,6 +2200,7 @@ export async function metaCreateAdset(
         targetingTemplate: resolved.targetingTemplate,
         targeting: resolved.targeting,
         targetingSource: resolved.source,
+        advantageAudience: resolved.advantageAudience,
         destinationType,
         isDynamicCreative: input.isDynamicCreative === true,
         pageId,
@@ -2210,6 +2228,7 @@ export async function metaCreateAdset(
       targeting: resolved.targeting,
       targetingSummary: resolved.summary,
       targetingSource: resolved.source,
+      advantageAudience: resolved.advantageAudience,
       dailyBudget: input.dailyBudget ?? null,
       lifetimeBudget: input.lifetimeBudget ?? null,
       startTime: input.startTime ?? null,
@@ -2244,6 +2263,7 @@ export async function metaCreateAdset(
         targetingTemplate: result.targetingTemplate,
         targeting: result.targeting,
         targetingSource: result.targetingSource,
+        advantageAudience: result.advantageAudience,
         dailyBudget: result.dailyBudget,
         lifetimeBudget: result.lifetimeBudget,
         startTime: result.startTime,
@@ -2929,6 +2949,7 @@ export async function metaUpdateAdsetTargeting(
   const resolved = resolveAdsetTargeting({
     targetingTemplate: input.targetingTemplate,
     targeting: input.targeting,
+    advantageAudience: input.advantageAudience,
   })
 
   const adset = await graph(metaGraphUrl(creds.apiVersion, `/${input.adsetId}`), {
@@ -2949,6 +2970,7 @@ export async function metaUpdateAdsetTargeting(
   const targetingNote = resolved.source === 'template'
     ? `targetingTemplate: ${resolved.targetingTemplate} — ${resolved.summary}`
     : `targeting: custom — ${resolved.summary}`
+  const advantageNote = `advantage_audience=${resolved.advantageAudience}`
 
   const run = await withDryRun(
     dryRun,
@@ -2959,6 +2981,7 @@ export async function metaUpdateAdsetTargeting(
       notes: [
         `Adset ${input.adsetId}${adset?.name ? ` (${adset.name})` : ''}`,
         targetingNote,
+        advantageNote,
         'before: snapshot em `before.targeting` (pode não mapear a um template BR_*)',
         dryRun
           ? 'dryRun=true (default): nenhuma mutação enviada à Graph API.'
@@ -2980,11 +3003,13 @@ export async function metaUpdateAdsetTargeting(
         targeting: resolved.targeting,
         targetingSummary: resolved.summary,
         targetingSource: resolved.source,
+        advantageAudience: resolved.advantageAudience,
         before: { targeting: beforeTargeting },
         after: {
           targetingTemplate: resolved.targetingTemplate,
           targeting: resolved.targeting,
           targetingSource: resolved.source,
+          advantageAudience: resolved.advantageAudience,
         },
         success: Boolean(updated?.success ?? true),
         dryRun: false as const,
@@ -3005,6 +3030,7 @@ export async function metaUpdateAdsetTargeting(
         targetingTemplate: resolved.targetingTemplate,
         targeting: resolved.targeting,
         targetingSource: resolved.source,
+        advantageAudience: resolved.advantageAudience,
         preview: run.preview,
       },
     })
@@ -3017,11 +3043,13 @@ export async function metaUpdateAdsetTargeting(
       targeting: resolved.targeting,
       targetingSummary: resolved.summary,
       targetingSource: resolved.source,
+      advantageAudience: resolved.advantageAudience,
       before: { targeting: beforeTargeting },
       after: {
         targetingTemplate: resolved.targetingTemplate,
         targeting: resolved.targeting,
         targetingSource: resolved.source,
+        advantageAudience: resolved.advantageAudience,
       },
       success: true as const,
       dryRun: true as const,
@@ -3043,6 +3071,7 @@ export async function metaUpdateAdsetTargeting(
         targetingTemplate: resolved.targetingTemplate,
         targeting: resolved.targeting,
         targetingSource: resolved.source,
+        advantageAudience: resolved.advantageAudience,
         success: result.success,
         adAccountId: creds.adAccountId,
       },

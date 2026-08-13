@@ -198,6 +198,12 @@ export const metaCustomTargetingSchema = z
 
 export type MetaCustomTargetingInput = z.infer<typeof metaCustomTargetingSchema>
 
+/** Advantage+ audience flag required by Marketing API v23+ (`targeting_automation`). */
+export type MetaAdvantageAudience = 0 | 1
+
+/** Default for constrained BAU (age/geo presets and custom constraints): Advantage+ audience off. */
+export const META_ADVANTAGE_AUDIENCE_DEFAULT: MetaAdvantageAudience = 0
+
 /** Graph-ready targeting object (no convenience aliases). */
 export type MetaGraphTargeting = {
   age_min?: number
@@ -229,6 +235,10 @@ export type MetaGraphTargeting = {
   facebook_positions?: string[]
   instagram_positions?: string[]
   device_platforms?: Array<'mobile' | 'desktop'>
+  /** Required on Graph v23+ when age/geo/gender constraints are set. */
+  targeting_automation?: {
+    advantage_audience: MetaAdvantageAudience
+  }
 }
 
 function omitUndefined<T extends Record<string, unknown>>(obj: T): Partial<T> {
@@ -333,22 +343,48 @@ export interface ResolvedAdsetTargeting {
   targeting: MetaGraphTargeting
   summary: string
   source: 'template' | 'custom'
+  /** Value sent as targeting.targeting_automation.advantage_audience */
+  advantageAudience: MetaAdvantageAudience
 }
 
 export interface ResolveAdsetTargetingInput {
   targetingTemplate?: MetaAdsetTargetingTemplateId | null
   targeting?: MetaCustomTargetingInput | null
+  /**
+   * Advantage+ audience (Graph v23+). Default 0 for constrained BAU.
+   * Pass 1 only when the caller explicitly opts into Advantage+ audience.
+   */
+  advantageAudience?: MetaAdvantageAudience | null
+}
+
+/**
+ * Always attaches targeting_automation.advantage_audience (required on Graph v23+).
+ * Default 0 keeps age/geo/gender constraints as original audience (not Advantage+).
+ */
+export function withAdvantageAudience(
+  targeting: MetaGraphTargeting,
+  advantageAudience: MetaAdvantageAudience = META_ADVANTAGE_AUDIENCE_DEFAULT,
+): MetaGraphTargeting {
+  return {
+    ...targeting,
+    targeting_automation: {
+      advantage_audience: advantageAudience,
+    },
+  }
 }
 
 /**
  * Resolves BR_* preset or custom targeting. Callers must pass exactly one source
  * (Zod schemas enforce XOR before this runs).
+ * Always injects targeting_automation.advantage_audience (default 0).
  */
 export function resolveAdsetTargeting(
   input: ResolveAdsetTargetingInput,
 ): ResolvedAdsetTargeting {
   const hasTemplate = Boolean(input.targetingTemplate)
   const hasCustom = input.targeting != null
+  const advantageAudience: MetaAdvantageAudience
+    = input.advantageAudience === 1 ? 1 : META_ADVANTAGE_AUDIENCE_DEFAULT
 
   if (hasTemplate && hasCustom) {
     throw new Error('Informe targetingTemplate OU targeting, não ambos.')
@@ -359,21 +395,24 @@ export function resolveAdsetTargeting(
 
   if (hasTemplate) {
     const template = resolveAdsetTargetingTemplate(input.targetingTemplate!)
+    const targeting = withAdvantageAudience(template.targeting, advantageAudience)
     return {
       targetingTemplate: template.id,
-      targeting: template.targeting,
+      targeting,
       summary: template.summary,
       source: 'template',
+      advantageAudience,
     }
   }
 
   const parsed = metaCustomTargetingSchema.parse(input.targeting)
-  const targeting = buildMetaGraphTargeting(parsed)
+  const targeting = withAdvantageAudience(buildMetaGraphTargeting(parsed), advantageAudience)
   return {
     targetingTemplate: null,
     targeting,
     summary: summarizeMetaGraphTargeting(targeting),
     source: 'custom',
+    advantageAudience,
   }
 }
 

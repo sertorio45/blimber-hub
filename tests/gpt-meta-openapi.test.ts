@@ -235,6 +235,7 @@ describe('gpt/blimber Ads OpenAPI (openapi-ads.yaml)', () => {
     expect(yaml).toContain('assetFeed')
     expect(yaml).toContain('degreesOfFreedomSpec')
     expect(yaml).toContain('isDynamicCreative')
+    expect(yaml).toContain('advantageAudience')
     expect(yaml).toContain('meta_list_product_sets')
     expect(yaml).toContain('meta_get_capabilities')
     expect(yaml).toContain('meta_list_catalogs')

@@ -12,7 +12,51 @@ import {
   MetaAdsToolError,
   META_WHATSAPP_MESSAGING_LINK,
   normalizeMetaAdCreativeType,
+  resolveMetaGraphVersion,
 } from '~/lib/meta-ads'
+
+describe('resolveMetaGraphVersion', () => {
+  it('defaults to v25.0 when no env is set', () => {
+    const prevAds = process.env.META_ADS_GRAPH_VERSION
+    const prevGraph = process.env.META_GRAPH_VERSION
+    delete process.env.META_ADS_GRAPH_VERSION
+    delete process.env.META_GRAPH_VERSION
+    try {
+      expect(resolveMetaGraphVersion()).toBe('v25.0')
+      expect(resolveMetaGraphVersion('v24.0')).toBe('v24.0')
+    }
+    finally {
+      if (prevAds === undefined)
+        delete process.env.META_ADS_GRAPH_VERSION
+      else
+        process.env.META_ADS_GRAPH_VERSION = prevAds
+      if (prevGraph === undefined)
+        delete process.env.META_GRAPH_VERSION
+      else
+        process.env.META_GRAPH_VERSION = prevGraph
+    }
+  })
+
+  it('prefers META_ADS_GRAPH_VERSION over META_GRAPH_VERSION', () => {
+    const prevAds = process.env.META_ADS_GRAPH_VERSION
+    const prevGraph = process.env.META_GRAPH_VERSION
+    process.env.META_ADS_GRAPH_VERSION = 'v25.0'
+    process.env.META_GRAPH_VERSION = 'v20.0'
+    try {
+      expect(resolveMetaGraphVersion()).toBe('v25.0')
+    }
+    finally {
+      if (prevAds === undefined)
+        delete process.env.META_ADS_GRAPH_VERSION
+      else
+        process.env.META_ADS_GRAPH_VERSION = prevAds
+      if (prevGraph === undefined)
+        delete process.env.META_GRAPH_VERSION
+      else
+        process.env.META_GRAPH_VERSION = prevGraph
+    }
+  })
+})
 
 describe('meta graph create campaign payload', () => {
   it('always includes special_ad_categories and ABO flag when no campaign budget', () => {

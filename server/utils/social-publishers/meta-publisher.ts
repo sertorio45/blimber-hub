@@ -2,6 +2,7 @@ import process from 'node:process'
 
 import { createError } from 'h3'
 
+import { resolveMetaGraphVersion } from '~/lib/meta-ads/graph'
 import { decryptSecret } from '~/server/utils/marketing'
 import { buildCaptionWithHashtags } from '~/utils/social-hashtags'
 
@@ -83,7 +84,7 @@ async function resolveMetaPageToken(client: any, tenantId: string, platform: str
   return {
     token,
     pageId: String(config.page_id || ''),
-    graphVersion: process.env.META_GRAPH_VERSION || 'v20.0',
+    graphVersion: resolveMetaGraphVersion(),
   }
 }
 

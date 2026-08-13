@@ -1,6 +1,7 @@
 import { createError, defineEventHandler, getQuery } from 'h3'
 import { serverSupabaseServiceRole } from '#supabase/server'
 
+import { resolveMetaGraphVersion } from '~/lib/meta-ads/graph'
 import {
   decryptSecret,
   getCachedMarketingData,
@@ -89,7 +90,7 @@ export default defineEventHandler(async (event) => {
   const userAccessToken = decryptSecret(metaConfig.access_token_enc) || ''
   const storedPageAccessToken = decryptSecret(metaConfig.page_access_token_enc) || ''
   const configuredPageId = String(metaConfig.page_id || '')
-  const apiVersion = metaConfig.api_version || process.env.META_GRAPH_VERSION || 'v20.0'
+  const apiVersion = resolveMetaGraphVersion(metaConfig.api_version)
 
   async function resolveAccessTokenForAccount(externalAccountId: string): Promise<string> {
     if (!userAccessToken && !storedPageAccessToken)

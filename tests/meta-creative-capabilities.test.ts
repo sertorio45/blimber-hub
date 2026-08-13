@@ -16,7 +16,7 @@ describe('meta capabilities + media SSRF + experiments builders', () => {
     expect(caps.creativeTypes.COLLECTION.supported).toBe(false)
     expect(caps.catalog.listProductSets.supported).toBe(true)
     expect(caps.experiments.levels.length).toBeGreaterThan(0)
-    expect(caps.creativeTypes.FLEXIBLE_AD_FORMAT.reason).toMatch(/META_GRAPH_VERSION|não implementado/i)
+    expect(caps.creativeTypes.FLEXIBLE_AD_FORMAT.reason).toMatch(/META_ADS_GRAPH_VERSION|META_GRAPH_VERSION|não implementado/i)
   })
 
   it('keeps Flexible Ad Format false even if graph version string is higher', () => {

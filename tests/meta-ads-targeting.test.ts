@@ -32,15 +32,38 @@ describe('meta custom targeting', () => {
     expect(summarizeMetaGraphTargeting(graph)).toContain('interesses=1')
   })
 
-  it('resolveAdsetTargeting keeps BR_* presets', () => {
+  it('resolveAdsetTargeting keeps BR_* presets with advantage_audience default 0', () => {
     const resolved = resolveAdsetTargeting({ targetingTemplate: 'BR_18_65' })
     expect(resolved.source).toBe('template')
     expect(resolved.targetingTemplate).toBe('BR_18_65')
+    expect(resolved.advantageAudience).toBe(0)
     expect(resolved.targeting).toEqual({
       geo_locations: { countries: ['BR'] },
       age_min: 18,
       age_max: 65,
+      targeting_automation: { advantage_audience: 0 },
     })
+  })
+
+  it('resolveAdsetTargeting accepts advantageAudience=1', () => {
+    const resolved = resolveAdsetTargeting({
+      targetingTemplate: 'BR_25_54',
+      advantageAudience: 1,
+    })
+    expect(resolved.advantageAudience).toBe(1)
+    expect(resolved.targeting.targeting_automation).toEqual({ advantage_audience: 1 })
+  })
+
+  it('custom targeting always includes advantage_audience', () => {
+    const resolved = resolveAdsetTargeting({
+      targeting: {
+        geo_locations: { countries: ['BR'] },
+        age_min: 25,
+        age_max: 45,
+      },
+    })
+    expect(resolved.source).toBe('custom')
+    expect(resolved.targeting.targeting_automation).toEqual({ advantage_audience: 0 })
   })
 
   it('resolveAdsetTargeting rejects both template and custom', () => {

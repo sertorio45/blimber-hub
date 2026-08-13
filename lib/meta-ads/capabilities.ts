@@ -57,7 +57,8 @@ function no(reason: string): MetaCapabilityFlag {
 
 /**
  * Capability matrix for Blimber Meta Ads (MCP + REST invoke).
- * Graph default: META_GRAPH_VERSION || v20.0 — do not silently upgrade.
+ * Graph default: META_ADS_GRAPH_VERSION → META_GRAPH_VERSION → v25.0.
+ * Flexible Ad Format stays unsupported regardless of Graph version.
  */
 export function getMetaCapabilities(explicitVersion?: string | null): MetaCapabilitiesReport {
   const graphVersion = resolveMetaGraphVersion(explicitVersion)
@@ -86,7 +87,7 @@ export function getMetaCapabilities(explicitVersion?: string | null): MetaCapabi
       ),
       FLEXIBLE_AD_FORMAT: no(
         'creative_asset_groups_spec (Flexible Ad Format) não implementado no Blimber. '
-        + `Graph atual=${graphVersion} (default v20.0; META_GRAPH_VERSION sobe a versão sem mudar o default). `
+        + `Graph atual=${graphVersion} (default v25.0; META_ADS_GRAPH_VERSION / META_GRAPH_VERSION sobem a versão sem habilitar o campo). `
         + 'Mesmo com Graph ≥ v25, capability permanece false até o Blimber modelar o campo — não inventar payloads.',
       ),
       FLEXIBLE_MEDIA_PAC_RELAXATION: ok(
