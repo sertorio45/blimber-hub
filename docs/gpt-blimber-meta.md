@@ -99,7 +99,7 @@ Contrato completo: `gpt/blimber/openapi-ads.yaml` (host `ads.blimber.com.br`). `
 - Sem CAPI, Brand Center / geração de imagem  
 - Targeting de adset: presets `BR_*` **ou** objeto `targeting` customizado (XOR; geo obrigatório). IDs via `searchInterests` / `searchGeolocations` / `listCustomAudiences`  
 - Create/edit ad: criativo link/page + mídia tipada (`imageUrl`|`imageHash`); exige page token  
-- Sem upload binário de mídia; `createAd` aceita IMAGE|VIDEO|CAROUSEL|DYNAMIC com image_hash/video_id já na Meta
+- Sem upload binário de mídia; `createAd` aceita IMAGE|VIDEO|CAROUSEL com image_hash/video_id já na Meta (DYNAMIC_CREATIVE removido — use vários ads no mesmo adset)
 - `updateAdMedia` ainda só imageUrl|imageHash (sem video/carousel swap)  
 - Bulk delete: **só IDs explícitos** (nunca por nome); preview + `previewToken` obrigatórios  
 - Timeout ~45s / payloads texto < ~100k (limites OpenAI)  

@@ -50,7 +50,7 @@ description: >-
 | `searchInterests` / `searchGeolocations` / `listCustomAudiences` | IDs de interesse/cidade/audiences para targeting |
 | `listCampaigns` / `getCampaign` / `createCampaign` / `updateCampaignStatus` | campanhas Meta |
 | `listAdsets` / `createAdset` / `updateAdsetStatus` / `updateAdsetBudget` / `updateAdsetTargeting` | adsets |
-| `listAds` / `createAd` / `updateAdStatus` / `updateAdCreativeCopy` / `updateAdMedia` | anúncios (`createAd.creativeType`: IMAGE\|VIDEO\|CAROUSEL\|DYNAMIC) |
+| `listAds` / `createAd` / `updateAdStatus` / `updateAdCreativeCopy` / `updateAdMedia` | anúncios (`createAd.creativeType`: IMAGE\|VIDEO\|CAROUSEL) |
 | `getInsights` / `previewBulkDelete` / `executeBulkDelete` / `invokeMetaTool` | insights / bulk / invoke |
 
 Keep vs drop: `gpt/blimber/README.md`.

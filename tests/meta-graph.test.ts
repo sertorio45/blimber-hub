@@ -177,40 +177,15 @@ describe('meta CTWA / destination payloads', () => {
     })
   })
 
-  it('builds DYNAMIC_CREATIVE with asset_feed_spec', () => {
-    const body = buildMetaCreateAdCreativeBodyByType({
-      creativeName: 'Dyn',
-      pageId: 'page_1',
-      creativeType: 'DYNAMIC_CREATIVE',
-      destinationType: 'WEBSITE',
-      assetFeed: {
-        bodies: [{ text: 'A' }, { text: 'B' }],
-        titles: [{ text: 'T1' }],
-        images: [{ hash: 'img1' }, { hash: 'img2' }],
-        linkUrls: [{ websiteUrl: 'https://example.com/lp' }],
-        callToActionTypes: ['LEARN_MORE', 'SHOP_NOW'],
-        adFormats: ['SINGLE_IMAGE', 'AUTOMATIC_FORMAT'],
-      },
-    })
-    expect(body).toMatchObject({
-      name: 'Dyn',
-      object_story_spec: { page_id: 'page_1' },
-      asset_feed_spec: {
-        bodies: [{ text: 'A' }, { text: 'B' }],
-        titles: [{ text: 'T1' }],
-        images: [{ hash: 'img1' }, { hash: 'img2' }],
-        link_urls: [{ website_url: 'https://example.com/lp' }],
-        call_to_action_types: ['LEARN_MORE', 'SHOP_NOW'],
-        ad_formats: ['SINGLE_IMAGE', 'AUTOMATIC_FORMAT'],
-      },
-    })
-    expect(body.object_story_spec).not.toHaveProperty('link_data')
+  it('rejects removed DYNAMIC_CREATIVE creativeType', () => {
+    expect(() => normalizeMetaAdCreativeType('DYNAMIC_CREATIVE')).toThrow(/CREATIVE_TYPE_REMOVED|DYNAMIC_CREATIVE/)
+    expect(() => normalizeMetaAdCreativeType('dynamic')).toThrow(/removido|DYNAMIC/)
   })
 
   it('normalizes creativeType aliases', () => {
     expect(normalizeMetaAdCreativeType('static')).toBe('IMAGE')
     expect(normalizeMetaAdCreativeType('VIDEO')).toBe('VIDEO')
-    expect(normalizeMetaAdCreativeType('dynamic')).toBe('DYNAMIC_CREATIVE')
+    expect(normalizeMetaAdCreativeType('carousel')).toBe('CAROUSEL')
   })
 
   it('builds WHATSAPP adset with destination_type and promoted_object', () => {

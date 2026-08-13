@@ -27,9 +27,7 @@ import {
 } from './ad-destination'
 import {
   buildMetaCreateAdCreativeBodyByType,
-  META_DYNAMIC_AD_FORMATS,
   normalizeMetaAdCreativeType,
-  type AssetFeedSpecInput,
   type MetaAdCreativeType,
 } from './creative-types'
 import {
@@ -420,62 +418,14 @@ const metaCarouselCardSchema = z.object({
   videoId: z.string().min(1).optional().describe('video_id já na Meta (opcional no card).'),
 })
 
-const metaAssetFeedSchema = z.object({
-  bodies: z
-    .array(z.object({ text: z.string().min(1).max(2000) }))
-    .min(1)
-    .max(5)
-    .optional()
-    .describe('Variações de texto principal (Dynamic Creative).'),
-  titles: z
-    .array(z.object({ text: z.string().min(1).max(255) }))
-    .min(1)
-    .max(5)
-    .optional()
-    .describe('Variações de título/headline.'),
-  descriptions: z
-    .array(z.object({ text: z.string().min(1).max(500) }))
-    .max(5)
-    .optional()
-    .describe('Variações de descrição do link.'),
-  images: z
-    .array(z.object({ hash: z.string().min(1).max(128) }))
-    .max(10)
-    .optional()
-    .describe('image_hash já na ad account.'),
-  videos: z
-    .array(z.object({
-      videoId: z.string().min(1),
-      thumbnailUrl: z.string().url().optional(),
-      thumbnailHash: z.string().min(1).max(128).optional(),
-    }))
-    .max(10)
-    .optional()
-    .describe('video_id já na Meta (+ thumbnail opcional).'),
-  linkUrls: z
-    .array(z.object({ websiteUrl: z.string().url() }))
-    .min(1)
-    .max(5)
-    .describe('URLs de destino (website_url no asset_feed_spec).'),
-  callToActionTypes: z
-    .array(z.enum(META_AD_CALL_TO_ACTIONS))
-    .min(1)
-    .max(5)
-    .describe('CTAs do asset feed (ex. LEARN_MORE).'),
-  adFormats: z
-    .array(z.enum(META_DYNAMIC_AD_FORMATS))
-    .min(1)
-    .max(4)
-    .describe('SINGLE_IMAGE|SINGLE_VIDEO|CAROUSEL|AUTOMATIC_FORMAT.'),
-})
-
 /**
  * Create ad + creative on the tenant ad account.
- * creativeType: IMAGE (default) | VIDEO | CAROUSEL | DYNAMIC_CREATIVE.
+ * creativeType: IMAGE (default) | VIDEO | CAROUSEL.
  * dryRun default true. Status default PAUSED. Requires page_id + page token.
- * destinationType=WEBSITE (default): linkUrl obrigatório (exceto DYNAMIC via assetFeed.linkUrls).
- * destinationType=WHATSAPP: IMAGE|VIDEO CTWA; sem CAROUSEL/DYNAMIC.
+ * destinationType=WEBSITE (default): linkUrl obrigatório.
+ * destinationType=WHATSAPP: IMAGE|VIDEO CTWA; sem CAROUSEL.
  * Media: imageUrl|imageHash|videoId já existentes — never invent URLs / no binary upload.
+ * DYNAMIC_CREATIVE removido: use vários ads IMAGE|VIDEO no mesmo adset para competição.
  */
 export const metaCreateAdSchema = tenantContextSchema
   .extend({
@@ -485,7 +435,7 @@ export const metaCreateAdSchema = tenantContextSchema
       .string()
       .optional()
       .default('IMAGE')
-      .describe('IMAGE|static (default), VIDEO, CAROUSEL, DYNAMIC_CREATIVE. Mídia já na Meta (hash/video_id).'),
+      .describe('IMAGE|static (default), VIDEO, CAROUSEL. Mídia já na Meta (hash/video_id). DYNAMIC_CREATIVE removido.'),
     destinationType: z
       .enum(META_AD_DESTINATION_TYPES)
       .optional()
@@ -501,7 +451,7 @@ export const metaCreateAdSchema = tenantContextSchema
       .min(1)
       .max(2000)
       .optional()
-      .describe('Texto principal. Obrigatório em IMAGE/VIDEO/CAROUSEL; em DYNAMIC vira bodies[] se assetFeed.bodies omitido.'),
+      .describe('Texto principal. Obrigatório em IMAGE/VIDEO/CAROUSEL.'),
     headline: z
       .string()
       .max(255)
@@ -544,9 +494,6 @@ export const metaCreateAdSchema = tenantContextSchema
       .max(10)
       .optional()
       .describe('Obrigatório em CAROUSEL: 2–10 cards (link + imageHash|imageUrl|videoId).'),
-    assetFeed: metaAssetFeedSchema
-      .optional()
-      .describe('Obrigatório em DYNAMIC_CREATIVE (asset_feed_spec). Adset deve ter is_dynamic_creative=true.'),
     creativeName: z
       .string()
       .min(1)
@@ -580,10 +527,8 @@ export const metaCreateAdSchema = tenantContextSchema
     }
 
     const destinationType = data.destinationType ?? 'WEBSITE'
-    const needsTopLevelLink = destinationType === 'WEBSITE'
-      && creativeType !== 'DYNAMIC_CREATIVE'
 
-    if (needsTopLevelLink) {
+    if (destinationType === 'WEBSITE') {
       if (!data.linkUrl) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
@@ -636,7 +581,7 @@ export const metaCreateAdSchema = tenantContextSchema
           path: ['callToAction'],
         })
       }
-      if (creativeType === 'CAROUSEL' || creativeType === 'DYNAMIC_CREATIVE') {
+      if (creativeType === 'CAROUSEL') {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           message: `destinationType=WHATSAPP só combina com creativeType IMAGE ou VIDEO (recebido: ${creativeType}).`,
@@ -702,54 +647,6 @@ export const metaCreateAdSchema = tenantContextSchema
             })
           }
         })
-      }
-    }
-
-    if (creativeType === 'DYNAMIC_CREATIVE') {
-      if (!data.assetFeed) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'creativeType=DYNAMIC_CREATIVE exige assetFeed (asset_feed_spec). Adset precisa is_dynamic_creative=true.',
-          path: ['assetFeed'],
-        })
-      }
-      else {
-        const feed = data.assetFeed
-        const hasMedia = (feed.images?.length ?? 0) > 0 || (feed.videos?.length ?? 0) > 0
-        if (!hasMedia) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            message: 'assetFeed precisa images[].hash e/ou videos[].videoId.',
-            path: ['assetFeed', 'images'],
-          })
-        }
-        const hasCopy = (feed.bodies?.length ?? 0) > 0
-          || (feed.titles?.length ?? 0) > 0
-          || Boolean(data.message)
-          || Boolean(data.headline)
-        if (!hasCopy) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            message: 'DYNAMIC_CREATIVE exige bodies/titles no assetFeed ou message/headline no topo.',
-            path: ['assetFeed', 'bodies'],
-          })
-        }
-        for (const [i, u] of (feed.linkUrls ?? []).entries()) {
-          if (!u.websiteUrl.startsWith('https://')) {
-            ctx.addIssue({
-              code: z.ZodIssueCode.custom,
-              message: 'assetFeed.linkUrls[].websiteUrl deve usar https://.',
-              path: ['assetFeed', 'linkUrls', i, 'websiteUrl'],
-            })
-          }
-          else if (isMetaMessagingProtocolUrl(u.websiteUrl)) {
-            ctx.addIssue({
-              code: z.ZodIssueCode.custom,
-              message: 'Não use wa.me como websiteUrl do asset feed.',
-              path: ['assetFeed', 'linkUrls', i, 'websiteUrl'],
-            })
-          }
-        }
       }
     }
 
@@ -2139,8 +2036,8 @@ export async function metaCreateAdset(
 
 /**
  * Create AdCreative + Ad on the tenant ad account.
- * creativeType IMAGE|VIDEO|CAROUSEL|DYNAMIC_CREATIVE. dryRun default true.
- * WEBSITE: linkUrl (ou assetFeed.linkUrls). WHATSAPP: CTWA IMAGE|VIDEO.
+ * creativeType IMAGE|VIDEO|CAROUSEL. dryRun default true.
+ * WEBSITE: linkUrl. WHATSAPP: CTWA IMAGE|VIDEO.
  */
 export async function metaCreateAd(
   ctx: MetaToolContext,
@@ -2171,34 +2068,12 @@ export async function metaCreateAd(
   const creativeName = input.creativeName || `${input.name} Creative`
   const message = input.message ?? ''
 
-  // DYNAMIC: promote top-level message/headline into asset feed when omitted.
-  let assetFeed: AssetFeedSpecInput | undefined
-  if (creativeType === 'DYNAMIC_CREATIVE' && input.assetFeed) {
-    const feed = input.assetFeed
-    assetFeed = {
-      bodies: feed.bodies?.length
-        ? feed.bodies
-        : (message ? [{ text: message }] : undefined),
-      titles: feed.titles?.length
-        ? feed.titles
-        : (input.headline ? [{ text: input.headline }] : undefined),
-      descriptions: feed.descriptions?.length
-        ? feed.descriptions
-        : (input.description ? [{ text: input.description }] : undefined),
-      images: feed.images,
-      videos: feed.videos,
-      linkUrls: feed.linkUrls,
-      callToActionTypes: feed.callToActionTypes,
-      adFormats: feed.adFormats,
-    }
-  }
-
   const creativeBody = buildMetaCreateAdCreativeBodyByType({
     creativeName,
     pageId,
     creativeType,
     destinationType,
-    website: destinationType === 'WEBSITE' && creativeType !== 'DYNAMIC_CREATIVE'
+    website: destinationType === 'WEBSITE'
       ? {
           message,
           linkUrl: input.linkUrl!,
@@ -2221,7 +2096,6 @@ export async function metaCreateAd(
       : undefined,
     videoId: input.videoId,
     childAttachments: input.childAttachments,
-    assetFeed,
   })
 
   // Ownership only on execute (GET). Dry-run stays Graph-free except credentials from DB.
@@ -2231,7 +2105,7 @@ export async function metaCreateAd(
   if (!dryRun) {
     const adset = await graph(metaGraphUrl(creds.apiVersion, `/${input.adsetId}`), {
       query: {
-        fields: 'id,name,account_id,campaign_id,status,effective_status,destination_type,is_dynamic_creative',
+        fields: 'id,name,account_id,campaign_id,status,effective_status,destination_type',
         access_token: creds.accessToken,
       },
     })
@@ -2255,15 +2129,6 @@ export async function metaCreateAd(
         { adsetId: input.adsetId, adsetDestinationType, destinationType },
       )
     }
-
-    if (creativeType === 'DYNAMIC_CREATIVE' && adset?.is_dynamic_creative !== true) {
-      throw new MetaAdsToolError(
-        'ADSET_DYNAMIC_CREATIVE_REQUIRED',
-        'DYNAMIC_CREATIVE exige adset com is_dynamic_creative=true (configure no Ads Manager ou API ao criar o adset).',
-        400,
-        { adsetId: input.adsetId, is_dynamic_creative: adset?.is_dynamic_creative ?? null },
-      )
-    }
   }
 
   const creativePath = `/${actPath(creds.adAccountId)}/adcreatives`
@@ -2284,10 +2149,6 @@ export async function metaCreateAd(
     mediaNotes.push(`mídia: video_id=${input.videoId}`)
   else if (creativeType === 'CAROUSEL')
     mediaNotes.push(`mídia: carousel ${input.childAttachments?.length ?? 0} cards`)
-  else if (creativeType === 'DYNAMIC_CREATIVE') {
-    mediaNotes.push('mídia: asset_feed_spec (Dynamic Creative)')
-    mediaNotes.push('Pré-requisito: adset com is_dynamic_creative=true.')
-  }
   else if (input.imageHash)
     mediaNotes.push(`mídia: image_hash=${input.imageHash}`)
   else if (input.imageUrl)
@@ -2304,11 +2165,9 @@ export async function metaCreateAd(
       mediaNotes.push('page_welcome_message: saudação customizada.')
   }
 
-  const linkNote = creativeType === 'DYNAMIC_CREATIVE'
-    ? `link(s): assetFeed.linkUrls (${input.assetFeed?.linkUrls?.length ?? 0})`
-    : destinationType === 'WEBSITE'
-      ? `link: ${input.linkUrl}`
-      : 'link: (protocolo messaging Meta — sem linkUrl de site do usuário)'
+  const linkNote = destinationType === 'WEBSITE'
+    ? `link: ${input.linkUrl}`
+    : 'link: (protocolo messaging Meta — sem linkUrl de site do usuário)'
 
   const run = await withDryRun(
     dryRun,
@@ -2325,7 +2184,7 @@ export async function metaCreateAd(
         linkNote,
         message
           ? `message: ${message.slice(0, 120)}${message.length > 120 ? '…' : ''}`
-          : 'message: (via assetFeed.bodies)',
+          : 'message: (omitido)',
         input.headline ? `headline: ${input.headline}` : 'headline: (omitido)',
         `CTA: ${callToAction}`,
         `ad_account: ${creds.adAccountId}`,
@@ -3683,7 +3542,7 @@ export const META_TOOL_DESCRIPTIONS: Record<MetaToolName, string> = {
   meta_create_adset:
     'Cria adset (BR_* ou targeting custom). PAUSED+dryRun. destinationType WEBSITE|WHATSAPP (CTWA). Exige confirm+budget+campaignId.',
   meta_create_ad:
-    'Cria AdCreative+Ad. creativeType IMAGE|VIDEO|CAROUSEL|DYNAMIC_CREATIVE. WEBSITE/WHATSAPP(CTWA). Mídia=hash/video_id já na Meta. PAUSED+dryRun. Exige page token, confirm, adsetId.',
+    'Cria AdCreative+Ad. creativeType IMAGE|VIDEO|CAROUSEL. WEBSITE/WHATSAPP(CTWA). Mídia=hash/video_id já na Meta. PAUSED+dryRun. Exige page token, confirm, adsetId. DYNAMIC_CREATIVE removido — use vários ads no mesmo adset.',
   meta_update_adset_budget:
     'Atualiza budget do adset (daily|lifetime). dryRun default true. Teto META_GPT_BUDGET_* + confirmBudgetIncrease se aumento % alto.',
   meta_update_adset_targeting:

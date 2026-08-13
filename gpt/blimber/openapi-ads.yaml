@@ -607,9 +607,9 @@ paths:
       operationId: createAd
       summary: Criar anúncio + criativo
       description: >
-        Cria AdCreative+Ad. creativeType IMAGE|VIDEO|CAROUSEL|DYNAMIC_CREATIVE.
+        Cria AdCreative+Ad. creativeType IMAGE|VIDEO|CAROUSEL.
         WEBSITE/WHATSAPP(CTWA). Mídia=imageHash|videoId já na Meta. PAUSED+dryRun.
-        DYNAMIC: adset is_dynamic_creative=true. Sem upload binário.
+        DYNAMIC_CREATIVE removido — competição = vários ads no mesmo adset. Sem upload binário.
       x-openai-isConsequential: true
       requestBody:
         required: true
@@ -1362,17 +1362,17 @@ components:
           description: Nome do anúncio.
         creativeType:
           type: string
-          enum: [IMAGE, VIDEO, CAROUSEL, DYNAMIC_CREATIVE]
+          enum: [IMAGE, VIDEO, CAROUSEL]
           default: IMAGE
           description: >
             IMAGE (link_data estático; alias static), VIDEO (video_data+videoId),
-            CAROUSEL (childAttachments 2–10), DYNAMIC_CREATIVE (asset_feed_spec;
-            adset com is_dynamic_creative=true). Mídia já na Meta.
+            CAROUSEL (childAttachments 2–10). DYNAMIC_CREATIVE removido do MCP.
+            Mídia já na Meta. Competição de criativos = vários ads IMAGE/VIDEO no mesmo adset.
         destinationType:
           type: string
           enum: [WEBSITE, WHATSAPP]
           default: WEBSITE
-          description: WEBSITE exige linkUrl (exceto DYNAMIC via assetFeed); WHATSAPP = CTWA (IMAGE|VIDEO).
+          description: WEBSITE exige linkUrl; WHATSAPP = CTWA (IMAGE|VIDEO).
         linkUrl:
           type: string
           format: uri
@@ -1381,7 +1381,7 @@ components:
           type: string
           minLength: 1
           maxLength: 2000
-          description: Texto principal. Obrigatório IMAGE/VIDEO/CAROUSEL; em DYNAMIC vira bodies se omitido no feed.
+          description: Texto principal. Obrigatório IMAGE/VIDEO/CAROUSEL.
         headline:
           type: string
           maxLength: 255
@@ -1443,97 +1443,6 @@ components:
                 format: uri
               videoId:
                 type: string
-        assetFeed:
-          type: object
-          description: Obrigatório em DYNAMIC_CREATIVE (mapeia para asset_feed_spec).
-          required: [linkUrls, callToActionTypes, adFormats]
-          properties:
-            bodies:
-              type: array
-              maxItems: 5
-              items:
-                type: object
-                required: [text]
-                properties:
-                  text:
-                    type: string
-            titles:
-              type: array
-              maxItems: 5
-              items:
-                type: object
-                required: [text]
-                properties:
-                  text:
-                    type: string
-            descriptions:
-              type: array
-              maxItems: 5
-              items:
-                type: object
-                required: [text]
-                properties:
-                  text:
-                    type: string
-            images:
-              type: array
-              maxItems: 10
-              items:
-                type: object
-                required: [hash]
-                properties:
-                  hash:
-                    type: string
-            videos:
-              type: array
-              maxItems: 10
-              items:
-                type: object
-                required: [videoId]
-                properties:
-                  videoId:
-                    type: string
-                  thumbnailUrl:
-                    type: string
-                    format: uri
-                  thumbnailHash:
-                    type: string
-            linkUrls:
-              type: array
-              minItems: 1
-              maxItems: 5
-              items:
-                type: object
-                required: [websiteUrl]
-                properties:
-                  websiteUrl:
-                    type: string
-                    format: uri
-            callToActionTypes:
-              type: array
-              minItems: 1
-              maxItems: 5
-              items:
-                type: string
-                enum:
-                  - LEARN_MORE
-                  - SHOP_NOW
-                  - SIGN_UP
-                  - SUBSCRIBE
-                  - CONTACT_US
-                  - DOWNLOAD
-                  - GET_OFFER
-                  - BOOK_NOW
-                  - BUY_NOW
-                  - APPLY_NOW
-                  - GET_QUOTE
-                  - WHATSAPP_MESSAGE
-            adFormats:
-              type: array
-              minItems: 1
-              items:
-                type: string
-                enum: [SINGLE_IMAGE, SINGLE_VIDEO, CAROUSEL, AUTOMATIC_FORMAT]
         creativeName:
           type: string
           maxLength: 400

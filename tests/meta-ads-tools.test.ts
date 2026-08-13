@@ -1114,14 +1114,14 @@ describe('meta-ads MCP tools', () => {
     expect(linkData?.child_attachments[0]).toMatchObject({ image_hash: 'ha', name: 'A' })
   })
 
-  it('create ad DYNAMIC_CREATIVE dryRun previews asset_feed_spec', async () => {
+  it('create ad rejects removed DYNAMIC_CREATIVE', async () => {
     const client = createIntegrationClient({
       access_token_enc: encryptSecret('tok'),
       page_access_token_enc: encryptSecret('page-tok'),
       ad_account_id: '555',
       page_id: 'page_99',
     })
-    const result = await metaCreateAd(
+    await expect(metaCreateAd(
       { client, graphFetch: vi.fn() },
       {
         tenantId: 'tenant-1',
@@ -1129,29 +1129,11 @@ describe('meta-ads MCP tools', () => {
         name: 'Ad Dinâmico',
         creativeType: 'DYNAMIC_CREATIVE',
         message: 'Fallback body',
-        assetFeed: {
-          images: [{ hash: 'h1' }, { hash: 'h2' }],
-          titles: [{ text: 'Título A' }, { text: 'Título B' }],
-          linkUrls: [{ websiteUrl: 'https://example.com/dyn' }],
-          callToActionTypes: ['LEARN_MORE'],
-          adFormats: ['SINGLE_IMAGE', 'AUTOMATIC_FORMAT'],
-        },
+        linkUrl: 'https://example.com/dyn',
         confirmTenantId: 'tenant-1',
         confirm: true,
       },
-    )
-    expect((result as any).creativeType).toBe('DYNAMIC_CREATIVE')
-    expect((result as any).preview?.body?.creative).toMatchObject({
-      object_story_spec: { page_id: 'page_99' },
-      asset_feed_spec: {
-        bodies: [{ text: 'Fallback body' }],
-        titles: [{ text: 'Título A' }, { text: 'Título B' }],
-        images: [{ hash: 'h1' }, { hash: 'h2' }],
-        link_urls: [{ website_url: 'https://example.com/dyn' }],
-        ad_formats: ['SINGLE_IMAGE', 'AUTOMATIC_FORMAT'],
-      },
-    })
-    expect((result as any).preview?.notes?.some((n: string) => n.includes('is_dynamic_creative'))).toBe(true)
+    )).rejects.toThrow(/DYNAMIC_CREATIVE|removido|creativeType/)
   })
 
   it('create ad rejects CAROUSEL with WHATSAPP destination', async () => {

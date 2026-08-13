@@ -69,16 +69,12 @@ export {
 } from './ad-destination'
 export {
   META_AD_CREATIVE_TYPES,
-  META_DYNAMIC_AD_FORMATS,
-  buildAssetFeedSpec,
   buildCarouselLinkData,
   buildMetaCreateAdCreativeBodyByType,
   buildVideoData,
   normalizeMetaAdCreativeType,
-  type AssetFeedSpecInput,
   type CarouselCardInput,
   type MetaAdCreativeType,
-  type MetaDynamicAdFormat,
 } from './creative-types'
 export {
   META_ADSET_BILLING_EVENTS,

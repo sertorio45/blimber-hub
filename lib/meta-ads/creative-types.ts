@@ -1,11 +1,19 @@
 /**
- * Meta AdCreative type builders (Marketing API object_story_spec / asset_feed_spec).
+ * Meta AdCreative type builders (Marketing API object_story_spec).
  * Media must already exist as image_hash / video_id (or HTTPS picture URL) — no binary upload here.
  *
  * Official refs:
  * - object_story_spec: link_data | video_data | photo_data | template_data
  * - carousel: link_data.child_attachments
- * - Dynamic Creative: asset_feed_spec (+ adset is_dynamic_creative=true)
+ *
+ * NOT supported (and intentionally out of MCP):
+ * - Dynamic Creative (asset_feed_spec + adset is_dynamic_creative) — still in Marketing API
+ *   but largely hidden in Ads Manager; requires special adset; no WhatsApp; createAdset
+ *   cannot set the flag. Prefer multiple IMAGE/VIDEO ads in the same adset for competition.
+ * - Flexible Ad Format (creative_asset_groups_spec) — OUTCOME_SALES / OUTCOME_APP_PROMOTION only.
+ * - Ads Manager "Mídia flexível" — Advantage+ Creative `pac_relaxation` (degrees_of_freedom_spec),
+ *   not a creative type.
+ * - "Teste de criativo" — Ad Studies / SPLIT_TEST_V2 + creative_test_config (Experiments API).
  */
 
 import { MetaAdsToolError } from './types'
@@ -22,7 +30,6 @@ export const META_AD_CREATIVE_TYPES = [
   'IMAGE',
   'VIDEO',
   'CAROUSEL',
-  'DYNAMIC_CREATIVE',
 ] as const
 
 export type MetaAdCreativeType = (typeof META_AD_CREATIVE_TYPES)[number]
@@ -37,20 +44,19 @@ export const META_AD_CREATIVE_TYPE_ALIASES: Record<string, MetaAdCreativeType> =
   video: 'VIDEO',
   CAROUSEL: 'CAROUSEL',
   carousel: 'CAROUSEL',
-  DYNAMIC_CREATIVE: 'DYNAMIC_CREATIVE',
-  DYNAMIC: 'DYNAMIC_CREATIVE',
-  dynamic: 'DYNAMIC_CREATIVE',
-  dynamic_creative: 'DYNAMIC_CREATIVE',
 }
 
-export const META_DYNAMIC_AD_FORMATS = [
-  'SINGLE_IMAGE',
-  'SINGLE_VIDEO',
-  'CAROUSEL',
-  'AUTOMATIC_FORMAT',
-] as const
-
-export type MetaDynamicAdFormat = (typeof META_DYNAMIC_AD_FORMATS)[number]
+/** Removed creative types — reject with a clear migration message. */
+const REMOVED_CREATIVE_TYPES = new Set([
+  'DYNAMIC_CREATIVE',
+  'DYNAMIC',
+  'dynamic',
+  'dynamic_creative',
+  'FLEXIBLE',
+  'FLEXIBLE_MEDIA',
+  'flexible',
+  'flexible_media',
+])
 
 export type CarouselCardInput = {
   link: string
@@ -61,33 +67,30 @@ export type CarouselCardInput = {
   videoId?: string
 }
 
-export type AssetFeedSpecInput = {
-  bodies?: Array<{ text: string }>
-  titles?: Array<{ text: string }>
-  descriptions?: Array<{ text: string }>
-  images?: Array<{ hash: string }>
-  videos?: Array<{
-    videoId: string
-    thumbnailUrl?: string
-    thumbnailHash?: string
-  }>
-  linkUrls: Array<{ websiteUrl: string }>
-  callToActionTypes: string[]
-  adFormats: MetaDynamicAdFormat[]
-}
-
 export function normalizeMetaAdCreativeType(
   raw?: string | null,
 ): MetaAdCreativeType {
   if (raw == null || String(raw).trim() === '')
     return 'IMAGE'
   const key = String(raw).trim()
+  if (REMOVED_CREATIVE_TYPES.has(key) || REMOVED_CREATIVE_TYPES.has(key.toUpperCase())) {
+    throw new MetaAdsToolError(
+      'CREATIVE_TYPE_REMOVED',
+      'DYNAMIC_CREATIVE / Flexible Media não são creativeType no Blimber. '
+      + 'Para criativos competindo: vários ads IMAGE|VIDEO no mesmo adset. '
+      + 'Mídia flexível no Ads Manager = Advantage+ pac_relaxation (fora do MCP). '
+      + 'Teste de criativo = Experiments / Ad Studies (fora do MCP). '
+      + 'Use IMAGE|VIDEO|CAROUSEL.',
+      400,
+      { creativeType: raw, allowed: META_AD_CREATIVE_TYPES },
+    )
+  }
   const mapped = META_AD_CREATIVE_TYPE_ALIASES[key]
     ?? META_AD_CREATIVE_TYPE_ALIASES[key.toUpperCase()]
   if (!mapped) {
     throw new MetaAdsToolError(
       'CREATIVE_TYPE_INVALID',
-      `creativeType inválido: ${raw}. Use IMAGE|VIDEO|CAROUSEL|DYNAMIC_CREATIVE (alias: static).`,
+      `creativeType inválido: ${raw}. Use IMAGE|VIDEO|CAROUSEL (alias: static).`,
       400,
       { creativeType: raw, allowed: META_AD_CREATIVE_TYPES },
     )
@@ -211,78 +214,6 @@ export function buildCarouselLinkData(input: {
   return linkData
 }
 
-export function buildAssetFeedSpec(input: AssetFeedSpecInput): Record<string, unknown> {
-  const images = input.images ?? []
-  const videos = input.videos ?? []
-  if (images.length === 0 && videos.length === 0) {
-    throw new MetaAdsToolError(
-      'DYNAMIC_MEDIA_REQUIRED',
-      'DYNAMIC_CREATIVE exige assetFeed.images[].hash e/ou assetFeed.videos[].videoId (mídia já na Meta).',
-      400,
-    )
-  }
-  if (!input.linkUrls?.length) {
-    throw new MetaAdsToolError(
-      'DYNAMIC_LINK_REQUIRED',
-      'DYNAMIC_CREATIVE exige assetFeed.linkUrls com websiteUrl https.',
-      400,
-    )
-  }
-  if (!input.callToActionTypes?.length) {
-    throw new MetaAdsToolError(
-      'DYNAMIC_CTA_REQUIRED',
-      'DYNAMIC_CREATIVE exige assetFeed.callToActionTypes (ex. LEARN_MORE).',
-      400,
-    )
-  }
-  if (!input.adFormats?.length) {
-    throw new MetaAdsToolError(
-      'DYNAMIC_AD_FORMAT_REQUIRED',
-      'DYNAMIC_CREATIVE exige assetFeed.adFormats (SINGLE_IMAGE|SINGLE_VIDEO|CAROUSEL|AUTOMATIC_FORMAT).',
-      400,
-    )
-  }
-
-  const bodies = input.bodies?.length
-    ? input.bodies.map(b => ({ text: b.text }))
-    : undefined
-  const titles = input.titles?.length
-    ? input.titles.map(t => ({ text: t.text }))
-    : undefined
-  if (!bodies?.length && !titles?.length) {
-    throw new MetaAdsToolError(
-      'DYNAMIC_COPY_REQUIRED',
-      'DYNAMIC_CREATIVE exige ao menos bodies[] ou titles[] no assetFeed (ou message/headline no createAd).',
-      400,
-    )
-  }
-
-  const spec: Record<string, unknown> = {
-    ad_formats: input.adFormats,
-    call_to_action_types: input.callToActionTypes,
-    link_urls: input.linkUrls.map(u => ({ website_url: u.websiteUrl })),
-  }
-  if (bodies)
-    spec.bodies = bodies
-  if (titles)
-    spec.titles = titles
-  if (input.descriptions?.length)
-    spec.descriptions = input.descriptions.map(d => ({ text: d.text }))
-  if (images.length)
-    spec.images = images.map(i => ({ hash: i.hash }))
-  if (videos.length) {
-    spec.videos = videos.map((v) => {
-      const entry: Record<string, unknown> = { video_id: v.videoId }
-      if (v.thumbnailUrl)
-        entry.thumbnail_url = v.thumbnailUrl
-      if (v.thumbnailHash)
-        entry.thumbnail_hash = v.thumbnailHash
-      return entry
-    })
-  }
-  return spec
-}
-
 export type BuildCreativeGraphBodyInput = {
   creativeName: string
   pageId: string
@@ -292,39 +223,15 @@ export type BuildCreativeGraphBodyInput = {
   whatsapp?: BuildWhatsAppLinkDataInput
   videoId?: string
   childAttachments?: CarouselCardInput[]
-  assetFeed?: AssetFeedSpecInput
 }
 
 /**
- * Builds POST /adcreatives body for IMAGE | VIDEO | CAROUSEL | DYNAMIC_CREATIVE.
- * DYNAMIC: object_story_spec.page_id + asset_feed_spec (adset must have is_dynamic_creative=true).
+ * Builds POST /adcreatives body for IMAGE | VIDEO | CAROUSEL.
  */
 export function buildMetaCreateAdCreativeBodyByType(
   params: BuildCreativeGraphBodyInput,
 ): Record<string, unknown> {
   const { creativeType, destinationType, pageId, creativeName } = params
-
-  if (creativeType === 'DYNAMIC_CREATIVE') {
-    if (destinationType === 'WHATSAPP') {
-      throw new MetaAdsToolError(
-        'DYNAMIC_WHATSAPP_UNSUPPORTED',
-        'DYNAMIC_CREATIVE não combina com destinationType=WHATSAPP neste fluxo. Use WEBSITE.',
-        400,
-      )
-    }
-    if (!params.assetFeed) {
-      throw new MetaAdsToolError(
-        'DYNAMIC_ASSET_FEED_REQUIRED',
-        'creativeType=DYNAMIC_CREATIVE exige assetFeed (bodies/titles/images|videos/linkUrls/CTAs/adFormats).',
-        400,
-      )
-    }
-    return {
-      name: creativeName,
-      object_story_spec: { page_id: pageId },
-      asset_feed_spec: buildAssetFeedSpec(params.assetFeed),
-    }
-  }
 
   if (creativeType === 'CAROUSEL') {
     if (destinationType === 'WHATSAPP') {

@@ -58,7 +58,7 @@ description: >-
 | `meta_search_interests` | Busca interesses Meta (id) para targeting custom |
 | `meta_search_geolocations` | Busca cidades/regiões (key) para geo_locations |
 | `meta_list_custom_audiences` | Lista custom audiences da ad account |
-| `meta_create_ad` | Criar criativo IMAGE|VIDEO|CAROUSEL|DYNAMIC + anúncio (WEBSITE ou WhatsApp CTWA; default PAUSED + dryRun true) |
+| `meta_create_ad` | Criar criativo IMAGE|VIDEO|CAROUSEL + anúncio (WEBSITE ou WhatsApp CTWA; default PAUSED + dryRun true) |
 | `meta_update_ad_creative_copy` | Copy via novo creative |
 | `meta_update_ad_media` | imageUrl\|imageHash via novo creative |
 | `meta_preview_bulk_delete` | Preview exclusão (IDs + previewToken) |
@@ -71,7 +71,13 @@ description: >-
 OpenAPI: `gpt/blimber/openapi-ads.yaml` (`createCampaign`, `createAdset`, `createAd`, `searchInterests`, `searchGeolocations`, `listCustomAudiences`, `updateAdsetStatus`, `updateAdsetBudget`, `updateAdCreativeCopy`, `previewBulkDelete`, `executeBulkDelete`, …)  
 Catálogo: `GET /api/gpt/meta/tools`
 
-`createAd.creativeType`: IMAGE (default) | VIDEO | CAROUSEL | DYNAMIC_CREATIVE — mídia já na Meta (`imageHash` / `videoId`); DYNAMIC exige adset `is_dynamic_creative=true`. Sem upload binário.
+`createAd.creativeType`: IMAGE (default) | VIDEO | CAROUSEL — mídia já na Meta (`imageHash` / `videoId`). Sem upload binário.
+
+**Fora do MCP (não confundir com creativeType):**
+- **Mídia flexível** (Ads Manager) = Advantage+ `pac_relaxation` (`degrees_of_freedom_spec`) — não é Dynamic Creative.
+- **Teste de criativo** = Experiments / Ad Studies (`SPLIT_TEST_V2` + `creative_test_config`) — não implementado.
+- **Dynamic Creative** (`asset_feed_spec` + adset `is_dynamic_creative`) = removido do MCP (API ainda existe, mas UI/adset/WhatsApp tornam o fluxo inútil aqui).
+- **Competição prática:** vários ads IMAGE|VIDEO no mesmo adset.
 
 ## Fluxo sugerido
 
@@ -87,7 +93,8 @@ Catálogo: `GET /api/gpt/meta/tools`
 
 - Inventar IDs de interest/city — sempre buscar via `meta_search_*`
 - Upload binário de vídeo/imagem para a Meta (use image_hash / video_id já existentes)
-- Advantage+ / catálogo / Instant Experience / Collection ads / Stories placement customization
+- Advantage+ Creative toggles (ex. Mídia flexível / `pac_relaxation`, Otimizar texto / `text_optimizations`) / Dynamic Creative / Flexible Ad Format / Creative Testing (Experiments)
+- Catálogo / Instant Experience / Collection ads / Stories placement customization
 - Targeting sem geo mínimo
 - Delete por nome/filtro sem lista de IDs
 - Brand Center / geração de imagem por IA
