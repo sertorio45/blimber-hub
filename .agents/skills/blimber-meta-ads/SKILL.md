@@ -51,7 +51,7 @@ description: >-
 | `meta_get_campaign` | Detalhe |
 | `meta_create_campaign` | Criar campanha (PAUSED / dryRun default true) |
 | `meta_list_adsets` | Conjuntos de anúncios |
-| `meta_create_adset` | Criar adset (`BR_18_65` / `BR_*` **ou** `targeting` custom; destination WEBSITE\|WHATSAPP) |
+| `meta_create_adset` | Criar adset (`BR_18_65` / `BR_*` **ou** `targeting` custom; destination WEBSITE\|WHATSAPP; `isDynamicCreative` opcional p/ DYNAMIC_CREATIVE_LEGACY) |
 | `meta_update_adset_budget` | Budget adset (dryRun default true) |
 | `meta_update_adset_targeting` | Targeting `BR_*` **ou** `targeting` custom (XOR) |
 | `meta_list_ads` | Anúncios |
@@ -63,7 +63,7 @@ description: >-
 | `meta_update_ad_media` | IMAGE\|VIDEO\|CAROUSEL via novo creative |
 | `meta_get_capabilities` | Matriz de capacidades vs Graph version |
 | `meta_upload_image` / `meta_upload_video` / `meta_get_video_status` | Upload/reuse mídia (SSRF) |
-| `meta_list_catalogs` | Product catalogs da ad account |
+| `meta_list_catalogs` / `meta_list_product_sets` | Catalogs + product sets (ownership) |
 | `meta_create_experiment` / `meta_get_experiment` / `meta_stop_experiment` | Ad Studies oficiais (SPLIT_TEST_V2 / SPLIT_TEST) |
 | `meta_preview_bulk_delete` | Preview exclusão (IDs + previewToken) |
 | `meta_execute_bulk_delete` | Execute exclusão (confirmações + dryRun false) |
@@ -72,15 +72,16 @@ description: >-
 | `meta_update_adset_status` | ACTIVE / PAUSED |
 | `meta_update_ad_status` | ACTIVE / PAUSED |
 
-OpenAPI: `gpt/blimber/openapi-ads.yaml` (`createCampaign`, `createAdset`, `createAd`, `searchInterests`, `searchGeolocations`, `listCustomAudiences`, `updateAdsetStatus`, `updateAdsetBudget`, `updateAdCreativeCopy`, `previewBulkDelete`, `executeBulkDelete`, …)  
+OpenAPI: `gpt/blimber/openapi-ads.yaml` (`createCampaign`, `createAdset`, `createAd`, `searchInterests`, `searchGeolocations`, `listCustomAudiences`, `updateAdsetStatus`, `updateAdsetBudget`, `updateAdCreativeCopy`, `previewBulkDelete`, `executeBulkDelete`, …; overflow via `invokeMetaTool`: capabilities, upload, catalogs, product sets, experiments)  
 Catálogo: `GET /api/gpt/meta/tools`
 
-`createAd.creativeType`: IMAGE (default) | VIDEO | CAROUSEL | DYNAMIC_CREATIVE_LEGACY | CATALOG — ou `creativeId` XOR. Upload HTTPS opcional (`imageUrl`/`videoUrl`) com SSRF; dryRun não faz upload.
+`createAd.creativeType`: IMAGE (default) | VIDEO | CAROUSEL | DYNAMIC_CREATIVE_LEGACY | CATALOG — ou `creativeId` XOR. Upload HTTPS opcional (`imageUrl`/`videoUrl`) com SSRF; dryRun não faz upload.  
+`createAdset.isDynamicCreative`: opcional → `is_dynamic_creative=true` (só WEBSITE; ads com DYNAMIC_CREATIVE_LEGACY).
 
 **Clarificações:**
 - **Mídia flexível** (Ads Manager) = Advantage+ `pac_relaxation` (`degreesOfFreedomSpec`) — implementado.
-- **Flexible Ad Format** (`creative_asset_groups_spec`) = capability=false na Graph v20 do projeto.
-- **Dynamic Creative** = `DYNAMIC_CREATIVE_LEGACY` (`asset_feed_spec` + adset `is_dynamic_creative`).
+- **Flexible Ad Format** (`creative_asset_groups_spec`) = capability=false (não implementado; `META_GRAPH_VERSION` sobe Graph sem mudar default v20 e **não** habilita o campo sozinho).
+- **Dynamic Creative** = `DYNAMIC_CREATIVE_LEGACY` (`asset_feed_spec` + adset `is_dynamic_creative` via `isDynamicCreative`).
 - **Teste de criativo** = `meta_create_experiment` (SPLIT_TEST_V2).
 - **Competição prática:** vários ads IMAGE|VIDEO no mesmo adset.
 

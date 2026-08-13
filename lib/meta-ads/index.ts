@@ -50,6 +50,7 @@ export {
   metaUploadVideo,
   metaGetVideoStatusTool,
   metaListCatalogs,
+  metaListProductSets,
   metaCreateExperiment,
   metaGetExperiment,
   metaStopExperiment,
@@ -107,6 +108,7 @@ export {
   assertProductSetOwned,
   buildCatalogTemplateCreativeBody,
   listProductCatalogs,
+  listProductSets,
 } from './catalog-service'
 export {
   buildCreateExperimentGraphBody,

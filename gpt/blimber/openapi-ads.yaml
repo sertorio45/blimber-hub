@@ -427,10 +427,9 @@ paths:
       operationId: createAdset
       summary: Criar adset (PAUSED)
       description: >
-        Cria adset com targetingTemplate BR_* OU targeting customizado (XOR).
-        Default PAUSED + dryRun=true. destinationType WEBSITE|WHATSAPP
-        (CTWA: destination_type + page_id). Exige confirm+budget+campaignId.
-        ACTIVE exige confirmActive.
+        Cria adset (BR_* XOR targeting). PAUSED+dryRun. WEBSITE|WHATSAPP.
+        isDynamicCreative opcional (DYNAMIC_CREATIVE_LEGACY; só WEBSITE).
+        Exige confirm+budget+campaignId. ACTIVE exige confirmActive.
       x-openai-isConsequential: true
       requestBody:
         required: true
@@ -812,7 +811,10 @@ paths:
       operationId: invokeMetaTool
       summary: Invocação genérica (alternativa)
       description: >
-        Invoca uma tool pelo nome (alternativa tipada). Prefira as rotas REST acima no Custom GPT.
+        Invoca uma tool pelo nome (alternativa tipada). Prefira as rotas REST acima
+        no Custom GPT. Tools sem rota dedicada (capabilities, upload, catalogs,
+        product sets, experiments) usam este endpoint — ver enum `tool`.
+        Limite ChatGPT: ≤30 operations nesta Action; overflow fica no invoke.
       x-openai-isConsequential: true
       requestBody:
         required: true
@@ -851,6 +853,13 @@ components:
         data:
           type: object
           description: Payload tipado da tool (estrutura varia por operação).
+    AdvantageFeatureEnroll:
+      type: object
+      required: [enrollStatus]
+      properties:
+        enrollStatus:
+          type: string
+          enum: [OPT_IN, OPT_OUT]
     ErrorToolResponse:
       type: object
       description: >
@@ -1289,6 +1298,11 @@ components:
           enum: [WEBSITE, WHATSAPP]
           default: WEBSITE
           description: Destino do adset. WHATSAPP ≠ objective de campanha.
+        isDynamicCreative:
+          type: boolean
+          description: >
+            Se true, POST com is_dynamic_creative=true (Dynamic Creative legado).
+            Só WEBSITE. Ads devem usar creativeType=DYNAMIC_CREATIVE_LEGACY + assetFeed.
         campaignObjective:
           type: string
           enum:
@@ -1360,6 +1374,11 @@ components:
           minLength: 1
           maxLength: 400
           description: Nome do anúncio.
+        creativeId:
+          type: string
+          description: >
+            Reusa AdCreative existente (XOR com creativeType/mídia/copy).
+            Ownership validada no execute (mesma ad account).
         creativeType:
           type: string
           enum: [IMAGE, VIDEO, CAROUSEL, DYNAMIC_CREATIVE_LEGACY, CATALOG]
@@ -1367,7 +1386,7 @@ components:
           description: >
             IMAGE|VIDEO|CAROUSEL|DYNAMIC_CREATIVE_LEGACY|CATALOG (ou creativeId XOR).
             Advantage+ = degreesOfFreedomSpec. Mídia flexível Ads Manager = pac_relaxation.
-            Flexible Ad Format (creative_asset_groups_spec) não suportado em Graph v20 do projeto.
+            Flexible Ad Format (creative_asset_groups_spec) não suportado — capability=false.
         destinationType:
           type: string
           enum: [WEBSITE, WHATSAPP]
@@ -1381,7 +1400,7 @@ components:
           type: string
           minLength: 1
           maxLength: 2000
-          description: Texto principal. Obrigatório IMAGE/VIDEO/CAROUSEL.
+          description: Texto principal. Obrigatório IMAGE/VIDEO/CAROUSEL (sem creativeId).
         headline:
           type: string
           maxLength: 255
@@ -1411,13 +1430,17 @@ components:
         imageUrl:
           type: string
           format: uri
-          description: URL https de imagem/thumbnail (XOR imageHash). Nunca inventar.
+          description: URL https de imagem (upload SSRF no execute). XOR imageHash. Nunca inventar.
         imageHash:
           type: string
           description: image_hash já na conta (XOR imageUrl).
         videoId:
           type: string
-          description: Obrigatório em VIDEO — video_id já na biblioteca Meta (sem upload).
+          description: video_id já na biblioteca Meta (VIDEO). XOR videoUrl.
+        videoUrl:
+          type: string
+          format: uri
+          description: HTTPS para upload Advideo no execute (SSRF). XOR videoId. dryRun não faz upload.
         childAttachments:
           type: array
           minItems: 2
@@ -1443,6 +1466,113 @@ components:
                 format: uri
               videoId:
                 type: string
+        assetFeed:
+          type: object
+          description: >
+            Obrigatório em DYNAMIC_CREATIVE_LEGACY (asset_feed_spec).
+            Adset deve ter is_dynamic_creative=true (createAdset.isDynamicCreative).
+          properties:
+            bodies:
+              type: array
+              items:
+                type: object
+                required: [text]
+                properties:
+                  text:
+                    type: string
+            titles:
+              type: array
+              items:
+                type: object
+                required: [text]
+                properties:
+                  text:
+                    type: string
+            descriptions:
+              type: array
+              items:
+                type: object
+                required: [text]
+                properties:
+                  text:
+                    type: string
+            images:
+              type: array
+              items:
+                type: object
+                required: [hash]
+                properties:
+                  hash:
+                    type: string
+            videos:
+              type: array
+              items:
+                type: object
+                required: [videoId]
+                properties:
+                  videoId:
+                    type: string
+                  thumbnailUrl:
+                    type: string
+                    format: uri
+                  thumbnailHash:
+                    type: string
+            linkUrls:
+              type: array
+              minItems: 1
+              items:
+                type: object
+                required: [websiteUrl]
+                properties:
+                  websiteUrl:
+                    type: string
+                    format: uri
+            callToActionTypes:
+              type: array
+              minItems: 1
+              items:
+                type: string
+            adFormats:
+              type: array
+              minItems: 1
+              items:
+                type: string
+                enum: [SINGLE_IMAGE, SINGLE_VIDEO, CAROUSEL, AUTOMATIC_FORMAT]
+        degreesOfFreedomSpec:
+          type: object
+          description: >
+            Advantage+ Creative (creative_features_spec). pac_relaxation = Mídia flexível
+            no Ads Manager. Não usar com DYNAMIC_CREATIVE_LEGACY. Chaves whitelist:
+            pac_relaxation, text_optimizations, image_touchups, enhance_cta, etc.
+          properties:
+            creativeFeaturesSpec:
+              type: object
+              description: Map feature → enrollStatus OPT_IN|OPT_OUT.
+              properties:
+                pac_relaxation:
+                  $ref: "#/components/schemas/AdvantageFeatureEnroll"
+                text_optimizations:
+                  $ref: "#/components/schemas/AdvantageFeatureEnroll"
+                image_touchups:
+                  $ref: "#/components/schemas/AdvantageFeatureEnroll"
+                enhance_cta:
+                  $ref: "#/components/schemas/AdvantageFeatureEnroll"
+                adapt_to_placement:
+                  $ref: "#/components/schemas/AdvantageFeatureEnroll"
+                media_type_automation:
+                  $ref: "#/components/schemas/AdvantageFeatureEnroll"
+                image_template:
+                  $ref: "#/components/schemas/AdvantageFeatureEnroll"
+                inline_comment:
+                  $ref: "#/components/schemas/AdvantageFeatureEnroll"
+                image_brightness_and_contrast:
+                  $ref: "#/components/schemas/AdvantageFeatureEnroll"
+        catalogId:
+          type: string
+          description: CATALOG — product catalog id (via meta_list_catalogs / invoke).
+        productSetId:
+          type: string
+          description: CATALOG — product_set_id (via meta_list_product_sets / invoke).
         creativeName:
           type: string
           maxLength: 400
@@ -1666,6 +1796,9 @@ components:
       properties:
         tool:
           type: string
+          description: >
+            Nome canônico da tool MCP/HTTP. Tools sem rota REST dedicada
+            (capabilities, upload, catalogs, product sets, experiments) só via invoke.
           enum:
             - meta_list_integrations
             - meta_list_ad_accounts
@@ -1689,6 +1822,15 @@ components:
             - meta_update_ad_media
             - meta_preview_bulk_delete
             - meta_execute_bulk_delete
+            - meta_get_capabilities
+            - meta_upload_image
+            - meta_upload_video
+            - meta_get_video_status
+            - meta_list_catalogs
+            - meta_list_product_sets
+            - meta_create_experiment
+            - meta_get_experiment
+            - meta_stop_experiment
         arguments:
           type: object
           description: Payload da tool (sempre com tenantId; campos livres).

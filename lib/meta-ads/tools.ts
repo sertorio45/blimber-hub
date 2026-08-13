@@ -29,6 +29,7 @@ import { getMetaCapabilities } from './capabilities'
 import {
   assertProductSetOwned,
   listProductCatalogs,
+  listProductSets,
 } from './catalog-service'
 import {
   META_ADVANTAGE_ENROLL_STATUS,
@@ -309,6 +310,13 @@ export const metaCreateAdsetSchema = tenantContextSchema
       .optional()
       .default('WEBSITE')
       .describe('WEBSITE (default) ou WHATSAPP (Click-to-WhatsApp). Não é objective de campanha.'),
+    isDynamicCreative: z
+      .boolean()
+      .optional()
+      .describe(
+        'Se true, cria adset com is_dynamic_creative=true (DYNAMIC_CREATIVE_LEGACY). '
+        + 'Só WEBSITE; ads devem usar creativeType=DYNAMIC_CREATIVE_LEGACY + assetFeed.',
+      ),
     campaignObjective: z
       .enum(META_CAMPAIGN_OBJECTIVES)
       .optional()
@@ -372,6 +380,13 @@ export const metaCreateAdsetSchema = tenantContextSchema
         code: z.ZodIssueCode.custom,
         message: 'lifetimeBudget exige endTime (ISO-8601).',
         path: ['endTime'],
+      })
+    }
+    if (data.isDynamicCreative === true && data.destinationType === 'WHATSAPP') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'isDynamicCreative=true exige destinationType=WEBSITE (não combina com WHATSAPP).',
+        path: ['isDynamicCreative'],
       })
     }
     if (data.destinationType === 'WHATSAPP' && data.billingEvent !== 'IMPRESSIONS') {
@@ -989,6 +1004,11 @@ export const metaListCatalogsSchema = tenantContextSchema.extend({
   limit: z.number().int().min(1).max(200).optional().default(50),
 })
 
+export const metaListProductSetsSchema = tenantContextSchema.extend({
+  catalogId: z.string().min(1).describe('ID do product catalog (via meta_list_catalogs).'),
+  limit: z.number().int().min(1).max(200).optional().default(50),
+})
+
 export const metaCreateExperimentSchema = tenantContextSchema
   .extend({
     name: z.string().min(1).max(400),
@@ -1090,6 +1110,7 @@ export type MetaToolName =
   | 'meta_upload_video'
   | 'meta_get_video_status'
   | 'meta_list_catalogs'
+  | 'meta_list_product_sets'
   | 'meta_create_experiment'
   | 'meta_get_experiment'
   | 'meta_stop_experiment'
@@ -2043,6 +2064,7 @@ export async function metaCreateAdset(
     destinationType,
     pageId: pageId ?? undefined,
     whatsappPhoneNumber: whatsappPhone,
+    isDynamicCreative: input.isDynamicCreative === true,
     dailyBudget: input.dailyBudget,
     lifetimeBudget: input.lifetimeBudget,
     startTime: input.startTime,
@@ -2060,6 +2082,11 @@ export async function metaCreateAdset(
   )
   if (status === 'ACTIVE')
     budgetNotes.push('ATENÇÃO: criando ACTIVE — gasto potencial imediato após ads.')
+  if (input.isDynamicCreative === true) {
+    budgetNotes.push(
+      'is_dynamic_creative=true — ads devem usar creativeType=DYNAMIC_CREATIVE_LEGACY + assetFeed.',
+    )
+  }
   if (dryRun) {
     budgetNotes.push('Moeda da conta não consultada no dry-run (sem Graph). Use listAdAccounts se precisar.')
     budgetNotes.push('Ownership da campanha será validado na execução (dryRun: false).')
@@ -2088,12 +2115,13 @@ export async function metaCreateAdset(
         `Adset "${input.name}" → ${status}`,
         `campaign_id: ${input.campaignId}${campaignName ? ` (${campaignName})` : ''}`,
         `destinationType: ${destinationType}`,
+        input.isDynamicCreative === true ? 'isDynamicCreative: true' : null,
         targetingNote,
         `billing_event=${input.billingEvent} · optimization_goal=${input.optimizationGoal}`,
         `ad_account: ${creds.adAccountId}${currency ? ` (${currency})` : ''}`,
         ...budgetNotes,
         'dryRun=true (default): nenhuma mutação enviada à Graph API.',
-      ],
+      ].filter((n): n is string => Boolean(n)),
     },
     async () => {
       const created = await graphWrite(graph, metaGraphUrl(creds.apiVersion, path), {
@@ -2122,6 +2150,7 @@ export async function metaCreateAdset(
         billingEvent: input.billingEvent,
         optimizationGoal: input.optimizationGoal,
         destinationType,
+        isDynamicCreative: input.isDynamicCreative === true,
         pageId,
         whatsappPhoneNumber: whatsappPhone ?? null,
         targetingTemplate: resolved.targetingTemplate,
@@ -2155,6 +2184,7 @@ export async function metaCreateAdset(
         targeting: resolved.targeting,
         targetingSource: resolved.source,
         destinationType,
+        isDynamicCreative: input.isDynamicCreative === true,
         pageId,
         adAccountId: creds.adAccountId,
         currency,
@@ -2173,6 +2203,7 @@ export async function metaCreateAdset(
       billingEvent: input.billingEvent,
       optimizationGoal: input.optimizationGoal,
       destinationType,
+      isDynamicCreative: input.isDynamicCreative === true,
       pageId,
       whatsappPhoneNumber: whatsappPhone ?? null,
       targetingTemplate: resolved.targetingTemplate,
@@ -2208,6 +2239,7 @@ export async function metaCreateAdset(
         billingEvent: result.billingEvent,
         optimizationGoal: result.optimizationGoal,
         destinationType: result.destinationType,
+        isDynamicCreative: result.isDynamicCreative,
         pageId: result.pageId,
         targetingTemplate: result.targetingTemplate,
         targeting: result.targeting,
@@ -3506,6 +3538,22 @@ export async function metaListCatalogs(ctx: MetaToolContext, raw: unknown) {
   return { tenantId: input.tenantId, adAccountId: creds.adAccountId, catalogs }
 }
 
+export async function metaListProductSets(ctx: MetaToolContext, raw: unknown) {
+  const input = metaListProductSetsSchema.parse(raw)
+  const creds = await withCreds(ctx, input.tenantId, input.adAccountId)
+  const graph = fetchGraph(ctx)
+  const productSets = await listProductSets(
+    { apiVersion: creds.apiVersion, accessToken: creds.accessToken, adAccountId: creds.adAccountId, graph },
+    { catalogId: input.catalogId, limit: input.limit },
+  )
+  return {
+    tenantId: input.tenantId,
+    adAccountId: creds.adAccountId,
+    catalogId: input.catalogId,
+    productSets,
+  }
+}
+
 export async function metaCreateExperiment(ctx: MetaToolContext, raw: unknown) {
   const input = metaCreateExperimentSchema.parse(raw)
   assertWriteConfirmation(input)
@@ -3998,6 +4046,7 @@ export const META_TOOL_HANDLERS: Record<MetaToolName, ToolHandler> = {
   meta_upload_video: metaUploadVideo,
   meta_get_video_status: metaGetVideoStatusTool,
   meta_list_catalogs: metaListCatalogs,
+  meta_list_product_sets: metaListProductSets,
   meta_create_experiment: metaCreateExperiment,
   meta_get_experiment: metaGetExperiment,
   meta_stop_experiment: metaStopExperiment,
@@ -4031,6 +4080,7 @@ export const META_TOOL_SCHEMAS: Record<MetaToolName, z.ZodTypeAny> = {
   meta_upload_video: metaUploadVideoSchema,
   meta_get_video_status: metaGetVideoStatusSchema,
   meta_list_catalogs: metaListCatalogsSchema,
+  meta_list_product_sets: metaListProductSetsSchema,
   meta_create_experiment: metaCreateExperimentSchema,
   meta_get_experiment: metaGetExperimentSchema,
   meta_stop_experiment: metaStopExperimentSchema,
@@ -4066,7 +4116,7 @@ export const META_TOOL_DESCRIPTIONS: Record<MetaToolName, string> = {
   meta_create_campaign:
     'Cria campanha (Outcome_*). Default PAUSED + dryRun=true. Exige confirm+confirmTenantId. ACTIVE exige confirmActive. Budget opcional com teto env.',
   meta_create_adset:
-    'Cria adset (BR_* ou targeting custom). PAUSED+dryRun. destinationType WEBSITE|WHATSAPP (CTWA). Exige confirm+budget+campaignId.',
+    'Cria adset (BR_* ou targeting custom). PAUSED+dryRun. destinationType WEBSITE|WHATSAPP. isDynamicCreative opcional (DYNAMIC_CREATIVE_LEGACY). Exige confirm+budget+campaignId.',
   meta_create_ad:
     'Cria Ad+Creative. creativeId XOR creativeType IMAGE|VIDEO|CAROUSEL|DYNAMIC_CREATIVE_LEGACY|CATALOG. Advantage+ degreesOfFreedomSpec. WEBSITE/WHATSAPP. Upload imageUrl/videoUrl (SSRF). PAUSED+dryRun.',
   meta_update_adset_budget:
@@ -4091,6 +4141,8 @@ export const META_TOOL_DESCRIPTIONS: Record<MetaToolName, string> = {
     'Consulta status de processamento do Advideo (status/title/length).',
   meta_list_catalogs:
     'Lista product catalogs da ad account do tenant (ownership).',
+  meta_list_product_sets:
+    'Lista product sets de um catalogId (ownership via ad account). Use productSetId em createAd CATALOG.',
   meta_create_experiment:
     'Cria Ad Study oficial (SPLIT_TEST_V2 creative cells com ads[] ou SPLIT_TEST com adsets[]). dryRun default true.',
   meta_get_experiment:

@@ -21,6 +21,13 @@ export type MetaProductCatalogSummary = {
   vertical: string | null
 }
 
+export type MetaProductSetSummary = {
+  id: string
+  name: string | null
+  productCount: number | null
+  filter: unknown | null
+}
+
 export async function listProductCatalogs(
   ctx: CatalogServiceContext,
   options?: { limit?: number },
@@ -43,6 +50,46 @@ export async function listProductCatalogs(
     name: row.name != null ? String(row.name) : null,
     productCount: typeof row.product_count === 'number' ? row.product_count : null,
     vertical: row.vertical != null ? String(row.vertical) : null,
+  }))
+}
+
+/**
+ * List product sets for a catalog owned by the tenant ad account.
+ * Official edge: GET /{product-catalog-id}/product_sets
+ */
+export async function listProductSets(
+  ctx: CatalogServiceContext,
+  params: { catalogId: string, limit?: number },
+): Promise<MetaProductSetSummary[]> {
+  const catalogs = await listProductCatalogs(ctx, { limit: 200 })
+  const catalogIds = new Set(catalogs.map(c => c.id))
+  if (!catalogIds.has(params.catalogId)) {
+    throw new MetaAdsToolError(
+      'CATALOG_TENANT_MISMATCH',
+      'Catálogo não pertence à ad account do tenant (ou token sem acesso).',
+      403,
+      { catalogId: params.catalogId },
+    )
+  }
+
+  const limit = Math.min(Math.max(params.limit ?? 50, 1), 200)
+  const res = await ctx.graph(
+    metaGraphUrl(ctx.apiVersion, `/${params.catalogId}/product_sets`),
+    {
+      query: {
+        fields: 'id,name,product_count,filter',
+        limit,
+        access_token: ctx.accessToken,
+      },
+    },
+  )
+
+  const rows = Array.isArray(res?.data) ? res.data : []
+  return rows.map((row: any) => ({
+    id: String(row.id),
+    name: row.name != null ? String(row.name) : null,
+    productCount: typeof row.product_count === 'number' ? row.product_count : null,
+    filter: row.filter ?? null,
   }))
 }
 

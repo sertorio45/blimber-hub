@@ -115,14 +115,14 @@ Graph default do projeto: `META_GRAPH_VERSION` ou **v20.0** (`lib/meta-ads/graph
 | Ad a partir de `creativeId` | ✅ | XOR com campos de criativo novo |
 | Advantage+ Creative | ✅ | `degreesOfFreedomSpec` tipado (`pac_relaxation`, `text_optimizations`, …) |
 | Mídia flexível (Ads Manager) | ✅ | = Advantage+ `pac_relaxation` — **não** é Dynamic Creative |
-| Flexible Ad Format | ❌ | `creative_asset_groups_spec`; docs exemplificam ≥ v25; capability=false em v20 |
-| DYNAMIC_CREATIVE_LEGACY | ✅ | `asset_feed_spec` + adset `is_dynamic_creative=true`; WEBSITE only |
-| Catalog / Advantage+ Catalog | ✅ | `meta_list_catalogs` + creativeType `CATALOG` (`product_set_id`) |
+| Flexible Ad Format | ❌ | `creative_asset_groups_spec` não modelado; `META_GRAPH_VERSION` sobe Graph sem mudar default v20 e **não** habilita sozinho |
+| DYNAMIC_CREATIVE_LEGACY | ✅ | `asset_feed_spec` + adset `is_dynamic_creative=true` (`createAdset.isDynamicCreative`); WEBSITE only |
+| Catalog / Advantage+ Catalog | ✅ | `meta_list_catalogs` + `meta_list_product_sets` + creativeType `CATALOG` |
 | Collection | ❌ | Instant Experience/canvas não implementado |
 | A/B Experiments | ✅ | `meta_create_experiment` / get / stop — `SPLIT_TEST_V2` (ads) e `SPLIT_TEST` (adsets) |
 | WEBSITE + WHATSAPP CTWA | ✅ | Preservados |
 
-Descoberta runtime: `meta_get_capabilities` / `GET /api/gpt/meta/tools`.
+Descoberta runtime: `meta_get_capabilities` / `GET /api/gpt/meta/tools` / `invokeMetaTool` (overflow ≤30 ops OpenAPI).
 
 Roadmap de escrita (create / edit / bulk delete): [`gpt-blimber-meta-WRITE-PLAN.md`](./gpt-blimber-meta-WRITE-PLAN.md) — **etapas 0–6 concluídas**.  
 **Etapa 0:** [`gpt-blimber-meta-WRITE-ETAPA-0.md`](./gpt-blimber-meta-WRITE-ETAPA-0.md) — guards, dry-run, limites e audit.  

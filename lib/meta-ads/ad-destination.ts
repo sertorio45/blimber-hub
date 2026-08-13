@@ -290,6 +290,8 @@ export function buildMetaCreateAdsetGraphBody(input: {
   destinationType?: MetaAdDestinationType
   pageId?: string
   whatsappPhoneNumber?: string
+  /** Dynamic Creative (legacy): ads must use asset_feed_spec / DYNAMIC_CREATIVE_LEGACY. */
+  isDynamicCreative?: boolean
   dailyBudget?: number
   lifetimeBudget?: number
   startTime?: string
@@ -320,6 +322,18 @@ export function buildMetaCreateAdsetGraphBody(input: {
     if (input.whatsappPhoneNumber)
       promotedObject.whatsapp_phone_number = input.whatsappPhoneNumber
     body.promoted_object = promotedObject
+  }
+
+  // Official Marketing API field for Dynamic Creative (Ads Manager legado).
+  if (input.isDynamicCreative === true) {
+    if (destinationType === 'WHATSAPP') {
+      throw new MetaAdsToolError(
+        'DYNAMIC_CREATIVE_WHATSAPP_UNSUPPORTED',
+        'isDynamicCreative=true só combina com destinationType=WEBSITE (DYNAMIC_CREATIVE_LEGACY).',
+        400,
+      )
+    }
+    body.is_dynamic_creative = true
   }
 
   if (input.dailyBudget != null)

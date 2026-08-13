@@ -42,6 +42,7 @@ export type MetaCapabilitiesReport = {
   }
   catalog: {
     listProductCatalogs: MetaCapabilityFlag
+    listProductSets: MetaCapabilityFlag
     catalogTemplateCreative: MetaCapabilityFlag
   }
 }
@@ -84,8 +85,9 @@ export function getMetaCapabilities(explicitVersion?: string | null): MetaCapabi
         'Collection / Instant Experience exige canvas/storefront path não implementado no Blimber; use CAROUSEL ou CATALOG.',
       ),
       FLEXIBLE_AD_FORMAT: no(
-        'creative_asset_groups_spec (Flexible Ad Format) documentado com exemplos em Graph ≥ v25; '
-        + `projeto usa ${graphVersion} — não inventar campos; reavaliar ao subir versão oficialmente.`,
+        'creative_asset_groups_spec (Flexible Ad Format) não implementado no Blimber. '
+        + `Graph atual=${graphVersion} (default v20.0; META_GRAPH_VERSION sobe a versão sem mudar o default). `
+        + 'Mesmo com Graph ≥ v25, capability permanece false até o Blimber modelar o campo — não inventar payloads.',
       ),
       FLEXIBLE_MEDIA_PAC_RELAXATION: ok(
         'Ads Manager "Mídia flexível" = Advantage+ pac_relaxation em degrees_of_freedom_spec (não é Dynamic Creative).',
@@ -109,6 +111,9 @@ export function getMetaCapabilities(explicitVersion?: string | null): MetaCapabi
     },
     catalog: {
       listProductCatalogs: ok('GET act_{adAccountId}/product_catalogs (ownership via ad account do tenant)'),
+      listProductSets: ok(
+        'GET /{catalog-id}/product_sets após validar catalog na ad account (meta_list_product_sets)',
+      ),
       catalogTemplateCreative: ok(
         'AdCreative template_data + product_set_id; product set deve pertencer a catalogo listado',
       ),

@@ -81,6 +81,7 @@ const TOOL_INPUT_HINTS: Record<MetaToolName, string[]> = {
     'confirm (=true)',
     'status? (default PAUSED)',
     'destinationType? (WEBSITE|WHATSAPP)',
+    'isDynamicCreative? (true → is_dynamic_creative; só WEBSITE / DYNAMIC_CREATIVE_LEGACY)',
     'startTime?',
     'confirmActive? (se ACTIVE)',
     'dryRun? (default true)',
@@ -185,6 +186,7 @@ const TOOL_INPUT_HINTS: Record<MetaToolName, string[]> = {
   ],
   meta_get_video_status: ['tenantId', 'videoId', 'adAccountId?'],
   meta_list_catalogs: ['tenantId', 'adAccountId?', 'limit?'],
+  meta_list_product_sets: ['tenantId', 'catalogId', 'adAccountId?', 'limit?'],
   meta_create_experiment: [
     'tenantId',
     'name',

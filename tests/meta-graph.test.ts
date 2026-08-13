@@ -284,6 +284,36 @@ describe('meta CTWA / destination payloads', () => {
     expect(body.promoted_object).toBeUndefined()
   })
 
+  it('isDynamicCreative sets is_dynamic_creative on WEBSITE adset', () => {
+    const body = buildMetaCreateAdsetGraphBody({
+      name: 'Dyn',
+      campaignId: 'cmp_1',
+      billingEvent: 'IMPRESSIONS',
+      optimizationGoal: 'LINK_CLICKS',
+      status: 'PAUSED',
+      targeting: { geo_locations: { countries: ['BR'] }, age_min: 18, age_max: 65 },
+      destinationType: 'WEBSITE',
+      isDynamicCreative: true,
+      dailyBudget: 3000,
+    })
+    expect(body.is_dynamic_creative).toBe(true)
+  })
+
+  it('isDynamicCreative rejects WHATSAPP destination', () => {
+    expect(() => buildMetaCreateAdsetGraphBody({
+      name: 'Bad',
+      campaignId: 'cmp_1',
+      billingEvent: 'IMPRESSIONS',
+      optimizationGoal: 'CONVERSATIONS',
+      status: 'PAUSED',
+      targeting: { geo_locations: { countries: ['BR'] }, age_min: 18, age_max: 65 },
+      destinationType: 'WHATSAPP',
+      pageId: 'page_1',
+      isDynamicCreative: true,
+      dailyBudget: 1000,
+    })).toThrow(/isDynamicCreative|WEBSITE/)
+  })
+
   it('assertWhatsAppAdsetCompatibility rejects AWARENESS', () => {
     expect(() => assertWhatsAppAdsetCompatibility({
       destinationType: 'WHATSAPP',

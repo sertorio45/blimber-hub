@@ -772,6 +772,62 @@ describe('meta-ads MCP tools', () => {
     expect(graphFetch).not.toHaveBeenCalled()
   })
 
+  it('create adset isDynamicCreative dryRun previews is_dynamic_creative', async () => {
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret('tok'),
+      ad_account_id: '555',
+    })
+    const graphFetch = vi.fn()
+
+    const result = await metaCreateAdset(
+      { client, graphFetch },
+      {
+        tenantId: 'tenant-1',
+        campaignId: 'cmp_1',
+        name: 'Adset Dyn',
+        targetingTemplate: 'BR_18_65',
+        billingEvent: 'IMPRESSIONS',
+        optimizationGoal: 'LINK_CLICKS',
+        dailyBudget: 5000,
+        isDynamicCreative: true,
+        confirmTenantId: 'tenant-1',
+        confirm: true,
+      },
+    )
+
+    expect(result.success).toBe(true)
+    expect((result as any).isDynamicCreative).toBe(true)
+    expect((result as any).preview?.body).toMatchObject({
+      is_dynamic_creative: true,
+    })
+    expect(graphFetch).not.toHaveBeenCalled()
+  })
+
+  it('create adset rejects isDynamicCreative with WHATSAPP', async () => {
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret('tok'),
+      ad_account_id: '555',
+      page_id: 'page_1',
+    })
+
+    await expect(metaCreateAdset(
+      { client, graphFetch: vi.fn() },
+      {
+        tenantId: 'tenant-1',
+        campaignId: 'cmp_1',
+        name: 'Bad Dyn',
+        targetingTemplate: 'BR_18_65',
+        billingEvent: 'IMPRESSIONS',
+        optimizationGoal: 'CONVERSATIONS',
+        destinationType: 'WHATSAPP',
+        isDynamicCreative: true,
+        dailyBudget: 5000,
+        confirmTenantId: 'tenant-1',
+        confirm: true,
+      },
+    )).rejects.toThrow(/isDynamicCreative|WEBSITE/)
+  })
+
   it('create adset rejects confirmTenantId mismatch without Graph', async () => {
     const client = createIntegrationClient({
       access_token_enc: encryptSecret('tok'),
@@ -1210,6 +1266,32 @@ describe('meta-ads MCP tools', () => {
     expect((result as any).capabilities.creativeTypes.FLEXIBLE_AD_FORMAT.supported).toBe(false)
     expect((result as any).capabilities.creativeTypes.FLEXIBLE_MEDIA_PAC_RELAXATION.supported).toBe(true)
     expect((result as any).capabilities.creativeTypes.DYNAMIC_CREATIVE_LEGACY.supported).toBe(true)
+    expect((result as any).capabilities.catalog.listProductSets.supported).toBe(true)
+  })
+
+  it('meta_list_product_sets lists sets after catalog ownership check', async () => {
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret('tok'),
+      ad_account_id: '555',
+    })
+    const graphFetch = vi.fn(async (url: string) => {
+      if (String(url).includes('/product_catalogs')) {
+        return { data: [{ id: 'cat_1', name: 'Cat', product_count: 10, vertical: 'commerce' }] }
+      }
+      if (String(url).includes('/product_sets')) {
+        return { data: [{ id: 'ps_1', name: 'All', product_count: 10, filter: null }] }
+      }
+      throw new Error(`unexpected url ${url}`)
+    })
+    const { metaListProductSets } = await import('~/lib/meta-ads')
+    const result = await metaListProductSets(
+      { client, graphFetch },
+      { tenantId: 'tenant-1', catalogId: 'cat_1' },
+    )
+    expect((result as any).catalogId).toBe('cat_1')
+    expect((result as any).productSets).toEqual([
+      { id: 'ps_1', name: 'All', productCount: 10, filter: null },
+    ])
   })
 
   it('create ad rejects CAROUSEL with WHATSAPP destination', async () => {

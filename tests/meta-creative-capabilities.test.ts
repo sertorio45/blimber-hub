@@ -14,7 +14,15 @@ describe('meta capabilities + media SSRF + experiments builders', () => {
     expect(caps.creativeTypes.FLEXIBLE_AD_FORMAT.supported).toBe(false)
     expect(caps.creativeTypes.FLEXIBLE_MEDIA_PAC_RELAXATION.supported).toBe(true)
     expect(caps.creativeTypes.COLLECTION.supported).toBe(false)
+    expect(caps.catalog.listProductSets.supported).toBe(true)
     expect(caps.experiments.levels.length).toBeGreaterThan(0)
+    expect(caps.creativeTypes.FLEXIBLE_AD_FORMAT.reason).toMatch(/META_GRAPH_VERSION|não implementado/i)
+  })
+
+  it('keeps Flexible Ad Format false even if graph version string is higher', () => {
+    const caps = getMetaCapabilities('v25.0')
+    expect(caps.graphVersion).toBe('v25.0')
+    expect(caps.creativeTypes.FLEXIBLE_AD_FORMAT.supported).toBe(false)
   })
 
   it('blocks private media URLs (SSRF)', async () => {
