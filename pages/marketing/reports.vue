@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import MarketingReportsPanel from '@/components/marketing/MarketingReportsPanel.vue'
+import MarketingOrganicReportsPanel from '@/components/marketing/MarketingOrganicReportsPanel.vue'
 
 definePageMeta({
   middleware: ['auth'],
@@ -8,8 +8,8 @@ definePageMeta({
 </script>
 
 <template>
-  <MarketingReportsPanel
+  <MarketingOrganicReportsPanel
     title="Relatórios de Marketing"
-    description="Visão executiva de Google Ads, Google Analytics e Meta — KPIs, tendências e detalhamento por canal."
+    description="Métricas orgânicas das redes conectadas — Facebook Page e Instagram Business."
   />
 </template>
