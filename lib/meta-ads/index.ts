@@ -45,6 +45,14 @@ export {
   metaUpdateAdMedia,
   metaPreviewBulkDelete,
   metaExecuteBulkDelete,
+  metaGetCapabilities,
+  metaUploadImage,
+  metaUploadVideo,
+  metaGetVideoStatusTool,
+  metaListCatalogs,
+  metaCreateExperiment,
+  metaGetExperiment,
+  metaStopExperiment,
   metaUpdateAdsetStatus,
   metaUpdateAdStatus,
   metaUpdateCampaignStatus,
@@ -69,13 +77,43 @@ export {
 } from './ad-destination'
 export {
   META_AD_CREATIVE_TYPES,
+  META_ADVANTAGE_ENROLL_STATUS,
+  META_ADVANTAGE_PLUS_FEATURES,
+  META_DYNAMIC_AD_FORMATS,
+  buildAssetFeedSpec,
   buildCarouselLinkData,
+  buildDegreesOfFreedomSpec,
   buildMetaCreateAdCreativeBodyByType,
   buildVideoData,
   normalizeMetaAdCreativeType,
+  type AssetFeedSpecInput,
   type CarouselCardInput,
+  type DegreesOfFreedomSpecInput,
   type MetaAdCreativeType,
+  type MetaAdvantagePlusFeature,
+  type MetaDynamicAdFormat,
 } from './creative-types'
+export { getMetaCapabilities, type MetaCapabilitiesReport } from './capabilities'
+export {
+  assertSafeMediaUrl,
+  assertPublicHostnameOrIp,
+} from './safe-url'
+export {
+  getVideoStatus,
+  uploadImage,
+  uploadVideo,
+} from './media-service'
+export {
+  assertProductSetOwned,
+  buildCatalogTemplateCreativeBody,
+  listProductCatalogs,
+} from './catalog-service'
+export {
+  buildCreateExperimentGraphBody,
+  createExperiment,
+  getExperiment,
+  stopExperiment,
+} from './experiment-service'
 export {
   META_ADSET_BILLING_EVENTS,
   META_ADSET_OPTIMIZATION_GOALS,

@@ -96,14 +96,33 @@ Contrato completo: `gpt/blimber/openapi-ads.yaml` (host `ads.blimber.com.br`). `
 
 ## Limitações
 
-- Sem CAPI, Brand Center / geração de imagem  
+- Sem CAPI, Brand Center / geração de imagem por IA  
 - Targeting de adset: presets `BR_*` **ou** objeto `targeting` customizado (XOR; geo obrigatório). IDs via `searchInterests` / `searchGeolocations` / `listCustomAudiences`  
-- Create/edit ad: criativo link/page + mídia tipada (`imageUrl`|`imageHash`); exige page token  
-- Sem upload binário de mídia; `createAd` aceita IMAGE|VIDEO|CAROUSEL com image_hash/video_id já na Meta (DYNAMIC_CREATIVE removido — use vários ads no mesmo adset)
-- `updateAdMedia` ainda só imageUrl|imageHash (sem video/carousel swap)  
+- Create/edit ad: `creativeId` XOR criativo tipado; mídia via `imageHash`/`videoId` **ou** upload HTTPS (`imageUrl`/`videoUrl`) com SSRF check  
 - Bulk delete: **só IDs explícitos** (nunca por nome); preview + `previewToken` obrigatórios  
 - Timeout ~45s / payloads texto < ~100k (limites OpenAI)  
 - Sempre passe o `tenantId` correto  
+
+## META CREATIVE CAPABILITIES
+
+Graph default do projeto: `META_GRAPH_VERSION` ou **v20.0** (`lib/meta-ads/graph.ts`). Não subir versão silenciosamente.
+
+| Capacidade | Status | Notas |
+|------------|--------|-------|
+| IMAGE / VIDEO / CAROUSEL (misto) | ✅ | `object_story_spec`; CAROUSEL WEBSITE only |
+| Upload/reuse imagem | ✅ | `meta_upload_image` + createAd `imageUrl`\|`imageHash` |
+| Upload/reuse vídeo | ✅ | `meta_upload_video` + `meta_get_video_status` |
+| Ad a partir de `creativeId` | ✅ | XOR com campos de criativo novo |
+| Advantage+ Creative | ✅ | `degreesOfFreedomSpec` tipado (`pac_relaxation`, `text_optimizations`, …) |
+| Mídia flexível (Ads Manager) | ✅ | = Advantage+ `pac_relaxation` — **não** é Dynamic Creative |
+| Flexible Ad Format | ❌ | `creative_asset_groups_spec`; docs exemplificam ≥ v25; capability=false em v20 |
+| DYNAMIC_CREATIVE_LEGACY | ✅ | `asset_feed_spec` + adset `is_dynamic_creative=true`; WEBSITE only |
+| Catalog / Advantage+ Catalog | ✅ | `meta_list_catalogs` + creativeType `CATALOG` (`product_set_id`) |
+| Collection | ❌ | Instant Experience/canvas não implementado |
+| A/B Experiments | ✅ | `meta_create_experiment` / get / stop — `SPLIT_TEST_V2` (ads) e `SPLIT_TEST` (adsets) |
+| WEBSITE + WHATSAPP CTWA | ✅ | Preservados |
+
+Descoberta runtime: `meta_get_capabilities` / `GET /api/gpt/meta/tools`.
 
 Roadmap de escrita (create / edit / bulk delete): [`gpt-blimber-meta-WRITE-PLAN.md`](./gpt-blimber-meta-WRITE-PLAN.md) — **etapas 0–6 concluídas**.  
 **Etapa 0:** [`gpt-blimber-meta-WRITE-ETAPA-0.md`](./gpt-blimber-meta-WRITE-ETAPA-0.md) — guards, dry-run, limites e audit.  

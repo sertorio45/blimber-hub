@@ -58,9 +58,13 @@ description: >-
 | `meta_search_interests` | Busca interesses Meta (id) para targeting custom |
 | `meta_search_geolocations` | Busca cidades/regiões (key) para geo_locations |
 | `meta_list_custom_audiences` | Lista custom audiences da ad account |
-| `meta_create_ad` | Criar criativo IMAGE|VIDEO|CAROUSEL + anúncio (WEBSITE ou WhatsApp CTWA; default PAUSED + dryRun true) |
+| `meta_create_ad` | Criar criativo IMAGE\|VIDEO\|CAROUSEL\|DYNAMIC_CREATIVE_LEGACY\|CATALOG (+ Advantage+) ou ad via `creativeId`; WEBSITE/WhatsApp CTWA; default PAUSED + dryRun true |
 | `meta_update_ad_creative_copy` | Copy via novo creative |
-| `meta_update_ad_media` | imageUrl\|imageHash via novo creative |
+| `meta_update_ad_media` | IMAGE\|VIDEO\|CAROUSEL via novo creative |
+| `meta_get_capabilities` | Matriz de capacidades vs Graph version |
+| `meta_upload_image` / `meta_upload_video` / `meta_get_video_status` | Upload/reuse mídia (SSRF) |
+| `meta_list_catalogs` | Product catalogs da ad account |
+| `meta_create_experiment` / `meta_get_experiment` / `meta_stop_experiment` | Ad Studies oficiais (SPLIT_TEST_V2 / SPLIT_TEST) |
 | `meta_preview_bulk_delete` | Preview exclusão (IDs + previewToken) |
 | `meta_execute_bulk_delete` | Execute exclusão (confirmações + dryRun false) |
 | `meta_get_insights` | Métricas (level + datePreset) |
@@ -71,12 +75,13 @@ description: >-
 OpenAPI: `gpt/blimber/openapi-ads.yaml` (`createCampaign`, `createAdset`, `createAd`, `searchInterests`, `searchGeolocations`, `listCustomAudiences`, `updateAdsetStatus`, `updateAdsetBudget`, `updateAdCreativeCopy`, `previewBulkDelete`, `executeBulkDelete`, …)  
 Catálogo: `GET /api/gpt/meta/tools`
 
-`createAd.creativeType`: IMAGE (default) | VIDEO | CAROUSEL — mídia já na Meta (`imageHash` / `videoId`). Sem upload binário.
+`createAd.creativeType`: IMAGE (default) | VIDEO | CAROUSEL | DYNAMIC_CREATIVE_LEGACY | CATALOG — ou `creativeId` XOR. Upload HTTPS opcional (`imageUrl`/`videoUrl`) com SSRF; dryRun não faz upload.
 
-**Fora do MCP (não confundir com creativeType):**
-- **Mídia flexível** (Ads Manager) = Advantage+ `pac_relaxation` (`degrees_of_freedom_spec`) — não é Dynamic Creative.
-- **Teste de criativo** = Experiments / Ad Studies (`SPLIT_TEST_V2` + `creative_test_config`) — não implementado.
-- **Dynamic Creative** (`asset_feed_spec` + adset `is_dynamic_creative`) = removido do MCP (API ainda existe, mas UI/adset/WhatsApp tornam o fluxo inútil aqui).
+**Clarificações:**
+- **Mídia flexível** (Ads Manager) = Advantage+ `pac_relaxation` (`degreesOfFreedomSpec`) — implementado.
+- **Flexible Ad Format** (`creative_asset_groups_spec`) = capability=false na Graph v20 do projeto.
+- **Dynamic Creative** = `DYNAMIC_CREATIVE_LEGACY` (`asset_feed_spec` + adset `is_dynamic_creative`).
+- **Teste de criativo** = `meta_create_experiment` (SPLIT_TEST_V2).
 - **Competição prática:** vários ads IMAGE|VIDEO no mesmo adset.
 
 ## Fluxo sugerido
@@ -92,9 +97,8 @@ Catálogo: `GET /api/gpt/meta/tools`
 ## Fora de escopo
 
 - Inventar IDs de interest/city — sempre buscar via `meta_search_*`
-- Upload binário de vídeo/imagem para a Meta (use image_hash / video_id já existentes)
-- Advantage+ Creative toggles (ex. Mídia flexível / `pac_relaxation`, Otimizar texto / `text_optimizations`) / Dynamic Creative / Flexible Ad Format / Creative Testing (Experiments)
-- Catálogo / Instant Experience / Collection ads / Stories placement customization
+- Flexible Ad Format (`creative_asset_groups_spec`) na Graph v20 do projeto
+- Collection / Instant Experience canvas
 - Targeting sem geo mínimo
 - Delete por nome/filtro sem lista de IDs
 - Brand Center / geração de imagem por IA

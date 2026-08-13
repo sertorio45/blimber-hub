@@ -177,9 +177,65 @@ describe('meta CTWA / destination payloads', () => {
     })
   })
 
-  it('rejects removed DYNAMIC_CREATIVE creativeType', () => {
-    expect(() => normalizeMetaAdCreativeType('DYNAMIC_CREATIVE')).toThrow(/CREATIVE_TYPE_REMOVED|DYNAMIC_CREATIVE/)
-    expect(() => normalizeMetaAdCreativeType('dynamic')).toThrow(/removido|DYNAMIC/)
+  it('builds DYNAMIC_CREATIVE_LEGACY with asset_feed_spec', () => {
+    const body = buildMetaCreateAdCreativeBodyByType({
+      creativeName: 'Dyn',
+      pageId: 'page_1',
+      creativeType: 'DYNAMIC_CREATIVE_LEGACY',
+      destinationType: 'WEBSITE',
+      assetFeed: {
+        bodies: [{ text: 'Body A' }],
+        titles: [{ text: 'Title A' }],
+        images: [{ hash: 'h1' }, { hash: 'h2' }],
+        linkUrls: [{ websiteUrl: 'https://example.com' }],
+        callToActionTypes: ['LEARN_MORE'],
+        adFormats: ['SINGLE_IMAGE'],
+      },
+    })
+    expect(body).toMatchObject({
+      name: 'Dyn',
+      object_story_spec: { page_id: 'page_1' },
+      asset_feed_spec: {
+        ad_formats: ['SINGLE_IMAGE'],
+        bodies: [{ text: 'Body A' }],
+        images: [{ hash: 'h1' }, { hash: 'h2' }],
+      },
+    })
+  })
+
+  it('builds Advantage+ degrees_of_freedom_spec with pac_relaxation', () => {
+    const body = buildMetaCreateAdCreativeBodyByType({
+      creativeName: 'Img+',
+      pageId: 'page_1',
+      creativeType: 'IMAGE',
+      destinationType: 'WEBSITE',
+      website: {
+        message: 'Oi',
+        linkUrl: 'https://example.com',
+        callToAction: 'LEARN_MORE',
+      },
+      degreesOfFreedom: {
+        creativeFeaturesSpec: {
+          pac_relaxation: { enrollStatus: 'OPT_IN' },
+          text_optimizations: { enrollStatus: 'OPT_IN' },
+        },
+      },
+    })
+    expect(body.degrees_of_freedom_spec).toEqual({
+      creative_features_spec: {
+        pac_relaxation: { enroll_status: 'OPT_IN' },
+        text_optimizations: { enroll_status: 'OPT_IN' },
+      },
+    })
+  })
+
+  it('normalizes DYNAMIC_CREATIVE alias to DYNAMIC_CREATIVE_LEGACY', () => {
+    expect(normalizeMetaAdCreativeType('DYNAMIC_CREATIVE')).toBe('DYNAMIC_CREATIVE_LEGACY')
+    expect(normalizeMetaAdCreativeType('dynamic')).toBe('DYNAMIC_CREATIVE_LEGACY')
+  })
+
+  it('rejects FLEXIBLE_AD_FORMAT creativeType', () => {
+    expect(() => normalizeMetaAdCreativeType('FLEXIBLE_AD_FORMAT')).toThrow(/CREATIVE_TYPE_UNSUPPORTED|FLEXIBLE/)
   })
 
   it('normalizes creativeType aliases', () => {

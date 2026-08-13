@@ -1114,7 +1114,7 @@ describe('meta-ads MCP tools', () => {
     expect(linkData?.child_attachments[0]).toMatchObject({ image_hash: 'ha', name: 'A' })
   })
 
-  it('create ad rejects removed DYNAMIC_CREATIVE', async () => {
+  it('create ad DYNAMIC_CREATIVE alias maps to LEGACY and requires assetFeed', async () => {
     const client = createIntegrationClient({
       access_token_enc: encryptSecret('tok'),
       page_access_token_enc: encryptSecret('page-tok'),
@@ -1133,7 +1133,83 @@ describe('meta-ads MCP tools', () => {
         confirmTenantId: 'tenant-1',
         confirm: true,
       },
-    )).rejects.toThrow(/DYNAMIC_CREATIVE|removido|creativeType/)
+    )).rejects.toThrow(/assetFeed|DYNAMIC_CREATIVE/)
+  })
+
+  it('create ad DYNAMIC_CREATIVE_LEGACY dryRun previews asset_feed_spec', async () => {
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret('tok'),
+      page_access_token_enc: encryptSecret('page-tok'),
+      ad_account_id: '555',
+      page_id: 'page_99',
+    })
+    const graphFetch = vi.fn()
+    const result = await metaCreateAd(
+      { client, graphFetch },
+      {
+        tenantId: 'tenant-1',
+        adsetId: 'adset_1',
+        name: 'Dyn Ad',
+        creativeType: 'DYNAMIC_CREATIVE_LEGACY',
+        message: 'Body from top',
+        headline: 'Title from top',
+        assetFeed: {
+          images: [{ hash: 'h1' }, { hash: 'h2' }],
+          linkUrls: [{ websiteUrl: 'https://example.com' }],
+          callToActionTypes: ['LEARN_MORE'],
+          adFormats: ['SINGLE_IMAGE'],
+        },
+        confirm: true,
+        confirmTenantId: 'tenant-1',
+        dryRun: true,
+      },
+    )
+    expect((result as any).creativeType).toBe('DYNAMIC_CREATIVE_LEGACY')
+    expect((result as any).dryRun).toBe(true)
+    expect(graphFetch).not.toHaveBeenCalled()
+    expect(JSON.stringify((result as any).preview)).toContain('asset_feed_spec')
+  })
+
+  it('create ad with creativeId XOR reuses creative on dryRun', async () => {
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret('tok'),
+      page_access_token_enc: encryptSecret('page-tok'),
+      ad_account_id: '555',
+      page_id: 'page_99',
+    })
+    const graphFetch = vi.fn()
+    const result = await metaCreateAd(
+      { client, graphFetch },
+      {
+        tenantId: 'tenant-1',
+        adsetId: 'adset_1',
+        name: 'Reuse Creative Ad',
+        creativeId: 'cr_existing_1',
+        confirm: true,
+        confirmTenantId: 'tenant-1',
+        dryRun: true,
+      },
+    )
+    expect((result as any).creativeId).toBe('cr_existing_1')
+    expect((result as any).reusedCreative).toBe(true)
+    expect(graphFetch).not.toHaveBeenCalled()
+  })
+
+  it('meta_get_capabilities returns graph version matrix', async () => {
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret('tok'),
+      ad_account_id: '555',
+      api_version: 'v20.0',
+    })
+    const { metaGetCapabilities } = await import('~/lib/meta-ads')
+    const result = await metaGetCapabilities(
+      { client, graphFetch: vi.fn() },
+      { tenantId: 'tenant-1' },
+    )
+    expect((result as any).capabilities.graphVersion).toBe('v20.0')
+    expect((result as any).capabilities.creativeTypes.FLEXIBLE_AD_FORMAT.supported).toBe(false)
+    expect((result as any).capabilities.creativeTypes.FLEXIBLE_MEDIA_PAC_RELAXATION.supported).toBe(true)
+    expect((result as any).capabilities.creativeTypes.DYNAMIC_CREATIVE_LEGACY.supported).toBe(true)
   })
 
   it('create ad rejects CAROUSEL with WHATSAPP destination', async () => {

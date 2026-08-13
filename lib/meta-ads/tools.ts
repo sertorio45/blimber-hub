@@ -25,11 +25,32 @@ import {
   normalizeWhatsappPhoneNumber,
   type MetaAdDestinationType,
 } from './ad-destination'
+import { getMetaCapabilities } from './capabilities'
 import {
+  assertProductSetOwned,
+  listProductCatalogs,
+} from './catalog-service'
+import {
+  META_ADVANTAGE_ENROLL_STATUS,
+  META_ADVANTAGE_PLUS_FEATURES,
+  META_DYNAMIC_AD_FORMATS,
   buildMetaCreateAdCreativeBodyByType,
   normalizeMetaAdCreativeType,
+  type DegreesOfFreedomSpecInput,
   type MetaAdCreativeType,
+  type AssetFeedSpecInput,
 } from './creative-types'
+import {
+  buildCreateExperimentGraphBody,
+  createExperiment,
+  getExperiment,
+  stopExperiment,
+} from './experiment-service'
+import {
+  getVideoStatus,
+  uploadImage,
+  uploadVideo,
+} from './media-service'
 import {
   META_ADSET_BILLING_EVENTS,
   META_ADSET_OPTIMIZATION_GOALS,
@@ -418,50 +439,68 @@ const metaCarouselCardSchema = z.object({
   videoId: z.string().min(1).optional().describe('video_id já na Meta (opcional no card).'),
 })
 
+const metaAssetFeedSchema = z.object({
+  bodies: z.array(z.object({ text: z.string().min(1).max(2000) })).optional(),
+  titles: z.array(z.object({ text: z.string().min(1).max(255) })).optional(),
+  descriptions: z.array(z.object({ text: z.string().min(1).max(500) })).optional(),
+  images: z.array(z.object({ hash: z.string().min(1) })).optional(),
+  videos: z.array(z.object({
+    videoId: z.string().min(1),
+    thumbnailUrl: z.string().url().optional(),
+    thumbnailHash: z.string().min(1).optional(),
+  })).optional(),
+  linkUrls: z.array(z.object({ websiteUrl: z.string().url() })).min(1),
+  callToActionTypes: z.array(z.string().min(1)).min(1),
+  adFormats: z.array(z.enum(META_DYNAMIC_AD_FORMATS)).min(1),
+}).describe('asset_feed_spec tipado (DYNAMIC_CREATIVE_LEGACY).')
+
+const metaDegreesOfFreedomSchema = z.object({
+  creativeFeaturesSpec: z.record(
+    z.enum(META_ADVANTAGE_PLUS_FEATURES),
+    z.object({
+      enrollStatus: z.enum(META_ADVANTAGE_ENROLL_STATUS),
+    }),
+  ).describe('Advantage+ creative_features_spec (pac_relaxation = Mídia flexível no Ads Manager).'),
+}).describe('degrees_of_freedom_spec tipado (Advantage+ Creative).')
+
 /**
  * Create ad + creative on the tenant ad account.
- * creativeType: IMAGE (default) | VIDEO | CAROUSEL.
- * dryRun default true. Status default PAUSED. Requires page_id + page token.
- * destinationType=WEBSITE (default): linkUrl obrigatório.
- * destinationType=WHATSAPP: IMAGE|VIDEO CTWA; sem CAROUSEL.
- * Media: imageUrl|imageHash|videoId já existentes — never invent URLs / no binary upload.
- * DYNAMIC_CREATIVE removido: use vários ads IMAGE|VIDEO no mesmo adset para competição.
+ * creativeId XOR creative fields: reuse existing AdCreative OR build IMAGE|VIDEO|CAROUSEL|DYNAMIC_CREATIVE_LEGACY|CATALOG.
+ * Optional Advantage+ degreesOfFreedomSpec. Optional upload via imageUrl/videoUrl (SSRF) when not dryRun.
+ * dryRun default true. Status default PAUSED. Requires page_id + page token (exceto creativeId-only).
  */
 export const metaCreateAdSchema = tenantContextSchema
   .extend({
     adsetId: z.string().min(1).describe('ID do adset Meta (deve pertencer à ad account do tenant).'),
     name: z.string().min(1).max(400).describe('Nome do anúncio na Meta.'),
+    creativeId: z
+      .string()
+      .min(1)
+      .optional()
+      .describe('Reusa AdCreative existente (XOR com creativeType/mídia/copy). Ownership validada no execute.'),
     creativeType: z
       .string()
       .optional()
       .default('IMAGE')
-      .describe('IMAGE|static (default), VIDEO, CAROUSEL. Mídia já na Meta (hash/video_id). DYNAMIC_CREATIVE removido.'),
+      .describe('IMAGE|VIDEO|CAROUSEL|DYNAMIC_CREATIVE_LEGACY|CATALOG (omitido se creativeId).'),
     destinationType: z
       .enum(META_AD_DESTINATION_TYPES)
       .optional()
       .default('WEBSITE')
-      .describe('WEBSITE (default, linkUrl obrigatório) ou WHATSAPP (Click-to-WhatsApp; sem linkUrl de site).'),
+      .describe('WEBSITE (default) ou WHATSAPP (CTWA; IMAGE|VIDEO).'),
     linkUrl: z
       .string()
       .url()
       .optional()
-      .describe('URL https de site (obrigatória em WEBSITE IMAGE/VIDEO/CAROUSEL). Nunca inventar; rejeita wa.me.'),
+      .describe('URL https de site (WEBSITE). Nunca inventar; rejeita wa.me.'),
     message: z
       .string()
       .min(1)
       .max(2000)
       .optional()
-      .describe('Texto principal. Obrigatório em IMAGE/VIDEO/CAROUSEL.'),
-    headline: z
-      .string()
-      .max(255)
-      .optional()
-      .describe('Título / headline (link_data.name ou video_data.title).'),
-    description: z
-      .string()
-      .max(500)
-      .optional()
-      .describe('Descrição do link (link_data.description / video_data.link_description).'),
+      .describe('Texto principal (obrigatório IMAGE|VIDEO|CAROUSEL|CATALOG sem creativeId).'),
+    headline: z.string().max(255).optional(),
+    description: z.string().max(500).optional(),
     callToAction: z
       .enum(META_AD_CALL_TO_ACTIONS)
       .optional()
@@ -471,48 +510,55 @@ export const metaCreateAdSchema = tenantContextSchema
       .min(1)
       .max(1000)
       .optional()
-      .describe('Só WHATSAPP+IMAGE: saudação/autofill (page_welcome_message). Opcional.'),
-    imageUrl: z
-      .string()
-      .url()
-      .optional()
-      .describe('URL HTTPS de imagem/thumbnail (opcional). Nunca inventar. XOR com imageHash.'),
-    imageHash: z
-      .string()
-      .min(1)
-      .max(128)
-      .optional()
-      .describe('image_hash já existente na ad account (opcional). XOR com imageUrl.'),
-    videoId: z
-      .string()
-      .min(1)
-      .optional()
-      .describe('Obrigatório em creativeType=VIDEO. video_id já na biblioteca Meta (sem upload binário).'),
+      .describe('Só WHATSAPP+IMAGE: page_welcome_message.'),
+    imageUrl: z.string().url().optional().describe('URL HTTPS imagem (upload ou picture). XOR imageHash.'),
+    imageHash: z.string().min(1).max(128).optional().describe('image_hash existente. XOR imageUrl.'),
+    videoId: z.string().min(1).optional().describe('video_id existente (VIDEO). XOR videoUrl.'),
+    videoUrl: z.string().url().optional().describe('HTTPS para upload Advideo (não dryRun). XOR videoId.'),
     childAttachments: z
       .array(metaCarouselCardSchema)
       .min(2)
       .max(10)
       .optional()
-      .describe('Obrigatório em CAROUSEL: 2–10 cards (link + imageHash|imageUrl|videoId).'),
-    creativeName: z
-      .string()
-      .min(1)
-      .max(400)
+      .describe('CAROUSEL: 2–10 cards (link + imageHash|imageUrl|videoId).'),
+    assetFeed: metaAssetFeedSchema.optional().describe('Obrigatório em DYNAMIC_CREATIVE_LEGACY.'),
+    degreesOfFreedomSpec: metaDegreesOfFreedomSchema
       .optional()
-      .describe('Nome do AdCreative (default: name + " Creative").'),
-    status: z
-      .enum(['ACTIVE', 'PAUSED'])
-      .optional()
-      .default('PAUSED')
-      .describe('Default PAUSED. ACTIVE exige confirmActive=true.'),
-    confirmActive: z
-      .literal(true)
-      .optional()
-      .describe('Obrigatório se status=ACTIVE (confirmação extra de gasto).'),
+      .describe('Advantage+ Creative (pac_relaxation = Mídia flexível). Não usar com DYNAMIC_CREATIVE_LEGACY.'),
+    catalogId: z.string().min(1).optional().describe('CATALOG: id do product catalog (ownership).'),
+    productSetId: z.string().min(1).optional().describe('CATALOG: product_set_id.'),
+    creativeName: z.string().min(1).max(400).optional(),
+    status: z.enum(['ACTIVE', 'PAUSED']).optional().default('PAUSED'),
+    confirmActive: z.literal(true).optional(),
     ...metaWriteConfirmationFields,
     ...metaWriteDryRunField,
   })
   .superRefine((data, ctx) => {
+    const hasCreativeId = Boolean(data.creativeId)
+    if (hasCreativeId) {
+      const conflicting = [
+        data.message,
+        data.linkUrl,
+        data.imageUrl,
+        data.imageHash,
+        data.videoId,
+        data.videoUrl,
+        data.childAttachments,
+        data.assetFeed,
+        data.productSetId,
+        data.degreesOfFreedomSpec,
+      ].some(Boolean)
+      // creativeType default IMAGE always present — only flag if user sent non-default media/copy
+      if (conflicting) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'creativeId é XOR: não envie mídia/copy/assetFeed/productSet junto com creativeId.',
+          path: ['creativeId'],
+        })
+      }
+      return
+    }
+
     let creativeType: MetaAdCreativeType = 'IMAGE'
     try {
       creativeType = normalizeMetaAdCreativeType(data.creativeType)
@@ -529,31 +575,33 @@ export const metaCreateAdSchema = tenantContextSchema
     const destinationType = data.destinationType ?? 'WEBSITE'
 
     if (destinationType === 'WEBSITE') {
-      if (!data.linkUrl) {
+      const needsLink = creativeType !== 'DYNAMIC_CREATIVE_LEGACY'
+        || !data.assetFeed?.linkUrls?.length
+      if (needsLink && creativeType !== 'DYNAMIC_CREATIVE_LEGACY' && !data.linkUrl) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           message: 'destinationType=WEBSITE exige linkUrl https de site. Para WhatsApp use destinationType=WHATSAPP.',
           path: ['linkUrl'],
         })
       }
-      else if (!data.linkUrl.startsWith('https://')) {
+      if (data.linkUrl && !data.linkUrl.startsWith('https://')) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           message: 'linkUrl deve usar https://.',
           path: ['linkUrl'],
         })
       }
-      else if (isMetaMessagingProtocolUrl(data.linkUrl)) {
+      else if (data.linkUrl && isMetaMessagingProtocolUrl(data.linkUrl)) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: 'Não use wa.me/api.whatsapp.com como linkUrl de site. Use destinationType=WHATSAPP (estrutura oficial CTWA).',
+          message: 'Não use wa.me/api.whatsapp.com como linkUrl de site. Use destinationType=WHATSAPP.',
           path: ['linkUrl'],
         })
       }
       if (data.callToAction === 'WHATSAPP_MESSAGE') {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: 'CTA WHATSAPP_MESSAGE exige destinationType=WHATSAPP (não WEBSITE).',
+          message: 'CTA WHATSAPP_MESSAGE exige destinationType=WHATSAPP.',
           path: ['callToAction'],
         })
       }
@@ -570,27 +618,27 @@ export const metaCreateAdSchema = tenantContextSchema
       if (data.linkUrl) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: 'destinationType=WHATSAPP não aceita linkUrl de site (nem wa.me fabricado). Omita linkUrl.',
+          message: 'destinationType=WHATSAPP não aceita linkUrl de site. Omita linkUrl.',
           path: ['linkUrl'],
         })
       }
       if (data.callToAction && data.callToAction !== 'WHATSAPP_MESSAGE') {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: 'destinationType=WHATSAPP usa CTA WHATSAPP_MESSAGE (oficial). Omita callToAction ou envie WHATSAPP_MESSAGE.',
+          message: 'destinationType=WHATSAPP usa CTA WHATSAPP_MESSAGE.',
           path: ['callToAction'],
         })
       }
-      if (creativeType === 'CAROUSEL') {
+      if (creativeType === 'CAROUSEL' || creativeType === 'DYNAMIC_CREATIVE_LEGACY' || creativeType === 'CATALOG') {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: `destinationType=WHATSAPP só combina com creativeType IMAGE ou VIDEO (recebido: ${creativeType}).`,
+          message: `destinationType=WHATSAPP só combina com IMAGE ou VIDEO (recebido: ${creativeType}).`,
           path: ['creativeType'],
         })
       }
     }
 
-    if (creativeType === 'IMAGE' || creativeType === 'VIDEO' || creativeType === 'CAROUSEL') {
+    if (creativeType === 'IMAGE' || creativeType === 'VIDEO' || creativeType === 'CAROUSEL' || creativeType === 'CATALOG') {
       if (!data.message) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
@@ -600,12 +648,21 @@ export const metaCreateAdSchema = tenantContextSchema
       }
     }
 
-    if (creativeType === 'VIDEO' && !data.videoId) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'creativeType=VIDEO exige videoId (vídeo já na Meta — sem upload binário).',
-        path: ['videoId'],
-      })
+    if (creativeType === 'VIDEO') {
+      if (!data.videoId && !data.videoUrl) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'creativeType=VIDEO exige videoId ou videoUrl.',
+          path: ['videoId'],
+        })
+      }
+      if (data.videoId && data.videoUrl) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Informe videoId OU videoUrl, não ambos.',
+          path: ['videoUrl'],
+        })
+      }
     }
 
     if (creativeType === 'CAROUSEL') {
@@ -632,20 +689,40 @@ export const metaCreateAdSchema = tenantContextSchema
               path: ['childAttachments', index, 'imageUrl'],
             })
           }
-          if (card.imageUrl && !card.imageUrl.startsWith('https://')) {
-            ctx.addIssue({
-              code: z.ZodIssueCode.custom,
-              message: `Card ${index}: imageUrl deve usar https://.`,
-              path: ['childAttachments', index, 'imageUrl'],
-            })
-          }
-          if (card.link && !card.link.startsWith('https://')) {
-            ctx.addIssue({
-              code: z.ZodIssueCode.custom,
-              message: `Card ${index}: link deve usar https://.`,
-              path: ['childAttachments', index, 'link'],
-            })
-          }
+        })
+      }
+    }
+
+    if (creativeType === 'DYNAMIC_CREATIVE_LEGACY') {
+      if (!data.assetFeed) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'DYNAMIC_CREATIVE_LEGACY exige assetFeed. Adset deve ter is_dynamic_creative=true.',
+          path: ['assetFeed'],
+        })
+      }
+      if (data.degreesOfFreedomSpec) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'degreesOfFreedomSpec não combina com DYNAMIC_CREATIVE_LEGACY.',
+          path: ['degreesOfFreedomSpec'],
+        })
+      }
+    }
+
+    if (creativeType === 'CATALOG') {
+      if (!data.productSetId) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'CATALOG exige productSetId.',
+          path: ['productSetId'],
+        })
+      }
+      if (!data.catalogId) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'CATALOG exige catalogId (validação de ownership).',
+          path: ['catalogId'],
         })
       }
     }
@@ -654,13 +731,6 @@ export const metaCreateAdSchema = tenantContextSchema
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: 'Informe imageUrl OU imageHash, não ambos.',
-        path: ['imageUrl'],
-      })
-    }
-    if (data.imageUrl && !data.imageUrl.startsWith('https://')) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'imageUrl deve usar https://. Nunca invente URLs de mídia.',
         path: ['imageUrl'],
       })
     }
@@ -784,56 +854,169 @@ export const metaUpdateAdCreativeCopySchema = tenantContextSchema
   })
 
 /**
- * Update ad media via new AdCreative (imageUrl XOR imageHash) + swap on ad.
- * Preserves copy from existing creative. dryRun default true.
- * Gap: video_id, upload binário, carousel — fora do MVP.
+ * Update ad media via new AdCreative + swap. Supports IMAGE|VIDEO|CAROUSEL.
+ * Preserves copy from existing creative when possible. dryRun default true.
  */
 export const metaUpdateAdMediaSchema = tenantContextSchema
   .extend({
     adId: z.string().min(1).describe('ID do anúncio Meta.'),
-    imageUrl: z
+    creativeType: z
       .string()
-      .url()
       .optional()
-      .describe('URL HTTPS de imagem hospedada. XOR com imageHash. Nunca inventar.'),
-    imageHash: z
-      .string()
-      .min(1)
-      .max(128)
+      .default('IMAGE')
+      .describe('IMAGE (default) | VIDEO | CAROUSEL — formato do novo criativo.'),
+    imageUrl: z.string().url().optional().describe('URL HTTPS imagem. XOR imageHash.'),
+    imageHash: z.string().min(1).max(128).optional().describe('image_hash. XOR imageUrl.'),
+    videoId: z.string().min(1).optional().describe('video_id (VIDEO). XOR videoUrl.'),
+    videoUrl: z.string().url().optional().describe('HTTPS Advideo upload (não dryRun). XOR videoId.'),
+    childAttachments: z
+      .array(metaCarouselCardSchema)
+      .min(2)
+      .max(10)
       .optional()
-      .describe('image_hash na ad account. XOR com imageUrl.'),
-    creativeName: z
-      .string()
-      .min(1)
-      .max(400)
-      .optional()
-      .describe('Nome do novo AdCreative (default derivado).'),
+      .describe('CAROUSEL: 2–10 cards.'),
+    degreesOfFreedomSpec: metaDegreesOfFreedomSchema.optional(),
+    creativeName: z.string().min(1).max(400).optional(),
+    ...metaWriteConfirmationFields,
+    ...metaWriteDryRunField,
+  })
+  .superRefine((data, ctx) => {
+    let creativeType: MetaAdCreativeType = 'IMAGE'
+    try {
+      creativeType = normalizeMetaAdCreativeType(data.creativeType)
+    }
+    catch (err) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: err instanceof Error ? err.message : 'creativeType inválido.',
+        path: ['creativeType'],
+      })
+      return
+    }
+    if (creativeType !== 'IMAGE' && creativeType !== 'VIDEO' && creativeType !== 'CAROUSEL') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'updateAdMedia só aceita IMAGE|VIDEO|CAROUSEL.',
+        path: ['creativeType'],
+      })
+      return
+    }
+    if (creativeType === 'IMAGE') {
+      if (!data.imageUrl && !data.imageHash) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'IMAGE exige imageUrl ou imageHash.',
+          path: ['imageUrl'],
+        })
+      }
+      if (data.imageUrl && data.imageHash) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Informe imageUrl OU imageHash, não ambos.',
+          path: ['imageUrl'],
+        })
+      }
+    }
+    if (creativeType === 'VIDEO') {
+      if (!data.videoId && !data.videoUrl) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'VIDEO exige videoId ou videoUrl.',
+          path: ['videoId'],
+        })
+      }
+      if (data.videoId && data.videoUrl) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Informe videoId OU videoUrl, não ambos.',
+          path: ['videoUrl'],
+        })
+      }
+    }
+    if (creativeType === 'CAROUSEL' && !data.childAttachments?.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'CAROUSEL exige childAttachments.',
+        path: ['childAttachments'],
+      })
+    }
+  })
+
+export const metaGetCapabilitiesSchema = tenantContextSchema.pick({ tenantId: true }).extend({
+  adAccountId: z.string().optional(),
+})
+
+export const metaUploadImageSchema = tenantContextSchema
+  .extend({
+    imageUrl: z.string().url().optional(),
+    imageHash: z.string().min(1).max(128).optional(),
+    name: z.string().min(1).max(255).optional(),
     ...metaWriteConfirmationFields,
     ...metaWriteDryRunField,
   })
   .superRefine((data, ctx) => {
     if (!data.imageUrl && !data.imageHash) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Informe imageUrl ou imageHash.',
-        path: ['imageUrl'],
-      })
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Informe imageUrl ou imageHash.', path: ['imageUrl'] })
     }
     if (data.imageUrl && data.imageHash) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Informe imageUrl OU imageHash, não ambos.',
-        path: ['imageUrl'],
-      })
-    }
-    if (data.imageUrl && !data.imageUrl.startsWith('https://')) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'imageUrl deve usar https://. Nunca invente URLs de mídia.',
-        path: ['imageUrl'],
-      })
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'imageUrl OU imageHash.', path: ['imageUrl'] })
     }
   })
+
+export const metaUploadVideoSchema = tenantContextSchema
+  .extend({
+    videoUrl: z.string().url().optional(),
+    videoId: z.string().min(1).optional(),
+    title: z.string().max(255).optional(),
+    description: z.string().max(500).optional(),
+    ...metaWriteConfirmationFields,
+    ...metaWriteDryRunField,
+  })
+  .superRefine((data, ctx) => {
+    if (!data.videoUrl && !data.videoId) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Informe videoUrl ou videoId.', path: ['videoUrl'] })
+    }
+    if (data.videoUrl && data.videoId) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'videoUrl OU videoId.', path: ['videoUrl'] })
+    }
+  })
+
+export const metaGetVideoStatusSchema = tenantContextSchema.extend({
+  videoId: z.string().min(1),
+})
+
+export const metaListCatalogsSchema = tenantContextSchema.extend({
+  limit: z.number().int().min(1).max(200).optional().default(50),
+})
+
+export const metaCreateExperimentSchema = tenantContextSchema
+  .extend({
+    name: z.string().min(1).max(400),
+    description: z.string().max(2000).optional(),
+    type: z.enum(['SPLIT_TEST_V2', 'SPLIT_TEST']).default('SPLIT_TEST_V2'),
+    cells: z.array(z.object({
+      name: z.string().min(1),
+      treatmentPercentage: z.number().int().min(1).max(99),
+      adId: z.string().min(1).optional(),
+      adsetIds: z.array(z.string().min(1)).optional(),
+    })).min(2).max(5),
+    startTime: z.number().int().positive().describe('Unix timestamp (seconds).'),
+    endTime: z.number().int().positive().describe('Unix timestamp (seconds).'),
+    creativeTestDailyBudget: z.number().int().positive().optional(),
+    creativeTestLifetimeBudgetPercentage: z.number().int().min(1).max(100).optional(),
+    ...metaWriteConfirmationFields,
+    ...metaWriteDryRunField,
+  })
+
+export const metaGetExperimentSchema = tenantContextSchema.extend({
+  studyId: z.string().min(1),
+})
+
+export const metaStopExperimentSchema = tenantContextSchema.extend({
+  studyId: z.string().min(1),
+  ...metaWriteConfirmationFields,
+  ...metaWriteDryRunField,
+})
 
 /**
  * Bulk delete preview — validates ownership for explicit IDs only (never by name).
@@ -902,6 +1085,14 @@ export type MetaToolName =
   | 'meta_update_ad_media'
   | 'meta_preview_bulk_delete'
   | 'meta_execute_bulk_delete'
+  | 'meta_get_capabilities'
+  | 'meta_upload_image'
+  | 'meta_upload_video'
+  | 'meta_get_video_status'
+  | 'meta_list_catalogs'
+  | 'meta_create_experiment'
+  | 'meta_get_experiment'
+  | 'meta_stop_experiment'
 
 export interface MetaToolContext {
   client: SupabaseLike
@@ -2035,9 +2226,9 @@ export async function metaCreateAdset(
 }
 
 /**
- * Create AdCreative + Ad on the tenant ad account.
- * creativeType IMAGE|VIDEO|CAROUSEL. dryRun default true.
- * WEBSITE: linkUrl. WHATSAPP: CTWA IMAGE|VIDEO.
+ * Create AdCreative + Ad (or ad from existing creativeId).
+ * creativeId XOR creative input. IMAGE|VIDEO|CAROUSEL|DYNAMIC_CREATIVE_LEGACY|CATALOG.
+ * Optional Advantage+ degreesOfFreedomSpec. dryRun default true — no uploads/mutations.
  */
 export async function metaCreateAd(
   ctx: MetaToolContext,
@@ -2050,17 +2241,28 @@ export async function metaCreateAd(
 
   const dryRun = resolveDryRun(input.dryRun, true)
   const destinationType: MetaAdDestinationType = input.destinationType ?? 'WEBSITE'
-  const creativeType = normalizeMetaAdCreativeType(input.creativeType)
+  const reuseCreativeId = input.creativeId ? String(input.creativeId).trim() : null
+  const creativeType = reuseCreativeId
+    ? null
+    : normalizeMetaAdCreativeType(input.creativeType)
   const creds = await withCreds(ctx, input.tenantId, input.adAccountId)
   const graph = fetchGraph(ctx)
+  const mediaCtx = {
+    apiVersion: creds.apiVersion,
+    accessToken: creds.accessToken,
+    adAccountId: creds.adAccountId,
+    graph,
+  }
 
-  // Page readiness from integration config (DB) — required even on dry-run.
   const tokenCtx = await resolveMetaAccessToken(ctx.client, input.tenantId)
   const pageToken = decryptSecret(tokenCtx.config.page_access_token_enc)
-  const pageId = assertMetaPageCreativeReady({
-    pageId: tokenCtx.publicConfig.page_id,
-    pageAccessToken: pageToken,
-  })
+  let pageId: string | null = null
+  if (!reuseCreativeId) {
+    pageId = assertMetaPageCreativeReady({
+      pageId: tokenCtx.publicConfig.page_id,
+      pageAccessToken: pageToken,
+    })
+  }
 
   const callToAction = destinationType === 'WHATSAPP'
     ? 'WHATSAPP_MESSAGE'
@@ -2068,44 +2270,84 @@ export async function metaCreateAd(
   const creativeName = input.creativeName || `${input.name} Creative`
   const message = input.message ?? ''
 
-  const creativeBody = buildMetaCreateAdCreativeBodyByType({
-    creativeName,
-    pageId,
-    creativeType,
-    destinationType,
-    website: destinationType === 'WEBSITE'
-      ? {
-          message,
-          linkUrl: input.linkUrl!,
-          callToAction,
-          headline: input.headline,
-          description: input.description,
-          imageUrl: input.imageUrl,
-          imageHash: input.imageHash,
-        }
-      : undefined,
-    whatsapp: destinationType === 'WHATSAPP'
-      ? {
-          message,
-          headline: input.headline,
-          description: input.description,
-          imageUrl: input.imageUrl,
-          imageHash: input.imageHash,
-          welcomeMessage: creativeType === 'IMAGE' ? input.welcomeMessage : undefined,
-        }
-      : undefined,
-    videoId: input.videoId,
-    childAttachments: input.childAttachments,
-  })
+  // Resolve media uploads only on execute (dryRun never hits Graph upload).
+  let resolvedImageHash = input.imageHash ?? null
+  let resolvedImageUrl = input.imageUrl ?? null
+  let resolvedVideoId = input.videoId ?? null
 
-  // Ownership only on execute (GET). Dry-run stays Graph-free except credentials from DB.
+  let assetFeed: AssetFeedSpecInput | undefined = input.assetFeed as AssetFeedSpecInput | undefined
+  if (creativeType === 'DYNAMIC_CREATIVE_LEGACY' && assetFeed) {
+    // Promote top-level message/headline into asset feed when omitted.
+    if (!assetFeed.bodies?.length && message) {
+      assetFeed = { ...assetFeed, bodies: [{ text: message }] }
+    }
+    if (!assetFeed.titles?.length && input.headline) {
+      assetFeed = { ...assetFeed, titles: [{ text: input.headline }] }
+    }
+  }
+
+  const degreesOfFreedom: DegreesOfFreedomSpecInput | undefined = input.degreesOfFreedomSpec
+    ? { creativeFeaturesSpec: input.degreesOfFreedomSpec.creativeFeaturesSpec as DegreesOfFreedomSpecInput['creativeFeaturesSpec'] }
+    : undefined
+
+  let creativeBody: Record<string, unknown> | null = null
+  if (!reuseCreativeId && pageId && creativeType) {
+    // On dryRun, keep picture/url fields; uploads skipped.
+    if (!dryRun && creativeType === 'IMAGE' && input.imageUrl && !input.imageHash) {
+      const uploaded = await uploadImage(mediaCtx, { imageUrl: input.imageUrl }, { dryRun: false })
+      resolvedImageHash = uploaded.imageHash
+      resolvedImageUrl = null
+    }
+    if (!dryRun && creativeType === 'VIDEO' && input.videoUrl && !input.videoId) {
+      const uploaded = await uploadVideo(mediaCtx, {
+        videoUrl: input.videoUrl,
+        title: input.headline,
+      }, { dryRun: false })
+      resolvedVideoId = uploaded.videoId
+    }
+
+    creativeBody = buildMetaCreateAdCreativeBodyByType({
+      creativeName,
+      pageId,
+      creativeType,
+      destinationType,
+      website: destinationType === 'WEBSITE' && creativeType !== 'DYNAMIC_CREATIVE_LEGACY'
+        ? {
+            message,
+            linkUrl: input.linkUrl!,
+            callToAction,
+            headline: input.headline,
+            description: input.description,
+            imageUrl: resolvedImageUrl ?? undefined,
+            imageHash: resolvedImageHash ?? undefined,
+          }
+        : undefined,
+      whatsapp: destinationType === 'WHATSAPP'
+        ? {
+            message,
+            headline: input.headline,
+            description: input.description,
+            imageUrl: resolvedImageUrl ?? undefined,
+            imageHash: resolvedImageHash ?? undefined,
+            welcomeMessage: creativeType === 'IMAGE' ? input.welcomeMessage : undefined,
+          }
+        : undefined,
+      videoId: resolvedVideoId
+        ?? (dryRun && input.videoUrl ? '(dryRun — video_id após upload)' : undefined),
+      childAttachments: input.childAttachments,
+      assetFeed,
+      degreesOfFreedom,
+      productSetId: input.productSetId,
+    })
+  }
+
   let adsetName: string | null = null
   let campaignId: string | null = null
   let adsetDestinationType: string | null = null
   if (!dryRun) {
     const adset = await graph(metaGraphUrl(creds.apiVersion, `/${input.adsetId}`), {
       query: {
-        fields: 'id,name,account_id,campaign_id,status,effective_status,destination_type',
+        fields: 'id,name,account_id,campaign_id,status,effective_status,destination_type,is_dynamic_creative',
         access_token: creds.accessToken,
       },
     })
@@ -2129,84 +2371,132 @@ export async function metaCreateAd(
         { adsetId: input.adsetId, adsetDestinationType, destinationType },
       )
     }
+
+    if (creativeType === 'DYNAMIC_CREATIVE_LEGACY' && adset?.is_dynamic_creative !== true) {
+      throw new MetaAdsToolError(
+        'ADSET_DYNAMIC_CREATIVE_REQUIRED',
+        'DYNAMIC_CREATIVE_LEGACY exige adset com is_dynamic_creative=true (configure no Ads Manager ou API).',
+        400,
+        { adsetId: input.adsetId },
+      )
+    }
+
+    if (creativeType === 'CATALOG' && input.catalogId && input.productSetId) {
+      await assertProductSetOwned(mediaCtx, {
+        catalogId: input.catalogId,
+        productSetId: input.productSetId,
+      })
+    }
+
+    if (reuseCreativeId) {
+      const creative = await graph(metaGraphUrl(creds.apiVersion, `/${reuseCreativeId}`), {
+        query: {
+          fields: 'id,name,account_id',
+          access_token: creds.accessToken,
+        },
+      })
+      assertAdAccountOwnership({
+        objectAccountId: creative?.account_id,
+        tenantAdAccountId: creds.adAccountId,
+        code: 'CREATIVE_TENANT_MISMATCH',
+        message: 'AdCreative não pertence à ad account do tenant.',
+      })
+    }
   }
 
   const creativePath = `/${actPath(creds.adAccountId)}/adcreatives`
   const adPath = `/${actPath(creds.adAccountId)}/ads`
   const previewBody = {
-    creative: creativeBody,
+    creative: reuseCreativeId ? { creative_id: reuseCreativeId } : creativeBody,
     ad: {
       name: input.name,
       adset_id: input.adsetId,
-      creative: { creative_id: '(após create creative)' },
+      creative: { creative_id: reuseCreativeId || '(após create creative)' },
       status,
     },
   }
 
   const mediaNotes: string[] = []
-  mediaNotes.push(`creativeType: ${creativeType}`)
-  if (creativeType === 'VIDEO' && input.videoId)
-    mediaNotes.push(`mídia: video_id=${input.videoId}`)
+  if (reuseCreativeId)
+    mediaNotes.push(`reuse creativeId: ${reuseCreativeId}`)
+  else
+    mediaNotes.push(`creativeType: ${creativeType}`)
+  if (creativeType === 'VIDEO' && resolvedVideoId)
+    mediaNotes.push(`mídia: video_id=${resolvedVideoId}`)
+  else if (creativeType === 'VIDEO' && input.videoUrl)
+    mediaNotes.push(`mídia: videoUrl (upload ${dryRun ? 'adiado — dryRun' : 'no execute'})`)
   else if (creativeType === 'CAROUSEL')
     mediaNotes.push(`mídia: carousel ${input.childAttachments?.length ?? 0} cards`)
-  else if (input.imageHash)
-    mediaNotes.push(`mídia: image_hash=${input.imageHash}`)
-  else if (input.imageUrl)
-    mediaNotes.push(`mídia: imageUrl=${input.imageUrl}`)
-  else
-    mediaNotes.push('mídia: sem imagem (Meta pode exigir mídia conforme objetivo/placement).')
+  else if (creativeType === 'DYNAMIC_CREATIVE_LEGACY')
+    mediaNotes.push('mídia: asset_feed_spec (DYNAMIC_CREATIVE_LEGACY)')
+  else if (creativeType === 'CATALOG')
+    mediaNotes.push(`mídia: catalog product_set=${input.productSetId}`)
+  else if (resolvedImageHash)
+    mediaNotes.push(`mídia: image_hash=${resolvedImageHash}`)
+  else if (resolvedImageUrl)
+    mediaNotes.push(`mídia: imageUrl=${resolvedImageUrl}`)
+  if (degreesOfFreedom)
+    mediaNotes.push('Advantage+ degrees_of_freedom_spec presente')
   if (status === 'ACTIVE')
     mediaNotes.push('ATENÇÃO: criando ACTIVE — gasto potencial imediato.')
   if (dryRun)
-    mediaNotes.push('Ownership do adset será validado na execução (dryRun: false).')
+    mediaNotes.push('Ownership / uploads serão validados na execução (dryRun: false).')
   if (destinationType === 'WHATSAPP') {
-    mediaNotes.push('CTWA: estrutura oficial (CTA WHATSAPP_MESSAGE + app_destination=WHATSAPP). Sem linkUrl de site.')
-    if (input.welcomeMessage && creativeType === 'IMAGE')
-      mediaNotes.push('page_welcome_message: saudação customizada.')
+    mediaNotes.push('CTWA: estrutura oficial (CTA WHATSAPP_MESSAGE + app_destination=WHATSAPP).')
   }
 
   const linkNote = destinationType === 'WEBSITE'
-    ? `link: ${input.linkUrl}`
+    ? `link: ${input.linkUrl ?? '(assetFeed.linkUrls / creativeId)'}`
     : 'link: (protocolo messaging Meta — sem linkUrl de site do usuário)'
 
   const run = await withDryRun(
     dryRun,
     {
       method: 'POST',
-      path: `${creativePath} then ${adPath}`,
+      path: reuseCreativeId ? adPath : `${creativePath} then ${adPath}`,
       body: previewBody,
       notes: [
         `Anúncio "${input.name}" → ${status}`,
-        `creativeType: ${creativeType}`,
+        reuseCreativeId ? `creativeId: ${reuseCreativeId}` : `creativeType: ${creativeType}`,
         `destinationType: ${destinationType}`,
         `adset_id: ${input.adsetId}${adsetName ? ` (${adsetName})` : ''}`,
-        `page_id: ${pageId}${tokenCtx.publicConfig.page_name ? ` (${tokenCtx.publicConfig.page_name})` : ''}`,
+        pageId
+          ? `page_id: ${pageId}${tokenCtx.publicConfig.page_name ? ` (${tokenCtx.publicConfig.page_name})` : ''}`
+          : 'page_id: (reuse creativeId — page check skipped)',
         linkNote,
         message
           ? `message: ${message.slice(0, 120)}${message.length > 120 ? '…' : ''}`
           : 'message: (omitido)',
-        input.headline ? `headline: ${input.headline}` : 'headline: (omitido)',
         `CTA: ${callToAction}`,
         `ad_account: ${creds.adAccountId}`,
         ...mediaNotes,
-        'dryRun=true (default): nenhuma mutação enviada à Graph API.',
-        'Nunca inventar URLs de mídia ou link de site / wa.me. video_id/image_hash devem já existir na Meta.',
+        'dryRun=true (default): nenhuma mutação/upload enviada à Graph API.',
       ],
     },
     async () => {
-      const createdCreative = await graphWrite(graph, metaGraphUrl(creds.apiVersion, creativePath), {
-        method: 'POST',
-        query: { access_token: creds.accessToken },
-        body: creativeBody,
-      }, creativeBody)
-      const creativeId = createdCreative?.id ? String(createdCreative.id) : null
+      let creativeId = reuseCreativeId
       if (!creativeId) {
-        throw new MetaAdsToolError(
-          'META_CREATE_CREATIVE_FAILED',
-          'Meta não retornou id do AdCreative criado.',
-          502,
-          { response: createdCreative, request_payload: creativeBody },
-        )
+        if (!creativeBody) {
+          throw new MetaAdsToolError(
+            'CREATIVE_BODY_REQUIRED',
+            'Falha interna: creativeBody ausente.',
+            500,
+          )
+        }
+        const createdCreative = await graphWrite(graph, metaGraphUrl(creds.apiVersion, creativePath), {
+          method: 'POST',
+          query: { access_token: creds.accessToken },
+          body: creativeBody,
+        }, creativeBody)
+        creativeId = createdCreative?.id ? String(createdCreative.id) : null
+        if (!creativeId) {
+          throw new MetaAdsToolError(
+            'META_CREATE_CREATIVE_FAILED',
+            'Meta não retornou id do AdCreative criado.',
+            502,
+            { response: createdCreative, request_payload: creativeBody },
+          )
+        }
       }
 
       const adBody: Record<string, unknown> = {
@@ -2227,7 +2517,7 @@ export async function metaCreateAd(
       catch (err) {
         throw new MetaAdsToolError(
           'META_CREATE_AD_FAILED',
-          'Criativo foi criado, mas falhou ao criar o anúncio. Verifique o creativeId no Ads Manager.',
+          'Criativo ok/reusado, mas falhou ao criar o anúncio. Verifique o creativeId no Ads Manager.',
           502,
           {
             creativeId,
@@ -2240,7 +2530,7 @@ export async function metaCreateAd(
       if (!adId) {
         throw new MetaAdsToolError(
           'META_CREATE_AD_FAILED',
-          'Criativo criado, mas Meta não retornou id do anúncio.',
+          'Meta não retornou id do anúncio.',
           502,
           { creativeId, response: createdAd },
         )
@@ -2266,13 +2556,17 @@ export async function metaCreateAd(
         description: input.description ?? null,
         callToAction,
         welcomeMessage: input.welcomeMessage ?? null,
-        imageUrl: input.imageUrl ?? null,
-        imageHash: input.imageHash ?? null,
-        videoId: input.videoId ?? null,
+        imageUrl: resolvedImageUrl,
+        imageHash: resolvedImageHash,
+        videoId: resolvedVideoId,
         childAttachmentsCount: input.childAttachments?.length ?? null,
+        productSetId: input.productSetId ?? null,
+        catalogId: input.catalogId ?? null,
+        reusedCreative: Boolean(reuseCreativeId),
+        advantagePlus: Boolean(degreesOfFreedom),
         success: true as const,
         dryRun: false as const,
-        warning: 'Anúncio + criativo criados na Meta Graph API. Verifique thumbnail/políticas no Ads Manager.',
+        warning: 'Anúncio criado na Meta Graph API. Verifique thumbnail/políticas no Ads Manager.',
       }
     },
   )
@@ -2290,6 +2584,7 @@ export async function metaCreateAd(
         adsetId: input.adsetId,
         pageId,
         creativeType,
+        creativeId: reuseCreativeId,
         destinationType,
         linkUrl: destinationType === 'WEBSITE' ? (input.linkUrl ?? null) : null,
         adAccountId: creds.adAccountId,
@@ -2302,7 +2597,7 @@ export async function metaCreateAd(
       adsetName: null,
       campaignId: null,
       adId: null,
-      creativeId: null,
+      creativeId: reuseCreativeId,
       name: input.name,
       creativeName,
       creativeType,
@@ -2315,14 +2610,18 @@ export async function metaCreateAd(
       description: input.description ?? null,
       callToAction,
       welcomeMessage: input.welcomeMessage ?? null,
-      imageUrl: input.imageUrl ?? null,
-      imageHash: input.imageHash ?? null,
-      videoId: input.videoId ?? null,
+      imageUrl: resolvedImageUrl,
+      imageHash: resolvedImageHash,
+      videoId: resolvedVideoId,
       childAttachmentsCount: input.childAttachments?.length ?? null,
+      productSetId: input.productSetId ?? null,
+      catalogId: input.catalogId ?? null,
+      reusedCreative: Boolean(reuseCreativeId),
+      advantagePlus: Boolean(degreesOfFreedom),
       success: true as const,
       dryRun: true as const,
       preview: run.preview,
-      warning: 'Dry-run: nenhum anúncio/criativo criado na Meta Graph API. Reenvie com dryRun: false para executar.',
+      warning: 'Dry-run: nenhum anúncio/criativo/upload criado. Reenvie com dryRun: false para executar.',
     }
   }
 
@@ -2360,6 +2659,7 @@ export async function metaCreateAd(
   )
   return result
 }
+
 
 function parseCentsField(value: unknown): number | null {
   if (value == null || value === '')
@@ -2918,7 +3218,7 @@ export async function metaUpdateAdCreativeCopy(
 }
 
 /**
- * Update ad media (imageUrl|imageHash) via new AdCreative + swap. Preserves existing copy.
+ * Update ad media IMAGE|VIDEO|CAROUSEL via new AdCreative + swap. Preserves existing copy when possible.
  */
 export async function metaUpdateAdMedia(
   ctx: MetaToolContext,
@@ -2928,12 +3228,19 @@ export async function metaUpdateAdMedia(
   assertWriteConfirmation(input)
 
   const dryRun = resolveDryRun(input.dryRun, true)
+  const creativeType = normalizeMetaAdCreativeType(input.creativeType)
   const { creds, ad, before } = await fetchOwnedAdWithCreative(ctx, {
     tenantId: input.tenantId,
     adAccountId: input.adAccountId,
     adId: input.adId,
   })
   const graph = fetchGraph(ctx)
+  const mediaCtx = {
+    apiVersion: creds.apiVersion,
+    accessToken: creds.accessToken,
+    adAccountId: creds.adAccountId,
+    graph,
+  }
 
   const tokenCtx = await resolveMetaAccessToken(ctx.client, input.tenantId)
   const pageToken = decryptSecret(tokenCtx.config.page_access_token_enc)
@@ -2955,36 +3262,52 @@ export async function metaUpdateAdMedia(
   const creativeName = input.creativeName
     || `${ad?.name || input.adId} Creative media ${Date.now()}`
 
-  const linkData: Record<string, unknown> = {
-    message: before.message,
-    link: before.linkUrl,
-    call_to_action: {
-      type: callToAction,
-      value: { link: before.linkUrl },
-    },
-  }
-  if (before.headline)
-    linkData.name = before.headline
-  if (before.description)
-    linkData.description = before.description
-  if (input.imageHash)
-    linkData.image_hash = input.imageHash
-  if (input.imageUrl)
-    linkData.picture = input.imageUrl
+  let resolvedImageHash = input.imageHash ?? null
+  let resolvedImageUrl = input.imageUrl ?? null
+  let resolvedVideoId = input.videoId ?? null
 
-  const creativeBody: Record<string, unknown> = {
-    name: creativeName,
-    object_story_spec: {
-      page_id: pageId,
-      link_data: linkData,
-    },
+  if (!dryRun && creativeType === 'IMAGE' && input.imageUrl && !input.imageHash) {
+    const uploaded = await uploadImage(mediaCtx, { imageUrl: input.imageUrl }, { dryRun: false })
+    resolvedImageHash = uploaded.imageHash
+    resolvedImageUrl = null
   }
+  if (!dryRun && creativeType === 'VIDEO' && input.videoUrl && !input.videoId) {
+    const uploaded = await uploadVideo(mediaCtx, { videoUrl: input.videoUrl }, { dryRun: false })
+    resolvedVideoId = uploaded.videoId
+  }
+
+  const degreesOfFreedom: DegreesOfFreedomSpecInput | undefined = input.degreesOfFreedomSpec
+    ? { creativeFeaturesSpec: input.degreesOfFreedomSpec.creativeFeaturesSpec as DegreesOfFreedomSpecInput['creativeFeaturesSpec'] }
+    : undefined
+
+  const creativeBody = buildMetaCreateAdCreativeBodyByType({
+    creativeName,
+    pageId,
+    creativeType: creativeType === 'VIDEO' || creativeType === 'CAROUSEL' ? creativeType : 'IMAGE',
+    destinationType: 'WEBSITE',
+    website: {
+      message: before.message,
+      linkUrl: before.linkUrl,
+      callToAction,
+      headline: before.headline ?? undefined,
+      description: before.description ?? undefined,
+      imageUrl: creativeType === 'IMAGE' ? (resolvedImageUrl ?? undefined) : undefined,
+      imageHash: creativeType === 'IMAGE' ? (resolvedImageHash ?? undefined) : undefined,
+    },
+    videoId: creativeType === 'VIDEO'
+      ? (resolvedVideoId ?? (dryRun && input.videoUrl ? '(dryRun — video_id após upload)' : undefined))
+      : undefined,
+    childAttachments: creativeType === 'CAROUSEL' ? input.childAttachments : undefined,
+    degreesOfFreedom,
+  })
 
   const afterMedia = {
     ...before,
     pageId,
-    imageHash: input.imageHash ?? null,
-    imageUrl: input.imageUrl ?? null,
+    imageHash: creativeType === 'IMAGE' ? resolvedImageHash : before.imageHash,
+    imageUrl: creativeType === 'IMAGE' ? resolvedImageUrl : before.imageUrl,
+    videoId: creativeType === 'VIDEO' ? resolvedVideoId : null,
+    creativeType,
   }
 
   const creativePath = `/${actPath(creds.adAccountId)}/adcreatives`
@@ -3002,14 +3325,18 @@ export async function metaUpdateAdMedia(
       notes: [
         `Ad ${input.adId}${ad?.name ? ` (${ad.name})` : ''}`,
         `before creative: ${before.creativeId || '—'}`,
-        input.imageHash
-          ? `mídia: image_hash=${input.imageHash}`
-          : `mídia: imageUrl=${input.imageUrl}`,
-        'Copy preservada do criativo atual. Sem video_id / upload binário neste MVP.',
+        `creativeType: ${creativeType}`,
+        creativeType === 'VIDEO'
+          ? `mídia: video=${resolvedVideoId || input.videoUrl}`
+          : creativeType === 'CAROUSEL'
+            ? `mídia: carousel ${input.childAttachments?.length ?? 0} cards`
+            : (resolvedImageHash
+                ? `mídia: image_hash=${resolvedImageHash}`
+                : `mídia: imageUrl=${resolvedImageUrl}`),
+        'Copy preservada do criativo atual.',
         dryRun
-          ? 'dryRun=true (default): nenhuma mutação enviada à Graph API.'
+          ? 'dryRun=true (default): nenhuma mutação/upload enviada à Graph API.'
           : 'Mutação será enviada à Graph.',
-        'Nunca inventar URLs de mídia.',
       ],
     },
     async () => {
@@ -3097,6 +3424,189 @@ export async function metaUpdateAdMedia(
   )
   return result
 }
+
+export async function metaGetCapabilities(ctx: MetaToolContext, raw: unknown) {
+  const input = metaGetCapabilitiesSchema.parse(raw)
+  const creds = await withCreds(ctx, input.tenantId, input.adAccountId)
+  return {
+    tenantId: input.tenantId,
+    adAccountId: creds.adAccountId,
+    capabilities: getMetaCapabilities(creds.apiVersion),
+  }
+}
+
+export async function metaUploadImage(ctx: MetaToolContext, raw: unknown) {
+  const input = metaUploadImageSchema.parse(raw)
+  assertWriteConfirmation(input)
+  const dryRun = resolveDryRun(input.dryRun, true)
+  const creds = await withCreds(ctx, input.tenantId, input.adAccountId)
+  const graph = fetchGraph(ctx)
+  const result = await uploadImage(
+    { apiVersion: creds.apiVersion, accessToken: creds.accessToken, adAccountId: creds.adAccountId, graph },
+    { imageUrl: input.imageUrl, imageHash: input.imageHash, name: input.name },
+    { dryRun },
+  )
+  return {
+    tenantId: input.tenantId,
+    adAccountId: creds.adAccountId,
+    ...result,
+    success: true as const,
+    warning: dryRun
+      ? 'Dry-run: nenhum upload. Reenvie dryRun:false para executar.'
+      : (result.reused ? 'image_hash reutilizado.' : 'Imagem enviada à Meta (adimages).'),
+  }
+}
+
+export async function metaUploadVideo(ctx: MetaToolContext, raw: unknown) {
+  const input = metaUploadVideoSchema.parse(raw)
+  assertWriteConfirmation(input)
+  const dryRun = resolveDryRun(input.dryRun, true)
+  const creds = await withCreds(ctx, input.tenantId, input.adAccountId)
+  const graph = fetchGraph(ctx)
+  const result = await uploadVideo(
+    { apiVersion: creds.apiVersion, accessToken: creds.accessToken, adAccountId: creds.adAccountId, graph },
+    {
+      videoUrl: input.videoUrl,
+      videoId: input.videoId,
+      title: input.title,
+      description: input.description,
+    },
+    { dryRun },
+  )
+  return {
+    tenantId: input.tenantId,
+    adAccountId: creds.adAccountId,
+    ...result,
+    success: true as const,
+    warning: dryRun
+      ? 'Dry-run: nenhum upload. Reenvie dryRun:false. Após upload, use meta_get_video_status.'
+      : (result.reused ? 'video_id reutilizado.' : 'Vídeo enviado (advideos). Aguarde processing via meta_get_video_status.'),
+  }
+}
+
+export async function metaGetVideoStatusTool(ctx: MetaToolContext, raw: unknown) {
+  const input = metaGetVideoStatusSchema.parse(raw)
+  const creds = await withCreds(ctx, input.tenantId, input.adAccountId)
+  const graph = fetchGraph(ctx)
+  const status = await getVideoStatus(
+    { apiVersion: creds.apiVersion, accessToken: creds.accessToken, adAccountId: creds.adAccountId, graph },
+    input.videoId,
+  )
+  return { tenantId: input.tenantId, adAccountId: creds.adAccountId, ...status }
+}
+
+export async function metaListCatalogs(ctx: MetaToolContext, raw: unknown) {
+  const input = metaListCatalogsSchema.parse(raw)
+  const creds = await withCreds(ctx, input.tenantId, input.adAccountId)
+  const graph = fetchGraph(ctx)
+  const catalogs = await listProductCatalogs(
+    { apiVersion: creds.apiVersion, accessToken: creds.accessToken, adAccountId: creds.adAccountId, graph },
+    { limit: input.limit },
+  )
+  return { tenantId: input.tenantId, adAccountId: creds.adAccountId, catalogs }
+}
+
+export async function metaCreateExperiment(ctx: MetaToolContext, raw: unknown) {
+  const input = metaCreateExperimentSchema.parse(raw)
+  assertWriteConfirmation(input)
+  const dryRun = resolveDryRun(input.dryRun, true)
+  const creds = await withCreds(ctx, input.tenantId, input.adAccountId)
+  const graph = fetchGraph(ctx)
+  const bodyPreview = buildCreateExperimentGraphBody({
+    name: input.name,
+    description: input.description,
+    type: input.type,
+    cells: input.cells,
+    startTime: input.startTime,
+    endTime: input.endTime,
+    creativeTestDailyBudget: input.creativeTestDailyBudget,
+    creativeTestLifetimeBudgetPercentage: input.creativeTestLifetimeBudgetPercentage,
+  })
+  const run = await withDryRun(
+    dryRun,
+    {
+      method: 'POST',
+      path: '/me/ad_studies',
+      body: bodyPreview,
+      notes: [
+        `Experiment ${input.type}: ${input.name}`,
+        `cells: ${input.cells.length}`,
+        dryRun ? 'dryRun=true: nenhuma mutação.' : 'Criará Ad Study oficial Meta.',
+      ],
+    },
+    async () => {
+      const created = await createExperiment(
+        { apiVersion: creds.apiVersion, accessToken: creds.accessToken, graph },
+        {
+          name: input.name,
+          description: input.description,
+          type: input.type,
+          cells: input.cells,
+          startTime: input.startTime,
+          endTime: input.endTime,
+          creativeTestDailyBudget: input.creativeTestDailyBudget,
+          creativeTestLifetimeBudgetPercentage: input.creativeTestLifetimeBudgetPercentage,
+        },
+        { dryRun: false },
+      )
+      return {
+        tenantId: input.tenantId,
+        adAccountId: creds.adAccountId,
+        studyId: created.studyId,
+        type: input.type,
+        name: input.name,
+        success: true as const,
+        dryRun: false as const,
+      }
+    },
+  )
+  if (run.dryRun) {
+    return {
+      tenantId: input.tenantId,
+      adAccountId: creds.adAccountId,
+      studyId: null,
+      type: input.type,
+      name: input.name,
+      success: true as const,
+      dryRun: true as const,
+      preview: run.preview,
+      warning: 'Dry-run: experiment não criado.',
+    }
+  }
+  return run.result!
+}
+
+export async function metaGetExperiment(ctx: MetaToolContext, raw: unknown) {
+  const input = metaGetExperimentSchema.parse(raw)
+  const creds = await withCreds(ctx, input.tenantId, input.adAccountId)
+  const graph = fetchGraph(ctx)
+  const study = await getExperiment(
+    { apiVersion: creds.apiVersion, accessToken: creds.accessToken, graph },
+    input.studyId,
+  )
+  return { tenantId: input.tenantId, adAccountId: creds.adAccountId, study }
+}
+
+export async function metaStopExperiment(ctx: MetaToolContext, raw: unknown) {
+  const input = metaStopExperimentSchema.parse(raw)
+  assertWriteConfirmation(input)
+  const dryRun = resolveDryRun(input.dryRun, true)
+  const creds = await withCreds(ctx, input.tenantId, input.adAccountId)
+  const graph = fetchGraph(ctx)
+  const stopped = await stopExperiment(
+    { apiVersion: creds.apiVersion, accessToken: creds.accessToken, graph },
+    input.studyId,
+    { dryRun },
+  )
+  return {
+    tenantId: input.tenantId,
+    adAccountId: creds.adAccountId,
+    ...stopped,
+    success: true as const,
+    warning: dryRun ? 'Dry-run: experiment não parado.' : 'end_time atualizado para agora.',
+  }
+}
+
 
 const BULK_DELETE_LEVEL_META: Record<BulkDeleteLevel, {
   entityType: string
@@ -3483,6 +3993,14 @@ export const META_TOOL_HANDLERS: Record<MetaToolName, ToolHandler> = {
   meta_update_ad_media: metaUpdateAdMedia,
   meta_preview_bulk_delete: metaPreviewBulkDelete,
   meta_execute_bulk_delete: metaExecuteBulkDelete,
+  meta_get_capabilities: metaGetCapabilities,
+  meta_upload_image: metaUploadImage,
+  meta_upload_video: metaUploadVideo,
+  meta_get_video_status: metaGetVideoStatusTool,
+  meta_list_catalogs: metaListCatalogs,
+  meta_create_experiment: metaCreateExperiment,
+  meta_get_experiment: metaGetExperiment,
+  meta_stop_experiment: metaStopExperiment,
 }
 
 export const META_TOOL_SCHEMAS: Record<MetaToolName, z.ZodTypeAny> = {
@@ -3508,6 +4026,14 @@ export const META_TOOL_SCHEMAS: Record<MetaToolName, z.ZodTypeAny> = {
   meta_update_ad_media: metaUpdateAdMediaSchema,
   meta_preview_bulk_delete: metaPreviewBulkDeleteSchema,
   meta_execute_bulk_delete: metaExecuteBulkDeleteSchema,
+  meta_get_capabilities: metaGetCapabilitiesSchema,
+  meta_upload_image: metaUploadImageSchema,
+  meta_upload_video: metaUploadVideoSchema,
+  meta_get_video_status: metaGetVideoStatusSchema,
+  meta_list_catalogs: metaListCatalogsSchema,
+  meta_create_experiment: metaCreateExperimentSchema,
+  meta_get_experiment: metaGetExperimentSchema,
+  meta_stop_experiment: metaStopExperimentSchema,
 }
 
 export const META_TOOL_DESCRIPTIONS: Record<MetaToolName, string> = {
@@ -3542,7 +4068,7 @@ export const META_TOOL_DESCRIPTIONS: Record<MetaToolName, string> = {
   meta_create_adset:
     'Cria adset (BR_* ou targeting custom). PAUSED+dryRun. destinationType WEBSITE|WHATSAPP (CTWA). Exige confirm+budget+campaignId.',
   meta_create_ad:
-    'Cria AdCreative+Ad. creativeType IMAGE|VIDEO|CAROUSEL. WEBSITE/WHATSAPP(CTWA). Mídia=hash/video_id já na Meta. PAUSED+dryRun. Exige page token, confirm, adsetId. DYNAMIC_CREATIVE removido — use vários ads no mesmo adset.',
+    'Cria Ad+Creative. creativeId XOR creativeType IMAGE|VIDEO|CAROUSEL|DYNAMIC_CREATIVE_LEGACY|CATALOG. Advantage+ degreesOfFreedomSpec. WEBSITE/WHATSAPP. Upload imageUrl/videoUrl (SSRF). PAUSED+dryRun.',
   meta_update_adset_budget:
     'Atualiza budget do adset (daily|lifetime). dryRun default true. Teto META_GPT_BUDGET_* + confirmBudgetIncrease se aumento % alto.',
   meta_update_adset_targeting:
@@ -3550,11 +4076,27 @@ export const META_TOOL_DESCRIPTIONS: Record<MetaToolName, string> = {
   meta_update_ad_creative_copy:
     'Atualiza copy do ad (message/headline/description/CTA/link) via novo AdCreative + swap. dryRun default true. Exige Page.',
   meta_update_ad_media:
-    'Atualiza mídia do ad (imageUrl|imageHash) via novo AdCreative + swap; preserva copy. dryRun default true. Sem video/upload binário.',
+    'Atualiza mídia IMAGE|VIDEO|CAROUSEL via novo AdCreative + swap; preserva copy. dryRun default true. Upload URL com SSRF check.',
   meta_preview_bulk_delete:
     'Preview de exclusão em massa (IDs explícitos, level campaign|adset|ad). Ownership + previewToken (TTL). Sem Graph POST. Nunca por nome.',
   meta_execute_bulk_delete:
     'Executa exclusão em massa após preview. Exige previewToken + confirm + confirmTenantId + confirmDelete + dryRun=false. Sequencial; succeeded/failed.',
+  meta_get_capabilities:
+    'Retorna matriz de capacidades Meta Ads (criativos, mídia, catálogo, experiments, Flexible Media) para a Graph version do tenant.',
+  meta_upload_image:
+    'Upload/reuse imagem na ad account (imageUrl HTTPS com SSRF ou imageHash). dryRun default true.',
+  meta_upload_video:
+    'Upload/reuse vídeo (videoUrl HTTPS file_url com SSRF ou videoId). dryRun default true. Depois use meta_get_video_status.',
+  meta_get_video_status:
+    'Consulta status de processamento do Advideo (status/title/length).',
+  meta_list_catalogs:
+    'Lista product catalogs da ad account do tenant (ownership).',
+  meta_create_experiment:
+    'Cria Ad Study oficial (SPLIT_TEST_V2 creative cells com ads[] ou SPLIT_TEST com adsets[]). dryRun default true.',
+  meta_get_experiment:
+    'Lê Ad Study / experiment por studyId.',
+  meta_stop_experiment:
+    'Encerra experiment antecipadamente (end_time=now). dryRun default true.',
 }
 
 export async function invokeMetaTool(

@@ -607,9 +607,9 @@ paths:
       operationId: createAd
       summary: Criar anúncio + criativo
       description: >
-        Cria AdCreative+Ad. creativeType IMAGE|VIDEO|CAROUSEL.
-        WEBSITE/WHATSAPP(CTWA). Mídia=imageHash|videoId já na Meta. PAUSED+dryRun.
-        DYNAMIC_CREATIVE removido — competição = vários ads no mesmo adset. Sem upload binário.
+        Cria AdCreative+Ad. creativeType IMAGE|VIDEO|CAROUSEL|DYNAMIC_CREATIVE_LEGACY|CATALOG
+        ou creativeId (XOR). WEBSITE/WHATSAPP(CTWA). Mídia hash/videoId ou upload HTTPS.
+        Advantage+ via degreesOfFreedomSpec. PAUSED+dryRun. Detalhes: meta_get_capabilities / docs.
       x-openai-isConsequential: true
       requestBody:
         required: true
@@ -1362,12 +1362,12 @@ components:
           description: Nome do anúncio.
         creativeType:
           type: string
-          enum: [IMAGE, VIDEO, CAROUSEL]
+          enum: [IMAGE, VIDEO, CAROUSEL, DYNAMIC_CREATIVE_LEGACY, CATALOG]
           default: IMAGE
           description: >
-            IMAGE (link_data estático; alias static), VIDEO (video_data+videoId),
-            CAROUSEL (childAttachments 2–10). DYNAMIC_CREATIVE removido do MCP.
-            Mídia já na Meta. Competição de criativos = vários ads IMAGE/VIDEO no mesmo adset.
+            IMAGE|VIDEO|CAROUSEL|DYNAMIC_CREATIVE_LEGACY|CATALOG (ou creativeId XOR).
+            Advantage+ = degreesOfFreedomSpec. Mídia flexível Ads Manager = pac_relaxation.
+            Flexible Ad Format (creative_asset_groups_spec) não suportado em Graph v20 do projeto.
         destinationType:
           type: string
           enum: [WEBSITE, WHATSAPP]
