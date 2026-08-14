@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  normalizeCommercialModuleSlug,
+  resolveModuleSlugFromPath,
   resolveTenantModuleSlugs,
   TENANT_MODULE_BUNDLE_ALL,
 } from '~/constants/modules'
@@ -89,18 +91,17 @@ describe('tenant modules helpers', () => {
       'crm',
       'article',
       'marketing',
-      'ads',
       'whatsapp',
     ])
   })
 
-  it('unlocks Ads as a companion whenever Marketing is active', () => {
-    expect(resolveTenantModuleSlugs(['marketing'])).toEqual(['marketing', 'ads'])
+  it('does not expose Ads as a commercial companion of Marketing', () => {
+    expect(resolveTenantModuleSlugs(['marketing'])).toEqual(['marketing'])
     expect(resolveTenantModuleSlugs(['crm', 'marketing'])).toEqual([
       'crm',
       'marketing',
-      'ads',
     ])
+    expect(resolveTenantModuleSlugs(['ads', 'marketing'])).toEqual(['marketing'])
   })
 
   it('reads active module names from tenant_modules rows', async () => {
@@ -121,7 +122,7 @@ describe('tenant modules helpers', () => {
 
     const state = await getTenantModulesState(client, 'tenant-1')
     expect(state.activeModuleNames).toEqual(['marketing'])
-    expect(state.resolvedModules).toEqual(['marketing', 'ads'])
+    expect(state.resolvedModules).toEqual(['marketing'])
     expect(state.hasAllBundle).toBe(false)
   })
 
@@ -167,9 +168,18 @@ describe('tenant modules helpers', () => {
 
     const after = await syncTenantModules(client, 'tenant-1', ['all'])
     expect(after.hasAllBundle).toBe(true)
-    expect(after.resolvedModules).toHaveLength(5)
+    expect(after.resolvedModules).toHaveLength(4)
 
     const state = await getTenantModulesState(client, 'tenant-1')
     expect(state.activeModuleNames).toEqual(['all'])
+  })
+
+  it('maps legacy /ads URLs to the Marketing commercial shell', () => {
+    expect(resolveModuleSlugFromPath('/ads')).toBe('marketing')
+    expect(resolveModuleSlugFromPath('/ads/campaigns')).toBe('marketing')
+    expect(resolveModuleSlugFromPath('/marketing/ads')).toBe('marketing')
+    expect(resolveModuleSlugFromPath('/crm/funnel')).toBe('crm')
+    expect(normalizeCommercialModuleSlug('ads')).toBe('marketing')
+    expect(normalizeCommercialModuleSlug('marketing')).toBe('marketing')
   })
 })

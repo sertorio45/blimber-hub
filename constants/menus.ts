@@ -33,8 +33,9 @@ export const navMenu: NavMenu[] = [
         roles: ['admin', 'funcionario', 'cliente', 'atendente'],
         /**
          * Organic / editorial product tree, plus Ads submenu (ETAPA 2)
-         * pointing at `/marketing/ads*`. Dual entry: the top-level Ads
-         * product still uses `/ads*` until a later cutover.
+         * pointing at `/marketing/ads*`. Ads is not a commercial sibling
+         * in the product selector (ETAPA 6); `/ads*` pages remain until
+         * the ETAPA 7 redirects.
          * Campaigns here are editorial (`social_campaigns`); paid campaigns
          * live under Ads → Campanhas (`/marketing/ads/campaigns`).
          * Advanced items (packages, automations, ops-metrics, logs,
@@ -123,10 +124,9 @@ export const navMenu: NavMenu[] = [
           },
           {
             /**
-             * ETAPA 3 — Ads stays a collapsible under Marketing so flattened
+             * Ads stays a collapsible under Marketing so flattened
              * siblings do not show two "Campanhas" / "Relatórios".
-             * Top-level Ads product still points at `/ads*` until later etapas.
-             * Meta/Google/Analytics boards remain only on the Ads product.
+             * Canonical paid UI is `/marketing/ads*` (ETAPA 6: no Ads product tile).
              */
             title: 'Ads',
             icon: 'i-lucide-circle-dollar-sign',
@@ -198,75 +198,6 @@ export const navMenu: NavMenu[] = [
                 capability: 'marketing.social.integrations',
               },
             ],
-          },
-        ],
-      },
-    ],
-  },
-  {
-    heading: '',
-    items: [
-      {
-        title: 'Ads',
-        icon: 'i-lucide-circle-dollar-sign',
-        roles: ['admin', 'funcionario', 'cliente', 'atendente'],
-        /**
-         * Paid media product (still a sibling of Marketing until a later
-         * cutover). Marketing → Ads uses `/marketing/ads*`; this tree stays
-         * on `/ads*`. Boards reused from Marketing reports components.
-         * Campaigns here are paid (live APIs / marketing_campaigns), not
-         * editorial social_campaigns under /marketing/campaigns.
-         */
-        children: [
-          {
-            title: 'Visão Geral',
-            icon: 'i-lucide-layout-dashboard',
-            link: '/ads',
-            capability: 'marketing.social.reports',
-          },
-          {
-            title: 'Meta Ads',
-            icon: 'i-lucide-target',
-            link: '/ads/meta',
-            capability: 'marketing.social.reports',
-          },
-          {
-            title: 'Google Ads',
-            icon: 'i-lucide-search',
-            link: '/ads/google',
-            capability: 'marketing.social.reports',
-          },
-          {
-            title: 'Analytics',
-            icon: 'i-lucide-chart-column',
-            link: '/ads/analytics',
-            capability: 'marketing.social.reports',
-          },
-          {
-            title: 'Campanhas',
-            icon: 'i-lucide-megaphone',
-            link: '/ads/campaigns',
-            capability: 'marketing.social.reports',
-          },
-          {
-            // Architecture placeholder — Brand Context bridge; no AI generation yet.
-            title: 'Criativos',
-            icon: 'i-lucide-sparkles',
-            link: '/ads/creatives',
-            capability: 'marketing.social.brand_guide.read',
-            badge: 'Em evolução',
-          },
-          {
-            title: 'Relatórios',
-            icon: 'i-lucide-bar-chart-3',
-            link: '/ads/reports',
-            capability: 'marketing.social.reports',
-          },
-          {
-            title: 'Integrações',
-            icon: 'i-lucide-plug',
-            link: '/ads/integrations',
-            capability: 'marketing.social.integrations',
           },
         ],
       },

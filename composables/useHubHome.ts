@@ -1,8 +1,9 @@
 import type { ModuleMeta } from '~/constants/modules'
-import type { WorkspaceCapability } from '~/constants/workspace'
+import type { AppRoleSlug } from '~/constants/roles'
 
-import { MODULE_LABELS_PT, MODULE_META, MODULE_DESCRIPTIONS_PT, resolveTenantModuleSlugs } from '~/constants/modules'
-import { ROLE_LABELS, isStaffRole, type AppRoleSlug } from '~/constants/roles'
+import type { WorkspaceCapability } from '~/constants/workspace'
+import { MODULE_DESCRIPTIONS_PT, MODULE_LABELS_PT, MODULE_META, resolveTenantModuleSlugs } from '~/constants/modules'
+import { isStaffRole, ROLE_LABELS } from '~/constants/roles'
 import { holdsCapability } from '~/constants/workspace'
 
 export type HubPersona = 'staff' | 'agency' | 'client' | 'attendant'
@@ -79,13 +80,15 @@ export function moduleTileTitle(slug: string): string {
 }
 
 export function buildHubModuleTiles(moduleNames: string[]): HubModuleTile[] {
-  return resolveActiveModuleMetas(moduleNames).map(meta => ({
-    slug: meta.slug,
-    title: moduleTileTitle(meta.slug),
-    description: MODULE_DESCRIPTIONS[meta.slug] || 'Abrir módulo',
-    icon: meta.icon,
-    to: meta.defaultPath || meta.basePath,
-  }))
+  return resolveActiveModuleMetas(moduleNames)
+    .filter(meta => meta.slug !== 'ads')
+    .map(meta => ({
+      slug: meta.slug,
+      title: moduleTileTitle(meta.slug),
+      description: MODULE_DESCRIPTIONS[meta.slug] || 'Abrir módulo',
+      icon: meta.icon,
+      to: meta.defaultPath || meta.basePath,
+    }))
 }
 
 export function buildHubActions(input: {

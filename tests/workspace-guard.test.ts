@@ -197,9 +197,8 @@ describe('guarda de rotas por tipo de organização', () => {
 
     const adsProduct = navMenu
       .flatMap(section => section.items)
-      .find((item): item is NavGroup => 'children' in item && item.title === 'Ads')
-    expect(adsProduct).toBeTruthy()
-    expect(adsProduct!.children.some(child => child.link === '/ads/meta')).toBe(true)
+      .find((item): item is NavGroup => 'children' in item && item.title === 'Ads' && item.link !== '/marketing/ads')
+    expect(adsProduct).toBeUndefined()
   })
 })
 

@@ -10,19 +10,19 @@ import {
   DEFAULT_MODULE_SLUG,
   expandTenantModuleRows,
   MODULE_META,
-
+  normalizeCommercialModuleSlug,
+  resolveModuleSlugFromPath,
 } from '~/constants/modules'
 
 function getModuleSlugFromPath(path: string): string | null {
-  for (const meta of Object.values(MODULE_META)) {
-    if (path.startsWith(meta.basePath))
-      return meta.slug
-  }
-  return null
+  return resolveModuleSlugFromPath(path)
 }
 
 function getModuleMetaBySlug(slug: string): ModuleMeta | undefined {
-  return Object.values(MODULE_META).find(m => m.slug === slug)
+  const commercial = normalizeCommercialModuleSlug(slug)
+  if (!commercial)
+    return undefined
+  return MODULE_META[commercial]
 }
 
 const STORAGE_KEY = 'current-module-slug'
@@ -62,6 +62,8 @@ function _useModule() {
   const availableModules = computed(() => {
     const fromTenant = tenantModules.value
       .map((tm) => {
+        if (tm.module_name === 'ads')
+          return null
         const meta = MODULE_META[tm.module_name]
         if (!meta)
           return null
@@ -74,7 +76,7 @@ function _useModule() {
 
     const registeredNames = new Set(fromTenant.map(m => m.module_name))
     const staffExtras = Object.entries(MODULE_META)
-      .filter(([moduleName]) => !registeredNames.has(moduleName))
+      .filter(([moduleName]) => moduleName !== 'ads' && !registeredNames.has(moduleName))
       .map(([module_name, meta]) => ({
         ...meta,
         id: `local-${module_name}`,
@@ -108,7 +110,7 @@ function _useModule() {
     }
 
     const rows = data ?? []
-    // Expand "all" + Marketing→Ads companion so the module switcher matches resolveTenantModuleSlugs.
+    // Commercial shells only — Ads is a Marketing submenu, not a companion tile.
     tenantModules.value = expandTenantModuleRows(rows) as Array<{
       id: string
       module_name: string

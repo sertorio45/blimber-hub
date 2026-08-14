@@ -34,8 +34,9 @@ export const MODULE_META: Record<string, ModuleMeta> = {
     defaultPath: '/marketing',
   },
   /**
-   * Paid media product shell (Meta / Google Ads / Analytics).
-   * ETAPA 1: companion of Marketing — not a separate tenant_modules toggle yet.
+   * Technical Ads shell metadata (legacy `/ads` basePath).
+   * ETAPA 6: Ads is not a commercial product — omitted from
+   * `resolveTenantModuleSlugs` / switcher / hub tiles.
    */
   ads: {
     slug: 'ads',
@@ -86,7 +87,7 @@ export const MODULE_LABELS_PT: Record<string, string> = {
 /** Short descriptions shown in module switchers and hub tiles. */
 export const MODULE_DESCRIPTIONS_PT: Record<string, string> = {
   crm: 'Funil, contatos e negócios',
-  marketing: 'Conteúdo, calendário e aprovações',
+  marketing: 'Conteúdo, calendário, Ads e aprovações',
   ads: 'Mídia paga, Meta, Google Ads e Analytics',
   whatsapp: 'Inbox, campanhas e automações',
   article: 'Conteúdo e publicações no CMS',
@@ -94,37 +95,54 @@ export const MODULE_DESCRIPTIONS_PT: Record<string, string> = {
 }
 
 /**
- * Resolves active product shells for a tenant.
- * Marketing also unlocks the Ads companion module (ETAPA 1).
+ * Product shells shown in the module switcher and hub tiles.
+ * Ads remains in MODULE_META for path/legacy metadata only.
+ */
+export const COMMERCIAL_MODULE_SLUGS = (
+  Object.keys(MODULE_META) as Array<keyof typeof MODULE_META>
+).filter(slug => slug !== 'ads')
+
+/**
+ * Resolves active commercial product shells for a tenant.
+ * Ads is a Marketing subdomain — never a companion tile.
  */
 export function resolveTenantModuleSlugs(
   activeModuleNames: string[],
 ): string[] {
-  const catalogSlugs = Object.keys(MODULE_META)
+  const catalogSlugs = [...COMMERCIAL_MODULE_SLUGS]
 
   if (activeModuleNames.includes(TENANT_MODULE_BUNDLE_ALL))
-    return [...catalogSlugs]
+    return catalogSlugs
 
-  const resolved = catalogSlugs.filter(slug => activeModuleNames.includes(slug))
-
-  // Companion product: Ads ships with Marketing until standalone assignment exists.
-  if (
-    (activeModuleNames.includes('marketing') || resolved.includes('marketing'))
-    && MODULE_META.ads
-    && !resolved.includes('ads')
-  ) {
-    const marketingIdx = resolved.indexOf('marketing')
-    if (marketingIdx >= 0)
-      resolved.splice(marketingIdx + 1, 0, 'ads')
-    else
-      resolved.push('ads')
-  }
-
-  return resolved
+  return catalogSlugs.filter(slug => activeModuleNames.includes(slug))
 }
 
 /**
- * Expands tenant_modules rows with companion shells (e.g. Marketing → Ads).
+ * Maps a Hub URL to the commercial module that owns the sidebar.
+ * Legacy `/ads*` bookmarks still show the Marketing shell (ETAPA 6).
+ */
+export function resolveModuleSlugFromPath(path: string): string | null {
+  if (path === '/ads' || path.startsWith('/ads/'))
+    return 'marketing'
+
+  for (const slug of COMMERCIAL_MODULE_SLUGS) {
+    const meta = MODULE_META[slug]
+    if (path === meta.basePath || path.startsWith(`${meta.basePath}/`))
+      return slug
+  }
+  return null
+}
+
+export function normalizeCommercialModuleSlug(slug: string | null | undefined): string | null {
+  if (!slug)
+    return null
+  if (slug === 'ads')
+    return 'marketing'
+  return MODULE_META[slug] ? slug : null
+}
+
+/**
+ * Expands tenant_modules rows to commercial shells (no Ads companion tile).
  * Keeps catalog order from resolveTenantModuleSlugs.
  */
 export function expandTenantModuleRows<T extends { module_name: string, is_active?: boolean }>(
@@ -135,7 +153,7 @@ export function expandTenantModuleRows<T extends { module_name: string, is_activ
     .map(row => row.module_name)
 
   if (activeNames.includes(TENANT_MODULE_BUNDLE_ALL)) {
-    return Object.keys(MODULE_META).map(module_name => ({
+    return COMMERCIAL_MODULE_SLUGS.map(module_name => ({
       id: `all-${module_name}`,
       module_name,
       is_active: true,
