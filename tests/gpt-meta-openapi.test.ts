@@ -256,6 +256,7 @@ describe('gpt/blimber Ads OpenAPI (openapi-ads.yaml)', () => {
     expect(yaml).toContain('meta_list_experiments')
     expect(yaml).toContain('meta_check_experiment_eligibility')
     expect(yaml).toContain('meta_create_experiment')
+    expect(yaml).toContain('studyOwner AUTO|USER|BUSINESS')
     const operationIds = [...yaml.matchAll(/^\s+operationId:\s*(\S+)\s*$/gm)].map(m => m[1]!)
     expect(operationIds.length).toBeLessThanOrEqual(30)
   })

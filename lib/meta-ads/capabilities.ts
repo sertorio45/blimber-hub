@@ -13,7 +13,7 @@ export type MetaCapabilityFlag = {
 
 export type MetaCapabilitiesReport = {
   graphVersion: string
-  /** Isolated Ad Studies Graph (POST/GET business ad_studies). Default v26.0. */
+  /** Isolated Ad Studies Graph (USER/BUSINESS ad_studies). Default v26.0. */
   studiesGraphVersion: string
   destinations: {
     WEBSITE: MetaCapabilityFlag
@@ -40,7 +40,11 @@ export type MetaCapabilitiesReport = {
     getVideoStatus: MetaCapabilityFlag
   }
   experiments: {
-    splitTestV2Creative: MetaCapabilityFlag
+    splitTestV2Creative: MetaCapabilityFlag & {
+      ownerStrategies: Array<'AUTO' | 'USER' | 'BUSINESS'>
+      defaultOwnerStrategy: 'AUTO'
+      studiesGraphVersion: string
+    }
     splitTestAdsetLevel: MetaCapabilityFlag
     levels: string[]
   }
@@ -128,11 +132,17 @@ export function getMetaCapabilities(explicitVersion?: string | null): MetaCapabi
       getVideoStatus: ok('GET /{video-id}?fields=status,title,length'),
     },
     experiments: {
-      splitTestV2Creative: ok(
-        `POST ${studiesGraphVersion} /{business_id}/ad_studies type=SPLIT_TEST_V2 + creative_test_config; 2–5 cells, 1 ad/célula; list GET business ad_studies (v26 trial) + impacting_ad_studies (versão Ads)`,
-      ),
+      splitTestV2Creative: {
+        supported: true,
+        ownerStrategies: ['AUTO', 'USER', 'BUSINESS'] as const,
+        defaultOwnerStrategy: 'AUTO' as const,
+        studiesGraphVersion,
+        notes:
+          `AUTO: GET ${studiesGraphVersion}/me então POST /{user_id}/ad_studies; se falhar, POST /{business_id}/ad_studies com as mesmas cópias. `
+          + 'Page token bloqueado. Rollback só após todas as tentativas. 2–5 cells, 1 ad/célula.',
+      },
       splitTestAdsetLevel: ok(
-        `POST ${studiesGraphVersion} /{business_id}/ad_studies type=SPLIT_TEST; cells with adsets[] (máx. 150 células; clássico)`,
+        `POST ${studiesGraphVersion} /{user_id}|/{business_id}/ad_studies type=SPLIT_TEST; cells with adsets[] (máx. 150 células; clássico)`,
       ),
       levels: ['ad (creative test SPLIT_TEST_V2, 2–5 cells)', 'adset (SPLIT_TEST classico)'],
     },

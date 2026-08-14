@@ -253,6 +253,7 @@ const TOOL_INPUT_HINTS: Record<MetaToolName, string[]> = {
     'startTime',
     'endTime',
     'creativeTestDailyBudget?|creativeTestLifetimeBudgetPercentage?',
+    'studyOwner? (AUTO|USER|BUSINESS, default AUTO)',
     'confirmTenantId',
     'confirm (=true)',
     'dryRun? (default true)',

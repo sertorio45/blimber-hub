@@ -106,7 +106,7 @@ Contrato completo: `gpt/blimber/openapi-ads.yaml` (host `ads.blimber.com.br`). `
 ## META CREATIVE CAPABILITIES
 
 Graph default Ads/Marketing: `config.api_version` → `META_ADS_GRAPH_VERSION` → `META_GRAPH_VERSION` → **v25.0** (`lib/meta-ads/graph.ts` `resolveMetaGraphVersion`).  
-Ad Studies (trial isolado): `META_ADS_STUDIES_GRAPH_VERSION` → **v26.0** (POST/GET `/{business_id}/ad_studies` + GET study). Não sobe Ads/CAPI. WhatsApp Cloud permanece v21.  
+Ad Studies (isolado): `META_ADS_STUDIES_GRAPH_VERSION` → **v26.0**. Create AUTO: `GET /me` + `POST /{user_id}/ad_studies`, fallback `POST /{business_id}/ad_studies`. Não sobe Ads/CAPI. WhatsApp Cloud permanece v21.  
 CAPI (CRM): `META_GRAPH_VERSION` → **v25.0** (não usa `META_ADS_GRAPH_VERSION`).  
 WhatsApp Cloud API: permanece em v21 hardcoded (fora deste upgrade).
 
@@ -125,7 +125,7 @@ Create/update adset sempre envia `targeting.targeting_automation.advantage_audie
 | Catalog / Advantage+ Catalog | ✅ | `meta_list_catalogs` + `meta_list_product_sets` + creativeType `CATALOG` |
 | Pixel / Dataset tracking | ✅ | `createAd` / `updateAdTracking` → Graph `tracking_specs` (`offsite_conversion`+`fb_pixel`, `offline_conversion`+`dataset`) |
 | Collection | ❌ | Instant Experience/canvas não implementado |
-| A/B Experiments | ✅ | `meta_list_experiments` + eligibility + create (`cells[]` ou `baseAdId`+variations) / get / stop. Creative Test: **2–5 células** (doc Meta). |
+| A/B Experiments | ✅ | `meta_list_experiments` + eligibility + create (`cells[]` ou `baseAdId`+variations, `studyOwner` AUTO=USER→BUSINESS) / get / stop. Creative Test: **2–5 células** (doc Meta). |
 | WEBSITE + WHATSAPP CTWA | ✅ | Preservados |
 | advantage_audience (adset targeting) | ✅ | Sempre enviado; default `0`; campo opcional `advantageAudience` |
 

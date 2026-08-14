@@ -1,24 +1,21 @@
 /**
  * Official Meta Ad Studies / Experiments (Split Testing).
- * Creative A/B: SPLIT_TEST_V2 + creative_test_config on POST /{business_id}/ad_studies
- * (Business Ad Studies). Classic: SPLIT_TEST with adsets[] per cell.
+ * Creative A/B: SPLIT_TEST_V2 + creative_test_config.
  *
- * POST /me/ad_studies and POST /{user_id}/ad_studies are not used: Graph returns
- * "Unsupported request - method type: post" for those parents in production.
+ * Create strategy (studyOwner, default AUTO):
+ * 1. GET {studiesGraphVersion}/me?fields=id,name with the User Access Token
+ * 2. POST /{user_id}/ad_studies (never POST /me, never page_id / page token)
+ * 3. If AUTO and USER fails, POST /{business_id}/ad_studies with the same cells/copies
  *
- * v25 POST /{business_id}/ad_studies was rejected with GraphMethodException code 100
- * on this app; studies use v26 as isolated trial (META_ADS_STUDIES_GRAPH_VERSION).
- * Meta still documents Business Ad Studies POST (examples include v26.0).
+ * Studies Graph is isolated (META_ADS_STUDIES_GRAPH_VERSION, default v26.0).
  * Ad copies, impacting_ad_studies, and the rest of Ads stay on the Ads Graph version.
  *
  * Documented limits (Marketing API Split Testing + Ad Study):
  * - Creative Tests (SPLIT_TEST_V2): 2–5 cells, exactly one ad per cell.
  * - Classic SPLIT_TEST: max 150 cells / study; max 100 ad entities / cell; 100 concurrent studies.
  * - treatment_percentage ≥ 10; creative tests require percentages summing to 100.
- * List: GET /{business_id}/ad_studies + GET act_{adAccountId}/impacting_ad_studies.
- * Cells: GET /{studyId}/cells (ads, adsets, campaigns).
- * Conflicts: GET /{adsetId}/ad_studies, GET /{campaignId}/ad_studies + listed studies.
- * Duplicate ads: POST /{adId}/copies (copied_ad_id; creative_parameters; status_option).
+ * List: GET /{user_id}/ad_studies + GET /{business_id}/ad_studies + GET act_{id}/impacting_ad_studies.
+ * Duplicate ads: POST /{adId}/copies (copied_ad_id; creative_parameters; status_option PAUSED).
  * Winner: Graph documents results_first_available_date + confidence_level; no winner_cell_id field.
  */
 
@@ -26,10 +23,42 @@ import type { MetaGraphFetch } from './types'
 import { actPath, enrichMetaGraphWriteError, metaAdsStudiesGraphUrl, metaGraphUrl, normalizeMetaAdAccountId, resolveMetaAdsStudiesGraphVersion } from './graph'
 import { MetaAdsToolError } from './types'
 
-export type ExperimentServiceContext = {
+export interface ExperimentServiceContext {
   apiVersion: string
   accessToken: string
   graph: MetaGraphFetch
+  /** Integration page_id — used only to reject Page tokens as study owner. Never logged. */
+  pageId?: string | null
+  /** Decrypted page_access_token for equality check vs user token. Never logged or returned. */
+  pageAccessToken?: string | null
+}
+
+export type StudyOwnerStrategy = 'AUTO' | 'USER' | 'BUSINESS'
+export type StudyOwnerKind = 'USER' | 'BUSINESS'
+
+export interface StudyCreateAttemptError {
+  message?: string
+  type?: string
+  code?: number
+  errorSubcode?: number
+  fbtraceId?: string
+}
+
+export interface StudyCreateAttempt {
+  ownerType: StudyOwnerKind
+  ownerId: string
+  graphVersion: string
+  endpoint: string
+  success: boolean
+  error?: StudyCreateAttemptError
+}
+
+export interface StudyCreateTarget {
+  ownerType: StudyOwnerKind
+  ownerId: string
+  path: string
+  endpoint: string
+  graphVersion: string
 }
 
 export const CREATIVE_TEST_MIN_CELLS = 2
@@ -44,7 +73,7 @@ export const EXPERIMENT_STUDY_FIELDS
 export const EXPERIMENT_CELL_FIELDS
   = 'id,name,treatment_percentage,ads,adsets,campaigns,adaccounts'
 
-export type ExperimentCellInput = {
+export interface ExperimentCellInput {
   name: string
   treatmentPercentage: number
   /** Exactly one ad id for SPLIT_TEST_V2 creative tests. */
@@ -53,7 +82,7 @@ export type ExperimentCellInput = {
   adsetIds?: string[]
 }
 
-export type CreateExperimentInput = {
+export interface CreateExperimentInput {
   name: string
   description?: string
   type: 'SPLIT_TEST_V2' | 'SPLIT_TEST'
@@ -65,7 +94,7 @@ export type CreateExperimentInput = {
   creativeTestLifetimeBudgetPercentage?: number
 }
 
-export type ExperimentVariationInput = {
+export interface ExperimentVariationInput {
   name?: string
   message?: string
   headline?: string
@@ -73,7 +102,7 @@ export type ExperimentVariationInput = {
   linkUrl?: string
 }
 
-export type StudyConflict = {
+export interface StudyConflict {
   studyId: string
   name: string | null
   type: string | null
@@ -401,16 +430,53 @@ function studyTouchesAdAccount(study: Record<string, unknown>, adAccountId: stri
   return accounts.some(id => normalizeMetaAdAccountId(id) === act)
 }
 
+async function mergeStudiesFromParent(
+  ctx: ExperimentServiceContext,
+  params: {
+    parentId: string
+    adAccountId: string
+    byId: Map<string, Record<string, unknown>>
+    fields: string
+    limit: number
+  },
+): Promise<boolean> {
+  const parentId = normalizeAdStudyParentId(params.parentId)
+  if (!parentId)
+    return false
+  try {
+    const res = await ctx.graph(metaAdsStudiesGraphUrl(`/${parentId}/ad_studies`), {
+      query: {
+        fields: params.fields,
+        limit: params.limit,
+        access_token: ctx.accessToken,
+      },
+    })
+    const rows = Array.isArray(res?.data) ? res.data as Record<string, unknown>[] : []
+    for (const study of rows) {
+      const id = String(study.id || '').trim()
+      if (!id || params.byId.has(id))
+        continue
+      if (studyTouchesAdAccount(study, params.adAccountId))
+        params.byId.set(id, study)
+    }
+    return true
+  }
+  catch {
+    return false
+  }
+}
+
 export async function listExperiments(
   ctx: ExperimentServiceContext,
   adAccountId: string,
-  options?: { limit?: number, businessId?: string | null },
+  options?: { limit?: number, businessId?: string | null, userId?: string | null },
 ): Promise<{
-  studies: Record<string, unknown>[]
-  paging: unknown
-  sources: { impactingAdStudies: boolean, businessAdStudies: boolean }
-  businessId: string | null
-}> {
+    studies: Record<string, unknown>[]
+    paging: unknown
+    sources: { impactingAdStudies: boolean, businessAdStudies: boolean, userAdStudies: boolean }
+    businessId: string | null
+    userId: string | null
+  }> {
   const limit = options?.limit ?? 50
   const fields = `${EXPERIMENT_STUDY_FIELDS},cells{${EXPERIMENT_CELL_FIELDS}}`
   const impactingRes = await ctx.graph(metaGraphUrl(ctx.apiVersion, `/${actPath(adAccountId)}/impacting_ad_studies`), {
@@ -428,6 +494,21 @@ export async function listExperiments(
       byId.set(id, study)
   }
 
+  let userId: string | null = normalizeAdStudyParentId(options?.userId)
+  if (!userId) {
+    try {
+      const me = await resolveGraphUserForStudies(ctx, { rejectPageOwner: false })
+      userId = me.id
+    }
+    catch {
+      userId = null
+    }
+  }
+
+  const listedFromUser = userId
+    ? await mergeStudiesFromParent(ctx, { parentId: userId, adAccountId, byId, fields, limit })
+    : false
+
   let businessId: string | null = normalizeAdStudyParentId(options?.businessId)
   let listedFromBusiness = false
   if (!businessId) {
@@ -444,34 +525,25 @@ export async function listExperiments(
   }
 
   if (businessId) {
-    try {
-      const businessRes = await ctx.graph(metaAdsStudiesGraphUrl(`/${businessId}/ad_studies`), {
-        query: {
-          fields,
-          limit,
-          access_token: ctx.accessToken,
-        },
-      })
-      listedFromBusiness = true
-      const businessStudies = Array.isArray(businessRes?.data) ? businessRes.data as Record<string, unknown>[] : []
-      for (const study of businessStudies) {
-        const id = String(study.id || '').trim()
-        if (!id || byId.has(id))
-          continue
-        if (studyTouchesAdAccount(study, adAccountId))
-          byId.set(id, study)
-      }
-    }
-    catch {
-      listedFromBusiness = false
-    }
+    listedFromBusiness = await mergeStudiesFromParent(ctx, {
+      parentId: businessId,
+      adAccountId,
+      byId,
+      fields,
+      limit,
+    })
   }
 
   return {
     studies: [...byId.values()],
     paging: impactingRes?.paging ?? null,
-    sources: { impactingAdStudies: true, businessAdStudies: listedFromBusiness },
+    sources: {
+      impactingAdStudies: true,
+      businessAdStudies: listedFromBusiness,
+      userAdStudies: listedFromUser,
+    },
     businessId,
+    userId,
   }
 }
 
@@ -525,10 +597,10 @@ export async function checkExperimentEligibility(
     campaignIds?: string[]
   },
 ): Promise<{
-  eligible: boolean
-  conflicts: StudyConflict[]
-  limits: Record<string, unknown>
-}> {
+    eligible: boolean
+    conflicts: StudyConflict[]
+    limits: Record<string, unknown>
+  }> {
   const targets = {
     ads: new Set((params.adIds || []).map(String)),
     adsets: new Set((params.adsetIds || []).map(String)),
@@ -633,7 +705,7 @@ export async function assertStudyOnAdAccount(
   )
 }
 
-/** Graph Business ids used as Ad Studies POST parents are numeric strings. Never "me". */
+/** Graph Business/User ids used as Ad Studies POST parents are numeric strings. Never "me" or page_id. */
 export function normalizeAdStudyParentId(raw: unknown): string | null {
   const id = String(raw ?? '').trim()
   if (!id || id.toLowerCase() === 'me')
@@ -658,7 +730,7 @@ export function adStudiesCreatePath(parentId: string): string {
   if (!id) {
     throw new MetaAdsToolError(
       'EXPERIMENT_PARENT_REQUIRED',
-      'Parent de Ad Study inválido. Use o business_id da BM que possui a ad account — nunca /me nem user id.',
+      'Parent de Ad Study inválido. Use o user_id do token OAuth (GET /me) ou o business_id da BM — nunca /me nem page_id.',
       400,
     )
   }
@@ -675,14 +747,14 @@ export function assertSupportedAdStudiesCreatePath(path: string): string {
   if (!clean || clean === '/me/ad_studies' || clean.endsWith('/me/ad_studies')) {
     throw new MetaAdsToolError(
       'EXPERIMENT_PARENT_REQUIRED',
-      'POST /me/ad_studies não é suportado pela Graph. Use POST /{business_id}/ad_studies (Business Ad Studies).',
+      'POST /me/ad_studies não é suportado. Resolva GET /me?fields=id e use POST /{user_id}/ad_studies.',
       400,
     )
   }
   if (!/^\/\d+\/ad_studies$/.test(clean)) {
     throw new MetaAdsToolError(
       'EXPERIMENT_PARENT_REQUIRED',
-      'Path de criação de Ad Study inválido. Esperado /{business_id}/ad_studies.',
+      'Path de criação de Ad Study inválido. Esperado /{user_id}/ad_studies ou /{business_id}/ad_studies.',
       400,
       { path: clean },
     )
@@ -690,9 +762,101 @@ export function assertSupportedAdStudiesCreatePath(path: string): string {
   return clean
 }
 
+export function assertUserAccessTokenForAdStudies(ctx: ExperimentServiceContext) {
+  const pageToken = String(ctx.pageAccessToken || '')
+  if (pageToken && pageToken === ctx.accessToken) {
+    throw new MetaAdsToolError(
+      'EXPERIMENT_PAGE_TOKEN_FORBIDDEN',
+      'Ad Studies exigem o User Access Token da integração Meta (access_token), não o Page Access Token.',
+      400,
+    )
+  }
+}
+
+function graphErrorFieldsFromUnknown(err: unknown): StudyCreateAttemptError {
+  if (err instanceof MetaAdsToolError && err.details && typeof err.details === 'object') {
+    const d = err.details as Record<string, unknown>
+    return {
+      message: err.message,
+      type: d.type != null ? String(d.type) : undefined,
+      code: typeof d.code === 'number' ? d.code : (d.code != null ? Number(d.code) : undefined),
+      errorSubcode: d.error_subcode != null
+        ? Number(d.error_subcode)
+        : (d.errorSubcode != null ? Number(d.errorSubcode) : undefined),
+      fbtraceId: d.fbtrace_id != null
+        ? String(d.fbtrace_id)
+        : (d.fbtraceId != null ? String(d.fbtraceId) : undefined),
+    }
+  }
+  return { message: err instanceof Error ? err.message : String(err) }
+}
+
+/** 5xx / timeout / disconnect — study may have been created; do not rollback yet. */
+export function isAmbiguousStudyCreateFailure(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : String(err)
+  if (/timeout|timed out|ETIMEDOUT|ECONNRESET|ECONNABORTED|fetch failed|network|aborted|socket hang up/i.test(message))
+    return true
+  if (!(err instanceof MetaAdsToolError))
+    return false
+  const details = (err.details && typeof err.details === 'object')
+    ? err.details as Record<string, unknown>
+    : {}
+  const graphCode = details.code
+  const graphType = String(details.type || '')
+  if (graphCode === 100 || graphType.includes('GraphMethodException'))
+    return false
+  if (err.statusCode >= 500)
+    return true
+  return false
+}
+
+export function studyMatchesNameAndCellAds(
+  study: Record<string, unknown>,
+  name: string,
+  cellAdIds: string[],
+): boolean {
+  if (String(study.name || '').trim() !== String(name || '').trim())
+    return false
+  if (!cellAdIds.length)
+    return true
+  const ads = new Set(collectCellEntityIds(extractStudyCells(study)).ads.map(String))
+  return cellAdIds.every(id => ads.has(String(id)))
+}
+
+export async function resolveGraphUserForStudies(
+  ctx: ExperimentServiceContext,
+  options?: { rejectPageOwner?: boolean },
+): Promise<{ id: string, name: string | null }> {
+  assertUserAccessTokenForAdStudies(ctx)
+  const me = await ctx.graph(metaAdsStudiesGraphUrl('/me'), {
+    query: {
+      fields: 'id,name',
+      access_token: ctx.accessToken,
+    },
+  })
+  const id = normalizeAdStudyParentId(me?.id)
+  if (!id) {
+    throw new MetaAdsToolError(
+      'EXPERIMENT_USER_REQUIRED',
+      'GET /me não retornou um user_id numérico. Ad Studies usam o User Access Token da integração — nunca page_id.',
+      400,
+    )
+  }
+  const pageId = normalizeAdStudyParentId(ctx.pageId)
+  const rejectPage = options?.rejectPageOwner !== false
+  if (rejectPage && pageId && id === pageId) {
+    throw new MetaAdsToolError(
+      'EXPERIMENT_PAGE_TOKEN_FORBIDDEN',
+      'GET /me resolveu o page_id da integração. Ad Studies exigem User Access Token, não Page Token.',
+      400,
+      { ownerKind: 'page' },
+    )
+  }
+  return { id, name: me?.name != null ? String(me.name) : null }
+}
+
 /**
  * business_id that owns the ad account: integration config, else GET act_{id}?fields=business.
- * Official Ad Account field: `business` — "The Business Manager, if this ad account is owned by one".
  */
 export async function resolveOwningBusinessId(
   ctx: ExperimentServiceContext,
@@ -711,29 +875,144 @@ export async function resolveOwningBusinessId(
 
   throw new MetaAdsToolError(
     'EXPERIMENT_PARENT_REQUIRED',
-    'Não foi possível resolver o business_id da BM que possui a ad account. Grave business_id na integração Meta ou confirme GET act_{id}?fields=business (campo oficial `business`). Creative Tests exigem POST /{business_id}/ad_studies — não /me nem /{user_id}.',
+    'Não foi possível resolver o business_id da BM que possui a ad account. Grave business_id na integração Meta ou confirme GET act_{id}?fields=business.',
     400,
     { adAccountId: actPath(options.adAccountId) },
   )
 }
 
+export function studyOwnerAttemptOrder(strategy: StudyOwnerStrategy): StudyOwnerKind[] {
+  if (strategy === 'USER')
+    return ['USER']
+  if (strategy === 'BUSINESS')
+    return ['BUSINESS']
+  return ['USER', 'BUSINESS']
+}
+
+export async function resolveStudyCreateTargets(
+  ctx: ExperimentServiceContext,
+  options: {
+    strategy: StudyOwnerStrategy
+    adAccountId: string
+    configuredBusinessId?: string | null
+  },
+): Promise<{
+    studiesGraphVersion: string
+    targets: StudyCreateTarget[]
+    graphUser: { id: string, name: string | null } | null
+    business: { businessId: string, source: 'config' | 'ad_account_business' } | null
+    businessError: string | null
+  }> {
+  assertUserAccessTokenForAdStudies(ctx)
+  const studiesGraphVersion = resolveMetaAdsStudiesGraphVersion()
+  const order = studyOwnerAttemptOrder(options.strategy)
+  const targets: StudyCreateTarget[] = []
+  let graphUser: { id: string, name: string | null } | null = null
+  let business: { businessId: string, source: 'config' | 'ad_account_business' } | null = null
+  let businessError: string | null = null
+
+  if (order.includes('USER')) {
+    try {
+      graphUser = await resolveGraphUserForStudies(ctx, { rejectPageOwner: true })
+      const path = adStudiesCreatePath(graphUser.id)
+      targets.push({
+        ownerType: 'USER',
+        ownerId: graphUser.id,
+        path,
+        graphVersion: studiesGraphVersion,
+        endpoint: formatAdStudiesWritePreview(path),
+      })
+    }
+    catch (err) {
+      if (err instanceof MetaAdsToolError && err.code === 'EXPERIMENT_PAGE_TOKEN_FORBIDDEN')
+        throw err
+      if (options.strategy === 'USER')
+        throw err
+    }
+  }
+
+  if (order.includes('BUSINESS')) {
+    try {
+      business = await resolveOwningBusinessId(ctx, {
+        adAccountId: options.adAccountId,
+        configuredBusinessId: options.configuredBusinessId,
+      })
+      const path = adStudiesCreatePath(business.businessId)
+      targets.push({
+        ownerType: 'BUSINESS',
+        ownerId: business.businessId,
+        path,
+        graphVersion: studiesGraphVersion,
+        endpoint: formatAdStudiesWritePreview(path),
+      })
+    }
+    catch (err) {
+      businessError = err instanceof Error ? err.message : String(err)
+      if (options.strategy === 'BUSINESS')
+        throw err
+    }
+  }
+
+  if (!targets.length) {
+    throw new MetaAdsToolError(
+      'EXPERIMENT_PARENT_REQUIRED',
+      businessError || 'Nenhum parent de Ad Study disponível (USER / BUSINESS).',
+      400,
+    )
+  }
+
+  return { studiesGraphVersion, targets, graphUser, business, businessError }
+}
+
 /**
- * Resolve POST parent for Ad Studies — Business Ad Studies only.
+ * Resolve POST parent — used by older callers. Prefer resolveStudyCreateTargets (USER then BUSINESS).
  */
 export async function resolveAdStudyCreatePath(
   ctx: ExperimentServiceContext,
-  options: { adAccountId: string, businessId?: string | null },
-): Promise<{ path: string, parentId: string, parentKind: 'business', source: 'config' | 'ad_account_business' }> {
-  const resolved = await resolveOwningBusinessId(ctx, {
+  options: { adAccountId: string, businessId?: string | null, studyOwner?: StudyOwnerStrategy },
+): Promise<{
+    path: string
+    parentId: string
+    parentKind: StudyOwnerKind
+    source: 'graph_me' | 'config' | 'ad_account_business'
+  }> {
+  const resolved = await resolveStudyCreateTargets(ctx, {
+    strategy: options.studyOwner || 'AUTO',
     adAccountId: options.adAccountId,
     configuredBusinessId: options.businessId,
   })
+  const first = resolved.targets[0]!
   return {
-    path: adStudiesCreatePath(resolved.businessId),
-    parentId: resolved.businessId,
-    parentKind: 'business',
-    source: resolved.source,
+    path: first.path,
+    parentId: first.ownerId,
+    parentKind: first.ownerType,
+    source: first.ownerType === 'USER'
+      ? 'graph_me'
+      : (resolved.business?.source || 'config'),
   }
+}
+
+export async function recoverCreatedStudy(
+  ctx: ExperimentServiceContext,
+  params: {
+    adAccountId: string
+    businessId?: string | null
+    userId?: string | null
+    name: string
+    cellAdIds: string[]
+  },
+): Promise<Record<string, unknown> | null> {
+  const listed = await listExperiments(ctx, params.adAccountId, {
+    limit: 100,
+    businessId: params.businessId,
+    userId: params.userId,
+  })
+  const matches = listed.studies.filter(study =>
+    studyMatchesNameAndCellAds(study, params.name, params.cellAdIds),
+  )
+  if (matches.length === 1)
+    return matches[0]!
+  return null
 }
 
 export async function createExperiment(
@@ -763,6 +1042,103 @@ export async function createExperiment(
   catch (err) {
     enrichMetaGraphWriteError(err, body)
   }
+}
+
+export async function postAdStudyWithOwnerFallback(
+  ctx: ExperimentServiceContext,
+  input: CreateExperimentInput,
+  targets: StudyCreateTarget[],
+  recover: { adAccountId: string, businessId?: string | null, userId?: string | null },
+): Promise<{
+    studyId: string
+    studyOwner: StudyOwnerKind
+    studyOwnerId: string
+    attempts: StudyCreateAttempt[]
+    recovered: boolean
+    body: Record<string, unknown>
+  }> {
+  const body = buildCreateExperimentGraphBody(input)
+  const attempts: StudyCreateAttempt[] = []
+  const cellAdIds = input.cells.map(c => c.adId).filter((id): id is string => Boolean(id))
+  let lastError: unknown
+
+  for (const target of targets) {
+    try {
+      const created = await createExperiment(ctx, input, { dryRun: false, createPath: target.path })
+      if (!created.studyId) {
+        throw new MetaAdsToolError(
+          'EXPERIMENT_CREATE_FAILED',
+          'Meta não retornou id ao criar o Ad Study.',
+          502,
+        )
+      }
+      attempts.push({
+        ownerType: target.ownerType,
+        ownerId: target.ownerId,
+        graphVersion: target.graphVersion,
+        endpoint: target.endpoint,
+        success: true,
+      })
+      return {
+        studyId: created.studyId,
+        studyOwner: target.ownerType,
+        studyOwnerId: target.ownerId,
+        attempts,
+        recovered: false,
+        body,
+      }
+    }
+    catch (err) {
+      lastError = err
+      if (isAmbiguousStudyCreateFailure(err)) {
+        const found = await recoverCreatedStudy(ctx, {
+          adAccountId: recover.adAccountId,
+          businessId: recover.businessId,
+          userId: recover.userId,
+          name: input.name,
+          cellAdIds,
+        })
+        if (found?.id) {
+          attempts.push({
+            ownerType: target.ownerType,
+            ownerId: target.ownerId,
+            graphVersion: target.graphVersion,
+            endpoint: target.endpoint,
+            success: true,
+          })
+          return {
+            studyId: String(found.id),
+            studyOwner: target.ownerType,
+            studyOwnerId: target.ownerId,
+            attempts,
+            recovered: true,
+            body,
+          }
+        }
+      }
+      attempts.push({
+        ownerType: target.ownerType,
+        ownerId: target.ownerId,
+        graphVersion: target.graphVersion,
+        endpoint: target.endpoint,
+        success: false,
+        error: graphErrorFieldsFromUnknown(err),
+      })
+    }
+  }
+
+  const lastMessage = lastError instanceof Error ? lastError.message : 'Falha ao criar Ad Study.'
+  const lastCode = lastError instanceof MetaAdsToolError ? lastError.code : 'EXPERIMENT_CREATE_FAILED'
+  const lastStatus = lastError instanceof MetaAdsToolError ? lastError.statusCode : 400
+  const lastDetails = lastError instanceof MetaAdsToolError && lastError.details && typeof lastError.details === 'object'
+    ? lastError.details as Record<string, unknown>
+    : {}
+  throw new MetaAdsToolError(
+    lastCode,
+    lastMessage,
+    lastStatus,
+    { ...lastDetails, attempts },
+  )
 }
 
 /**
@@ -862,14 +1238,14 @@ export async function getExperiment(
   ctx: ExperimentServiceContext,
   studyId: string,
 ): Promise<{
-  study: Record<string, unknown>
-  cells: Record<string, unknown>[]
-  ads: string[]
-  adsets: string[]
-  campaigns: string[]
-  objectives: unknown
-  winner: ReturnType<typeof buildWinnerSummary>
-}> {
+    study: Record<string, unknown>
+    cells: Record<string, unknown>[]
+    ads: string[]
+    adsets: string[]
+    campaigns: string[]
+    objectives: unknown
+    winner: ReturnType<typeof buildWinnerSummary>
+  }> {
   const id = String(studyId || '').trim()
   if (!id) {
     throw new MetaAdsToolError('EXPERIMENT_ID_REQUIRED', 'studyId é obrigatório.', 400)

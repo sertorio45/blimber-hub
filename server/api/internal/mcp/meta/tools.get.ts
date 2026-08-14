@@ -251,6 +251,8 @@ const TOOL_INPUT_HINTS: Record<MetaToolName, string[]> = {
     'cells[] (2–5 V2 / 2–150 clássico) XOR baseAdId+variations (1–4 efetivas)',
     'startTime',
     'endTime',
+    'creativeTestDailyBudget?|creativeTestLifetimeBudgetPercentage?',
+    'studyOwner? (AUTO|USER|BUSINESS, default AUTO)',
     'confirmTenantId',
     'confirm (=true)',
     'dryRun? (default true)',

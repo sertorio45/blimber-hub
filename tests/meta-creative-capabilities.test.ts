@@ -25,7 +25,10 @@ describe('meta capabilities + media SSRF + experiments builders', () => {
     expect(caps.tracking.websitePixel.supported).toBe(true)
     expect(caps.tracking.offlineDataset.supported).toBe(true)
     expect(caps.tracking.crmLeadgenQuality.supported).toBe(true)
-    expect(caps.experiments.levels.length).toBeGreaterThan(0)
+    expect(caps.experiments.splitTestV2Creative.supported).toBe(true)
+    expect(caps.experiments.splitTestV2Creative.defaultOwnerStrategy).toBe('AUTO')
+    expect(caps.experiments.splitTestV2Creative.ownerStrategies).toEqual(['AUTO', 'USER', 'BUSINESS'])
+    expect(caps.experiments.splitTestV2Creative.studiesGraphVersion).toBe('v26.0')
     expect(caps.creativeTypes.FLEXIBLE_AD_FORMAT.reason).toMatch(/META_ADS_GRAPH_VERSION|META_GRAPH_VERSION|não implementado/i)
   })
 

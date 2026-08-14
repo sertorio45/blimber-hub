@@ -61,19 +61,20 @@ import {
   assertEligibleOrThrow,
   assertStudyOnAdAccount,
   assertCreativeTestVersionCount,
+  assertUserAccessTokenForAdStudies,
   buildCopyAdGraphBody,
   buildCreateExperimentGraphBody,
   checkExperimentEligibility,
   copyAdForExperiment,
-  createExperiment,
   deleteCopiedAdsForFailedStudy,
   evenTreatmentPercentages,
-  formatAdStudiesWritePreview,
   getExperiment,
   listExperiments,
-  resolveAdStudyCreatePath,
+  postAdStudyWithOwnerFallback,
+  resolveStudyCreateTargets,
   stopExperiment,
   type ExperimentVariationInput,
+  type StudyOwnerStrategy,
 } from './experiment-service'
 import {
   getVideoStatus,
@@ -1167,6 +1168,8 @@ export const metaCreateExperimentSchema = tenantContextSchema
     endTime: z.number().int().positive().describe('Unix timestamp (seconds).'),
     creativeTestDailyBudget: z.number().int().positive().optional(),
     creativeTestLifetimeBudgetPercentage: z.number().int().min(1).max(100).optional(),
+    studyOwner: z.enum(['AUTO', 'USER', 'BUSINESS']).optional().default('AUTO')
+      .describe('AUTO: POST USER v26 primeiro, BUSINESS se USER falhar (mesmas cópias).'),
     ...metaWriteConfirmationFields,
     ...metaWriteDryRunField,
   })
@@ -3989,6 +3992,7 @@ export async function metaListExperiments(ctx: MetaToolContext, raw: unknown) {
     tenantId: input.tenantId,
     adAccountId: creds.adAccountId,
     businessId: listed.businessId,
+    userId: listed.userId,
     studies: listed.studies,
     paging: listed.paging,
     sources: listed.sources,
@@ -4071,18 +4075,22 @@ export async function metaCreateExperiment(ctx: MetaToolContext, raw: unknown) {
   assertWriteConfirmation(input)
   const dryRun = resolveDryRun(input.dryRun, true)
   const creds = await withCreds(ctx, input.tenantId, input.adAccountId)
+  const tokenCtx = await resolveMetaAccessToken(ctx.client, input.tenantId)
   const graph = fetchGraph(ctx)
-  const svc = { apiVersion: creds.apiVersion, accessToken: creds.accessToken, graph }
+  const studyOwner = (input.studyOwner || 'AUTO') as StudyOwnerStrategy
+  if (input.baseAdId)
+    assertCreativeTestVersionCount(1 + (input.variations || []).length)
+  const svc = {
+    apiVersion: creds.apiVersion,
+    accessToken: creds.accessToken,
+    graph,
+    pageId: creds.publicConfig.page_id ?? null,
+    pageAccessToken: decryptSecret(tokenCtx.config.page_access_token_enc) || null,
+  }
 
   let cells = input.cells
-  let copiedAds: { variationName: string | null, adId: string, copyBody: Record<string, unknown> }[] = []
-  let baseAdId: string | null = input.baseAdId ?? null
-  let studyParent: Awaited<ReturnType<typeof resolveAdStudyCreatePath>> | undefined
-
-  const resolveStudyParent = () => resolveAdStudyCreatePath(svc, {
-    adAccountId: creds.adAccountId,
-    businessId: creds.publicConfig.business_id,
-  })
+  const copiedAds: { variationName: string | null, adId: string, copyBody: Record<string, unknown> }[] = []
+  const baseAdId: string | null = input.baseAdId ?? null
 
   const rollbackCopiedAds = async () => {
     const copiedIds = copiedAds.map(row => row.adId)
@@ -4091,8 +4099,18 @@ export async function metaCreateExperiment(ctx: MetaToolContext, raw: unknown) {
     return deleteCopiedAdsForFailedStudy(svc, copiedIds, { protectAdIds: [baseAdId] })
   }
 
+  const formatRollback = (rollback: Awaited<ReturnType<typeof rollbackCopiedAds>>) => {
+    if (!rollback)
+      return undefined
+    return {
+      deleted: rollback.deleted,
+      failed: rollback.failed.map(row => row.adId),
+    }
+  }
+
   const rethrowAfterCopyRollback = async (err: unknown): Promise<never> => {
     const rollback = await rollbackCopiedAds()
+    const rolled = formatRollback(rollback)
     if (err instanceof MetaAdsToolError) {
       throw new MetaAdsToolError(
         err.code,
@@ -4102,7 +4120,7 @@ export async function metaCreateExperiment(ctx: MetaToolContext, raw: unknown) {
         err.statusCode,
         {
           ...(err.details && typeof err.details === 'object' ? err.details : {}),
-          copiedAdsRolledBack: rollback,
+          copiedAdsRolledBack: rolled,
           baseAdIdPreserved: baseAdId,
         },
       )
@@ -4110,9 +4128,41 @@ export async function metaCreateExperiment(ctx: MetaToolContext, raw: unknown) {
     throw err
   }
 
+  assertUserAccessTokenForAdStudies(svc)
+
+  const owners = await resolveStudyCreateTargets(svc, {
+    strategy: studyOwner,
+    adAccountId: creds.adAccountId,
+    configuredBusinessId: creds.publicConfig.business_id,
+  })
+
+  const experimentInputFromCells = (resolvedCells: NonNullable<typeof cells>) => ({
+    name: input.name,
+    description: input.description,
+    type: input.type,
+    cells: resolvedCells,
+    startTime: input.startTime,
+    endTime: input.endTime,
+    creativeTestDailyBudget: input.creativeTestDailyBudget,
+    creativeTestLifetimeBudgetPercentage: input.creativeTestLifetimeBudgetPercentage,
+  })
+
+  const dryRunNotes = (cellCount: number) => [
+    `Creative Test ${input.type}: ${input.name}`,
+    `studyOwner=${studyOwner} (ordem: ${owners.targets.map(t => t.ownerType).join(' → ')}).`,
+    `Graph Ad Studies: ${owners.studiesGraphVersion} (META_ADS_STUDIES_GRAPH_VERSION; Ads permanece ${creds.apiVersion}).`,
+    ...owners.targets.map(t => `Tentativa ${t.ownerType}: ${t.endpoint}`),
+    owners.businessError && studyOwner === 'AUTO'
+      ? `BUSINESS indisponível agora: ${owners.businessError}`
+      : null,
+    `cells: ${cellCount}`,
+    'Cópias via POST /{adId}/copies uma única vez (status PAUSED). Fallback BUSINESS reutiliza as mesmas cópias.',
+    'Rollback das cópias só depois de TODAS as tentativas falharem. Anúncio-base nunca é apagado.',
+    'dryRun=true: nenhuma cópia, nenhum study, nenhum delete.',
+  ].filter((row): row is string => Boolean(row))
+
   if (input.baseAdId) {
     const variations = (input.variations || []) as ExperimentVariationInput[]
-    assertCreativeTestVersionCount(1 + variations.length)
     const { ad } = await fetchOwnedAdWithCreative(ctx, {
       tenantId: input.tenantId,
       adAccountId: input.adAccountId,
@@ -4142,8 +4192,6 @@ export async function metaCreateExperiment(ctx: MetaToolContext, raw: unknown) {
     }))
 
     if (dryRun) {
-      const parent = await resolveStudyParent()
-      studyParent = parent
       const plannedCells = [
         { name: 'Base', treatmentPercentage: percents[0]!, adId: input.baseAdId },
         ...plannedCopies.map((row, i) => ({
@@ -4152,55 +4200,49 @@ export async function metaCreateExperiment(ctx: MetaToolContext, raw: unknown) {
           adId: `(copy de ${input.baseAdId})`,
         })),
       ]
-      const bodyPreview = buildCreateExperimentGraphBody({
-        name: input.name,
-        description: input.description,
-        type: 'SPLIT_TEST_V2',
-        cells: plannedCells.map(cell => ({
-          ...cell,
-          adId: typeof cell.adId === 'string' && cell.adId.startsWith('(copy')
-            ? 'COPIED_AD_ID'
-            : cell.adId,
-        })),
-        startTime: input.startTime,
-        endTime: input.endTime,
-        creativeTestDailyBudget: input.creativeTestDailyBudget,
-        creativeTestLifetimeBudgetPercentage: input.creativeTestLifetimeBudgetPercentage,
-      })
+      const bodyPreview = buildCreateExperimentGraphBody(experimentInputFromCells(plannedCells.map(cell => ({
+        ...cell,
+        adId: typeof cell.adId === 'string' && cell.adId.startsWith('(copy')
+          ? 'COPIED_AD_ID'
+          : cell.adId,
+      }))))
       return {
         tenantId: input.tenantId,
         adAccountId: creds.adAccountId,
+        success: true as const,
         studyId: null,
+        studyOwner: undefined,
+        studyOwnerId: undefined,
+        studiesGraphVersion: owners.studiesGraphVersion,
         type: 'SPLIT_TEST_V2' as const,
         name: input.name,
         baseAdId: input.baseAdId,
         plannedCopies,
         cells: plannedCells,
-        success: true as const,
+        attempts: owners.targets.map(t => ({
+          ownerType: t.ownerType,
+          ownerId: t.ownerId,
+          graphVersion: t.graphVersion,
+          endpoint: t.endpoint,
+          success: false,
+        })),
+        copiedAdsRolledBack: undefined,
+        baseAdIdPreserved: input.baseAdId,
         dryRun: true as const,
         preview: {
           dryRun: true as const,
           wouldMutate: true as const,
           method: 'POST',
-          path: formatAdStudiesWritePreview(parent.path),
+          path: owners.targets[0]?.endpoint,
+          plannedEndpoints: owners.targets.map(t => t.endpoint),
+          ownerOrder: owners.targets.map(t => t.ownerType),
+          studiesGraphVersion: owners.studiesGraphVersion,
           body: bodyPreview,
-          notes: [
-            `Creative Test: ${input.name}`,
-            `baseAdId ${input.baseAdId} + ${variations.length} variação(ões) = ${1 + variations.length} células (limite Meta 2–5).`,
-            'Duplicará ads via POST /{adId}/copies (status PAUSED).',
-            `Ad Study: ${formatAdStudiesWritePreview(parent.path)} (Business Ad Studies; type=SPLIT_TEST_V2).`,
-            parent.source === 'config'
-              ? `business_id da integração Meta: ${parent.parentId}.`
-              : `business_id via GET act_{id}?fields=business: ${parent.parentId}.`,
-            'Se o POST do study falhar, as cópias PAUSED serão removidas; o anúncio base não.',
-            'dryRun=true: nenhuma mutação.',
-          ],
+          notes: dryRunNotes(plannedCells.length),
         },
         warning: 'Dry-run: ads não duplicados e experiment não criado.',
       }
     }
-
-    studyParent = await resolveStudyParent()
 
     try {
       for (const [index, variation] of variations.entries()) {
@@ -4253,81 +4295,75 @@ export async function metaCreateExperiment(ctx: MetaToolContext, raw: unknown) {
     assertEligibleOrThrow(eligibility)
   }
 
-  const parent = studyParent ?? await resolveStudyParent()
-
-  const bodyPreview = buildCreateExperimentGraphBody({
-    name: input.name,
-    description: input.description,
-    type: input.type,
-    cells,
-    startTime: input.startTime,
-    endTime: input.endTime,
-    creativeTestDailyBudget: input.creativeTestDailyBudget,
-    creativeTestLifetimeBudgetPercentage: input.creativeTestLifetimeBudgetPercentage,
-  })
-  const run = await withDryRun(
-    dryRun,
-    {
-      method: 'POST',
-      path: formatAdStudiesWritePreview(parent.path),
-      body: bodyPreview,
-      notes: [
-        `Experiment ${input.type}: ${input.name}`,
-        `cells: ${cells.length}`,
-        `${formatAdStudiesWritePreview(parent.path)} (Business Ad Studies).`,
-        `type=${input.type}`,
-        dryRun ? 'dryRun=true: nenhuma mutação.' : 'Criará Ad Study oficial Meta.',
-      ],
-    },
-    async () => {
-      try {
-        const created = await createExperiment(
-          svc,
-          {
-            name: input.name,
-            description: input.description,
-            type: input.type,
-            cells,
-            startTime: input.startTime,
-            endTime: input.endTime,
-            creativeTestDailyBudget: input.creativeTestDailyBudget,
-            creativeTestLifetimeBudgetPercentage: input.creativeTestLifetimeBudgetPercentage,
-          },
-          { dryRun: false, createPath: parent.path },
-        )
-        return {
-          tenantId: input.tenantId,
-          adAccountId: creds.adAccountId,
-          studyId: created.studyId,
-          type: input.type,
-          name: input.name,
-          baseAdId,
-          copiedAds,
-          cells,
-          success: true as const,
-          dryRun: false as const,
-        }
-      }
-      catch (err) {
-        await rethrowAfterCopyRollback(err)
-      }
-    },
-  )
-  if (run.dryRun) {
+  const bodyPreview = buildCreateExperimentGraphBody(experimentInputFromCells(cells))
+  if (dryRun) {
     return {
       tenantId: input.tenantId,
       adAccountId: creds.adAccountId,
+      success: true as const,
       studyId: null,
+      studiesGraphVersion: owners.studiesGraphVersion,
       type: input.type,
       name: input.name,
       cells,
-      success: true as const,
+      attempts: owners.targets.map(t => ({
+        ownerType: t.ownerType,
+        ownerId: t.ownerId,
+        graphVersion: t.graphVersion,
+        endpoint: t.endpoint,
+        success: false,
+      })),
+      baseAdIdPreserved: baseAdId,
       dryRun: true as const,
-      preview: run.preview,
+      preview: {
+        dryRun: true as const,
+        wouldMutate: true as const,
+        method: 'POST',
+        path: owners.targets[0]?.endpoint,
+        plannedEndpoints: owners.targets.map(t => t.endpoint),
+        ownerOrder: owners.targets.map(t => t.ownerType),
+        studiesGraphVersion: owners.studiesGraphVersion,
+        body: bodyPreview,
+        notes: dryRunNotes(cells.length),
+      },
       warning: 'Dry-run: experiment não criado.',
     }
   }
-  return run.result!
+
+  try {
+    const created = await postAdStudyWithOwnerFallback(
+      svc,
+      experimentInputFromCells(cells),
+      owners.targets,
+      {
+        adAccountId: creds.adAccountId,
+        businessId: owners.business?.businessId || creds.publicConfig.business_id,
+        userId: owners.graphUser?.id || null,
+      },
+    )
+    return {
+      tenantId: input.tenantId,
+      adAccountId: creds.adAccountId,
+      success: true as const,
+      studyId: created.studyId,
+      studyOwner: created.studyOwner,
+      studyOwnerId: created.studyOwnerId,
+      studiesGraphVersion: owners.studiesGraphVersion,
+      type: input.type,
+      name: input.name,
+      baseAdId,
+      copiedAds,
+      cells,
+      attempts: created.attempts,
+      copiedAdsRolledBack: undefined,
+      baseAdIdPreserved: baseAdId,
+      recovered: created.recovered,
+      dryRun: false as const,
+    }
+  }
+  catch (err) {
+    await rethrowAfterCopyRollback(err)
+  }
 }
 
 async function assertExperimentOwnedByTenant(
@@ -4917,11 +4953,11 @@ export const META_TOOL_DESCRIPTIONS: Record<MetaToolName, string> = {
   meta_update_ad_tracking:
     'Atualiza tracking_specs do Ad (website Pixel / offline Dataset / crm). Merge default; replaceTrackingSpecs=true substitui. dryRun true. confirm+confirmTenantId.',
   meta_list_experiments:
-    'Lista Ad Studies: GET v26 /{business_id}/ad_studies (META_ADS_STUDIES_GRAPH_VERSION) + GET act_{id}/impacting_ad_studies na versão Ads. Dedupe; isolamento por ad account. Sem studyId.',
+    'Lista Ad Studies: GET v26 /{user_id}/ad_studies + /{business_id}/ad_studies (META_ADS_STUDIES_GRAPH_VERSION) + GET act_{id}/impacting_ad_studies na versão Ads. Dedupe por studyId; isolamento por tenant/ad account.',
   meta_check_experiment_eligibility:
     'Checa conflitos com testes ativos/agendados (ad/adset/campaign vs studies).',
   meta_create_experiment:
-    'Cria Ad Study. POST v26 /{business_id}/ad_studies (SPLIT_TEST_V2; META_ADS_STUDIES_GRAPH_VERSION). cells[] OU baseAdId+variations (/copies na versão Ads). Falha após cópias remove só as cópias. dryRun default true.',
+    'Cria Ad Study SPLIT_TEST_V2. studyOwner AUTO (default): GET /me + POST v26 /{user_id}/ad_studies, fallback POST /{business_id}/ad_studies com as mesmas cópias. cells[] OU baseAdId+variations. Rollback só se todas as tentativas falharem. dryRun default true.',
   meta_get_experiment:
     'Lê study + cells + ads + winner (results_first_available_date; Graph não documenta winner_cell_id).',
   meta_stop_experiment:

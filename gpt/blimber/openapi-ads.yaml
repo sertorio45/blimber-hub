@@ -872,6 +872,7 @@ paths:
       description: >
         Invoca tool pelo nome. Overflow (capabilities, upload, catalogs, pixels,
         datasets, tracking, experiments) usa este endpoint. Limite ChatGPT: ≤30 ops.
+        Experiments: studyOwner AUTO|USER|BUSINESS (default AUTO = USER v26 → BUSINESS v26).
       x-openai-isConsequential: true
       requestBody:
         required: true
