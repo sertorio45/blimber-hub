@@ -24,7 +24,7 @@ describe('flattenModuleNavItems', () => {
         keepGroup: true,
         children: [
           { title: 'Anúncios', link: '/marketing/reports/ads' },
-          { title: 'Analytics', link: '/marketing/reports/analytics' },
+          { title: 'Google Analytics', link: '/marketing/reports/analytics' },
           { title: 'Redes sociais', link: '/marketing/reports/social' },
         ],
       },
@@ -64,7 +64,7 @@ describe('flattenModuleNavItems', () => {
     ])
     expect(items.find(item => item.title === 'Relatórios')?.children?.map(child => child.title)).toEqual([
       'Anúncios',
-      'Analytics',
+      'Google Analytics',
       'Redes sociais',
     ])
     expect(items.filter(item => item.title === 'Campanhas').length).toBe(0)
@@ -98,7 +98,7 @@ describe('resolveNavGroupOpen', () => {
     defaultExpanded: false,
     children: [
       { title: 'Anúncios', link: '/marketing/reports/ads' },
-      { title: 'Analytics', link: '/marketing/reports/analytics' },
+      { title: 'Google Analytics', link: '/marketing/reports/analytics' },
       { title: 'Redes sociais', link: '/marketing/reports/social' },
     ],
   }

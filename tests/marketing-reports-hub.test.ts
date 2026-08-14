@@ -23,7 +23,7 @@ describe('marketing reports hub', () => {
   it('resolves tabs and falls back to ads on the hub index', () => {
     expect(resolveMarketingReportTab('/marketing/reports').id).toBe('ads')
     expect(resolveMarketingReportTab('/marketing/reports/social').id).toBe('social')
-    expect(resolveMarketingReportTab('/marketing/reports/analytics').title).toBe('Analytics')
+    expect(resolveMarketingReportTab('/marketing/reports/analytics').title).toBe('Google Analytics')
   })
 })
 

@@ -134,7 +134,7 @@ export const navMenu: NavMenu[] = [
                 capability: 'marketing.social.reports',
               },
               {
-                title: 'Analytics',
+                title: 'Google Analytics',
                 icon: 'i-lucide-line-chart',
                 link: '/marketing/reports/analytics',
                 capability: 'marketing.social.reports',

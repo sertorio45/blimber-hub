@@ -3,7 +3,7 @@ import MarketingReportsPanel from '@/components/marketing/MarketingReportsPanel.
 
 definePageMeta({
   middleware: ['auth'],
-  title: 'Relatórios · Analytics',
+  title: 'Relatórios · Google Analytics',
 })
 </script>
 
@@ -13,7 +13,7 @@ definePageMeta({
     hide-period
     sync-range-query
     locked-source="google_analytics"
-    title="Analytics"
+    title="Google Analytics"
     description="Métricas de comportamento e conversão no Google Analytics."
   />
 </template>

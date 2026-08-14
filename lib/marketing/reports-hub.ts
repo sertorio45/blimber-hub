@@ -38,7 +38,7 @@ export const MARKETING_REPORT_TABS: MarketingReportTab[] = [
   },
   {
     id: 'analytics',
-    title: 'Analytics',
+    title: 'Google Analytics',
     path: MARKETING_REPORTS_ANALYTICS_PATH,
     description: 'Comportamento e conversão no Google Analytics.',
   },

@@ -153,11 +153,11 @@ describe('guarda de rotas por tipo de organização', () => {
     expect(reportsGroup?.link).toBe('/marketing/reports')
     expect(reportsGroup?.children?.map(child => child.title)).toEqual([
       'Anúncios',
-      'Analytics',
+      'Google Analytics',
       'Redes sociais',
     ])
     expect(reportsAds.title).toBe('Anúncios')
-    expect(reportsAnalytics.title).toBe('Analytics')
+    expect(reportsAnalytics.title).toBe('Google Analytics')
     expect(reportsSocial.title).toBe('Redes sociais')
     expect(settings?.keepGroup).toBe(true)
     expect(settings?.defaultExpanded).toBe(false)
