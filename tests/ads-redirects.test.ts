@@ -1,0 +1,22 @@
+import { describe, expect, it } from 'vitest'
+
+import { ADS_LEGACY_REDIRECTS } from '~/constants/ads-domain'
+
+describe('ads legacy redirects', () => {
+  it('sends the Ads product bookmarks into Marketing without loops', () => {
+    expect(ADS_LEGACY_REDIRECTS['/ads']).toBe('/marketing/ads')
+    expect(ADS_LEGACY_REDIRECTS['/ads/campaigns']).toBe('/marketing/ads/campaigns')
+    expect(ADS_LEGACY_REDIRECTS['/ads/creatives']).toBe('/marketing/ads/creatives')
+    expect(ADS_LEGACY_REDIRECTS['/ads/reports']).toBe('/marketing/ads/reports')
+    expect(ADS_LEGACY_REDIRECTS['/ads/meta']).toBe('/marketing/ads/meta')
+    expect(ADS_LEGACY_REDIRECTS['/ads/google']).toBe('/marketing/ads/google')
+    expect(ADS_LEGACY_REDIRECTS['/ads/analytics']).toBe('/marketing/ads/analytics')
+    expect(ADS_LEGACY_REDIRECTS['/ads/integrations']).toBe('/settings/integrations')
+    expect(ADS_LEGACY_REDIRECTS['/ads/settings']).toBe('/marketing/settings')
+
+    for (const [from, to] of Object.entries(ADS_LEGACY_REDIRECTS)) {
+      expect(to).not.toBe(from)
+      expect(to.startsWith('/ads')).toBe(false)
+    }
+  })
+})

@@ -1,15 +1,16 @@
 <script setup lang="ts">
-/**
- * Paid campaign list for Ads product — same implementation as `/marketing/ads/campaigns`.
- */
-import AdsCampaignsView from '@/components/ads/AdsCampaignsView.vue'
+import { ADS_LEGACY_REDIRECTS } from '~/constants/ads-domain'
 
 definePageMeta({
   middleware: ['auth'],
   title: 'Campanhas de Ads',
 })
+
+await navigateTo(ADS_LEGACY_REDIRECTS['/ads/campaigns'], { redirectCode: 301 })
 </script>
 
 <template>
-  <AdsCampaignsView />
+  <div class="text-sm text-muted-foreground">
+    Redirecionando para campanhas pagas…
+  </div>
 </template>

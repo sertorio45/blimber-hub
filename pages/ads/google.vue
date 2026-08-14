@@ -1,19 +1,16 @@
 <script setup lang="ts">
-/**
- * Paid Google Ads board. Not editorial (`social_campaigns` → Marketing).
- */
-import MarketingReportsPanel from '@/components/marketing/MarketingReportsPanel.vue'
+import { ADS_LEGACY_REDIRECTS } from '~/constants/ads-domain'
 
 definePageMeta({
   middleware: ['auth'],
   title: 'Google Ads',
 })
+
+await navigateTo(ADS_LEGACY_REDIRECTS['/ads/google'], { redirectCode: 301 })
 </script>
 
 <template>
-  <MarketingReportsPanel
-    locked-source="google_ads"
-    title="Google Ads"
-    description="Campanhas pagas no Google Ads — KPIs, tendências e detalhamento."
-  />
+  <div class="text-sm text-muted-foreground">
+    Redirecionando para Google Ads…
+  </div>
 </template>

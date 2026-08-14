@@ -1,19 +1,16 @@
 <script setup lang="ts">
-/**
- * Analytics board under Ads product (paid / performance), not Marketing editorial.
- */
-import MarketingReportsPanel from '@/components/marketing/MarketingReportsPanel.vue'
+import { ADS_LEGACY_REDIRECTS } from '~/constants/ads-domain'
 
 definePageMeta({
   middleware: ['auth'],
   title: 'Google Analytics',
 })
+
+await navigateTo(ADS_LEGACY_REDIRECTS['/ads/analytics'], { redirectCode: 301 })
 </script>
 
 <template>
-  <MarketingReportsPanel
-    locked-source="google_analytics"
-    title="Analytics"
-    description="Métricas de comportamento e conversão no Google Analytics."
-  />
+  <div class="text-sm text-muted-foreground">
+    Redirecionando para Analytics…
+  </div>
 </template>

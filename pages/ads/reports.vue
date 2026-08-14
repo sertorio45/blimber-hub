@@ -1,15 +1,16 @@
 <script setup lang="ts">
-/**
- * Paid reports for Ads product — same implementation as `/marketing/ads/reports`.
- */
-import AdsReportsView from '@/components/ads/AdsReportsView.vue'
+import { ADS_LEGACY_REDIRECTS } from '~/constants/ads-domain'
 
 definePageMeta({
   middleware: ['auth'],
   title: 'Relatórios de Ads',
 })
+
+await navigateTo(ADS_LEGACY_REDIRECTS['/ads/reports'], { redirectCode: 301 })
 </script>
 
 <template>
-  <AdsReportsView />
+  <div class="text-sm text-muted-foreground">
+    Redirecionando para relatórios pagos…
+  </div>
 </template>

@@ -1,15 +1,16 @@
 <script setup lang="ts">
-/**
- * Ads product home — same implementation as `/marketing/ads` (ETAPA 2).
- */
-import AdsOverviewView from '@/components/ads/AdsOverviewView.vue'
+import { ADS_LEGACY_REDIRECTS } from '~/constants/ads-domain'
 
 definePageMeta({
   middleware: ['auth'],
   title: 'Ads',
 })
+
+await navigateTo(ADS_LEGACY_REDIRECTS['/ads'], { redirectCode: 301 })
 </script>
 
 <template>
-  <AdsOverviewView />
+  <div class="text-sm text-muted-foreground">
+    Redirecionando para Marketing → Ads…
+  </div>
 </template>

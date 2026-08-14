@@ -40,3 +40,19 @@ export const MARKETING_SETTINGS_ROUTE = '/marketing/settings' as const
 export const MARKETING_AD_ACCOUNTS_ROUTE = '/marketing/settings/ad-accounts' as const
 export const MARKETING_SETTINGS_INTEGRATIONS_ROUTE = '/marketing/settings/integrations' as const
 export const SETTINGS_INTEGRATIONS_ROUTE = '/settings/integrations' as const
+
+/**
+ * Bookmarks on the old Ads product shell (ETAPA 7).
+ * Do not map `/ads/**` as a glob — integrations/settings have distinct targets.
+ */
+export const ADS_LEGACY_REDIRECTS = {
+  '/ads': '/marketing/ads',
+  '/ads/campaigns': '/marketing/ads/campaigns',
+  '/ads/creatives': '/marketing/ads/creatives',
+  '/ads/reports': '/marketing/ads/reports',
+  '/ads/meta': '/marketing/ads/meta',
+  '/ads/google': '/marketing/ads/google',
+  '/ads/analytics': '/marketing/ads/analytics',
+  '/ads/integrations': SETTINGS_INTEGRATIONS_ROUTE,
+  '/ads/settings': MARKETING_SETTINGS_ROUTE,
+} as const

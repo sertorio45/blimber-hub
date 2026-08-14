@@ -1,15 +1,16 @@
 <script setup lang="ts">
-/**
- * Ads creatives — same implementation as `/marketing/ads/creatives`.
- */
-import AdsCreativesView from '@/components/ads/AdsCreativesView.vue'
+import { ADS_LEGACY_REDIRECTS } from '~/constants/ads-domain'
 
 definePageMeta({
   middleware: ['auth'],
   title: 'Criativos de Ads',
 })
+
+await navigateTo(ADS_LEGACY_REDIRECTS['/ads/creatives'], { redirectCode: 301 })
 </script>
 
 <template>
-  <AdsCreativesView />
+  <div class="text-sm text-muted-foreground">
+    Redirecionando para criativos…
+  </div>
 </template>

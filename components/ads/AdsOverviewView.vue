@@ -58,26 +58,26 @@ const totalPaidSpend = computed(() => {
 const metaCampaignCount = computed(() => (data.value?.meta?.campaigns ?? []).length)
 const googleCampaignCount = computed(() => (data.value?.google?.campaigns ?? []).length)
 
-const channels = [
+const channels = computed(() => [
   {
     title: 'Meta Ads',
     description: 'Facebook e Instagram Ads',
-    to: '/ads/meta',
+    to: `${adsBasePath.value}/meta`,
     brand: 'meta' as const,
   },
   {
     title: 'Google Ads',
     description: 'Campanhas de busca e display',
-    to: '/ads/google',
+    to: `${adsBasePath.value}/google`,
     brand: 'google_ads' as const,
   },
   {
     title: 'Analytics',
     description: 'Tráfego e conversões',
-    to: '/ads/analytics',
+    to: `${adsBasePath.value}/analytics`,
     brand: 'analytics' as const,
   },
-]
+])
 </script>
 
 <template>

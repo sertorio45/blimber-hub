@@ -1,19 +1,16 @@
 <script setup lang="ts">
-/**
- * Paid Meta Ads board. Not editorial (`social_campaigns` → Marketing).
- */
-import MarketingReportsPanel from '@/components/marketing/MarketingReportsPanel.vue'
+import { ADS_LEGACY_REDIRECTS } from '~/constants/ads-domain'
 
 definePageMeta({
   middleware: ['auth'],
   title: 'Meta Ads',
 })
+
+await navigateTo(ADS_LEGACY_REDIRECTS['/ads/meta'], { redirectCode: 301 })
 </script>
 
 <template>
-  <MarketingReportsPanel
-    locked-source="meta"
-    title="Meta Ads"
-    description="Campanhas pagas no Meta (Facebook / Instagram) — KPIs, tendências e detalhamento."
-  />
+  <div class="text-sm text-muted-foreground">
+    Redirecionando para Meta Ads…
+  </div>
 </template>
