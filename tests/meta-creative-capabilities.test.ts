@@ -15,6 +15,7 @@ describe('meta capabilities + media SSRF + experiments builders', () => {
     expect(caps.creativeTypes.FLEXIBLE_MEDIA_PAC_RELAXATION.supported).toBe(true)
     expect(caps.creativeTypes.COLLECTION.supported).toBe(false)
     expect(caps.catalog.listProductSets.supported).toBe(true)
+    expect(caps.tracking.adTrackingSpecs.supported).toBe(true)
     expect(caps.tracking.websitePixel.supported).toBe(true)
     expect(caps.tracking.offlineDataset.supported).toBe(true)
     expect(caps.tracking.crmLeadgenQuality.supported).toBe(true)

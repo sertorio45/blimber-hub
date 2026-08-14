@@ -2590,7 +2590,7 @@ export async function metaCreateAd(
   }
 
   const compiledTracking = compileAdTracking(input)
-  if (compiledTracking.trackingSpecs.length) {
+  if (!dryRun && compiledTracking.trackingSpecs.length) {
     await assertTrackingSpecsOwned({
       apiVersion: creds.apiVersion,
       accessToken: creds.accessToken,

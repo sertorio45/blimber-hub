@@ -122,6 +122,7 @@ Create/update adset sempre envia `targeting.targeting_automation.advantage_audie
 | Flexible Ad Format | ❌ | `creative_asset_groups_spec` não modelado; subir Graph (META_ADS_GRAPH_VERSION / META_GRAPH_VERSION) **não** habilita sozinho |
 | DYNAMIC_CREATIVE_LEGACY | ✅ | `asset_feed_spec` + adset `is_dynamic_creative=true` (`createAdset.isDynamicCreative`); WEBSITE only |
 | Catalog / Advantage+ Catalog | ✅ | `meta_list_catalogs` + `meta_list_product_sets` + creativeType `CATALOG` |
+| Pixel / Dataset tracking | ✅ | `createAd` / `updateAdTracking` → Graph `tracking_specs` (`offsite_conversion`+`fb_pixel`, `offline_conversion`+`dataset`) |
 | Collection | ❌ | Instant Experience/canvas não implementado |
 | A/B Experiments | ✅ | `meta_create_experiment` / get / stop — `SPLIT_TEST_V2` (ads) e `SPLIT_TEST` (adsets) |
 | WEBSITE + WHATSAPP CTWA | ✅ | Preservados |

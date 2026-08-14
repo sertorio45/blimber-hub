@@ -282,6 +282,7 @@ describe('gpt/blimber Ads OpenAPI (openapi-ads.yaml)', () => {
     expect(skill).toContain('createCampaign')
     expect(skill).toContain('createAdset')
     expect(skill).toContain('createAd')
+    expect(skill).toContain('updateAdTracking')
     expect(skill).toContain('updateAdsetBudget')
     expect(skill).toContain('updateAdCreativeCopy')
     expect(skill).toContain('previewBulkDelete')

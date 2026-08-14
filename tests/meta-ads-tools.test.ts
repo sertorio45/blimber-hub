@@ -1732,8 +1732,6 @@ describe('meta-ads MCP tools', () => {
       },
     )
     expect((result as any).adId).toBe('ad_new_1')
-    const adPost = graphFetch.mock.calls.find(([, init]) => init?.method === 'POST' && String(init ? arguments : '').length >= 0
-      && String(graphFetch.mock.calls.find(c => String(c[0]).includes('/ads') && c[1]?.method === 'POST')?.[0] || '').includes('/ads'))
     const adsCall = graphFetch.mock.calls.find(([url, init]) => init?.method === 'POST' && String(url).includes('/act_555/ads'))
     expect(adsCall?.[1]?.body).toMatchObject({
       tracking_specs: [
