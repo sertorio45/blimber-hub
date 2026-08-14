@@ -25,6 +25,15 @@ describe('flattenModuleNavItems', () => {
           { title: 'Relatórios', link: '/marketing/ads/reports' },
         ],
       },
+      {
+        title: 'Configurações',
+        link: '/marketing/settings',
+        keepGroup: true,
+        children: [
+          { title: 'Marca', link: '/marketing/brand' },
+          { title: 'Contas sociais', link: '/settings/integrations' },
+        ],
+      },
     ]
 
     const items = flattenModuleNavItems(tree)
@@ -34,6 +43,7 @@ describe('flattenModuleNavItems', () => {
       'Campanhas editoriais',
       'Relatórios orgânicos',
       'Ads',
+      'Configurações',
     ])
     expect(items.find(item => item.title === 'Ads')?.children?.map(child => child.title)).toEqual([
       'Visão Geral',

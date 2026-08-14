@@ -128,8 +128,9 @@ describe('guarda de rotas por tipo de organização', () => {
     const brand = leaves.find(child => child.link === '/marketing/brand')!
     const reports = leaves.find(child => child.link === '/marketing/reports')!
     const editorialCampaigns = leaves.find(child => child.link === '/marketing/campaigns')!
-    const settings = leaves.find(child => child.link === '/marketing/settings')!
+    const settings = marketing.children.find(child => child.title === 'Configurações')
     const socialAccounts = leaves.find(child => child.link === '/settings/integrations')
+    const adAccounts = leaves.find(child => child.link === '/marketing/settings/ad-accounts')
     const topTitles = marketing.children.map(child => child.title)
 
     expect(packages).toBeUndefined()
@@ -144,9 +145,16 @@ describe('guarda de rotas por tipo de organização', () => {
     expect(calendar.title).toBe('Calendário')
     expect(editorialCampaigns.title).toBe('Campanhas editoriais')
     expect(reports.title).toBe('Relatórios orgânicos')
-    expect(settings.title).toBe('Configurações')
-    // Contas sociais moved out of Marketing top-level → Configurações hub.
-    expect(socialAccounts).toBeUndefined()
+    expect(settings?.keepGroup).toBe(true)
+    expect(settings?.link).toBe('/marketing/settings')
+    expect(settings?.children?.map(child => child.title)).toEqual([
+      'Marca',
+      'Contas sociais',
+      'Contas de anúncios',
+      'Integrações',
+    ])
+    expect(socialAccounts?.link).toBe('/settings/integrations')
+    expect(adAccounts?.link).toBe('/marketing/settings/ad-accounts')
     expect(topTitles).toEqual([
       'Visão Geral',
       'Planejamento',
@@ -154,7 +162,6 @@ describe('guarda de rotas por tipo de organização', () => {
       'Produção',
       'Aprovações',
       'Biblioteca',
-      'Marca',
       'Publicações',
       'Relatórios orgânicos',
       'Ads',
@@ -239,6 +246,8 @@ describe('matchesNavAudience', () => {
     expect(isClientPortalMarketingLink('/marketing/ads/reports')).toBe(true)
     expect(isClientPortalMarketingLink('/settings/integrations')).toBe(true)
     expect(isClientPortalMarketingLink('/settings/integrations/meta-capi')).toBe(true)
+    expect(isClientPortalMarketingLink('/marketing/settings/ad-accounts')).toBe(true)
+    expect(isClientPortalMarketingLink('/marketing/settings/integrations')).toBe(true)
   })
 
   it('client portal Ads whitelist allows the product shell', async () => {
@@ -252,12 +261,14 @@ describe('matchesNavAudience', () => {
       '/ads/creatives',
       '/ads/reports',
       '/ads/integrations',
+      '/ads/settings',
     ])
     expect(isClientPortalAdsLink('/ads')).toBe(true)
     expect(isClientPortalAdsLink('/ads/')).toBe(true)
     expect(isClientPortalAdsLink('/ads/meta')).toBe(true)
     expect(isClientPortalAdsLink('/ads/creatives')).toBe(true)
     expect(isClientPortalAdsLink('/ads/reports')).toBe(true)
+    expect(isClientPortalAdsLink('/ads/settings')).toBe(true)
     expect(isClientPortalAdsLink('/marketing/reports')).toBe(false)
   })
 })

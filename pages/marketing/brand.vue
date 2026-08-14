@@ -12,6 +12,7 @@ const { currentTenant } = useTenant()
 const tenantLabel = computed(() => currentTenant.value?.name?.trim() || null)
 const brandTrail = [
   { title: 'Marketing', href: '/marketing' },
+  { title: 'Configurações', href: '/marketing/settings' },
   { title: 'Marca', href: '/marketing/brand' },
 ]
 

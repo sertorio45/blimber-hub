@@ -32,6 +32,7 @@ export const CLIENT_PORTAL_ADS_LINKS = [
   '/ads/creatives',
   '/ads/reports',
   '/ads/integrations',
+  '/ads/settings',
 ] as const
 
 /** Agency-only production sub-routes that stay hidden from the client portal. */

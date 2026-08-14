@@ -39,9 +39,8 @@ export const navMenu: NavMenu[] = [
          * live under Ads → Campanhas (`/marketing/ads/campaigns`).
          * Advanced items (packages, automations, ops-metrics, logs,
          * notifications) stay reachable by URL but hidden from the main path.
-         * Planejamento flattens in the sidebar; Ads keeps a collapsible
-         * group (keepGroup) so paid Campanhas/Relatórios do not collide
-         * with the organic leaves.
+         * Planejamento flattens in the sidebar; Ads and Configurações
+         * keep collapsible groups (keepGroup).
          */
         children: [
           {
@@ -105,13 +104,6 @@ export const navMenu: NavMenu[] = [
             capability: 'marketing.social.read',
           },
           {
-            title: 'Marca',
-            icon: 'i-lucide-book-open',
-            link: '/marketing/brand',
-            capability: 'marketing.social.brand_guide.read',
-            audience: 'agency',
-          },
-          {
             title: 'Publicações',
             icon: 'i-lucide-send',
             link: '/marketing/publishing',
@@ -170,12 +162,42 @@ export const navMenu: NavMenu[] = [
             ],
           },
           {
-            // Hub for Contas sociais → /settings/integrations (also in global
-            // Configurações and Ads → Integrações). Not a top-level Marketing leaf.
+            /**
+             * ETAPA 5 — settings live under Marketing, not a separate Ads
+             * settings tree. OAuth stays unique at /settings/integrations.
+             * Marca moved here from the Marketing top-level leaf.
+             */
             title: 'Configurações',
             icon: 'i-lucide-settings',
             link: '/marketing/settings',
-            capability: 'marketing.social.read',
+            keepGroup: true,
+            children: [
+              {
+                title: 'Marca',
+                icon: 'i-lucide-book-open',
+                link: '/marketing/brand',
+                capability: 'marketing.social.brand_guide.read',
+                audience: 'agency',
+              },
+              {
+                title: 'Contas sociais',
+                icon: 'i-lucide-share-2',
+                link: '/settings/integrations',
+                capability: 'marketing.social.integrations',
+              },
+              {
+                title: 'Contas de anúncios',
+                icon: 'i-lucide-circle-dollar-sign',
+                link: '/marketing/settings/ad-accounts',
+                capability: 'marketing.social.integrations',
+              },
+              {
+                title: 'Integrações',
+                icon: 'i-lucide-plug',
+                link: '/marketing/settings/integrations',
+                capability: 'marketing.social.integrations',
+              },
+            ],
           },
         ],
       },

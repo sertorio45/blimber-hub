@@ -34,3 +34,9 @@ export const ADS_BRAND_CENTER_ROUTE = '/marketing/brand' as const
 /** Canonical creatives under Marketing. Dual entry: Ads product still uses `/ads/creatives`. */
 export const MARKETING_ADS_CREATIVES_ROUTE = '/marketing/ads/creatives' as const
 export const ADS_CREATIVES_ROUTE = '/ads/creatives' as const
+
+/** Marketing settings hub — Ads has no dedicated `/ads/settings` page. */
+export const MARKETING_SETTINGS_ROUTE = '/marketing/settings' as const
+export const MARKETING_AD_ACCOUNTS_ROUTE = '/marketing/settings/ad-accounts' as const
+export const MARKETING_SETTINGS_INTEGRATIONS_ROUTE = '/marketing/settings/integrations' as const
+export const SETTINGS_INTEGRATIONS_ROUTE = '/settings/integrations' as const
