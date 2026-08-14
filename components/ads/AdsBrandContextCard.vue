@@ -5,10 +5,14 @@
  */
 import { useAdsBrandContext } from '~/composables/ads/useAdsBrandContext'
 import { useAdsShellBase } from '~/composables/ads/useAdsShellBase'
-import { ADS_BRAND_CENTER_PATH } from '~/utils/ads-brand'
+import {
+  ADS_BRAND_CENTER_PATH,
+  canOpenBrandCenterFromAds,
+} from '~/utils/ads-brand'
 
 const { adsBasePath } = useAdsShellBase()
 const { currentTenant } = useTenant()
+const { isClientExperience } = useMarketingAudience()
 const {
   summary,
   pending,
@@ -18,6 +22,7 @@ const {
 } = useAdsBrandContext()
 
 const clientName = computed(() => currentTenant.value?.name?.trim() || 'Cliente selecionado')
+const canOpenBrandCenter = computed(() => canOpenBrandCenterFromAds(isClientExperience.value))
 </script>
 
 <template>
@@ -112,8 +117,15 @@ const clientName = computed(() => currentTenant.value?.name?.trim() || 'Cliente 
         </p>
       </template>
 
+      <p
+        v-if="!canOpenBrandCenter"
+        class="text-xs text-muted-foreground"
+      >
+        A edição da marca fica com a agência no Brand Center.
+      </p>
       <div class="flex flex-wrap gap-2">
         <Button
+          v-if="canOpenBrandCenter"
           variant="outline"
           class="flex-1"
           :disabled="!tenantId"

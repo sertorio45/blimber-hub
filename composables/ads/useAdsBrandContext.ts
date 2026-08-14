@@ -2,7 +2,8 @@
  * Ads-facing loader for Brand Context of the active workspace tenant.
  *
  * Reuses Marketing `useBrandContext` + `GET /api/marketing/brand/context`.
- * Does not duplicate brand storage or trigger AI generation (ETAPA 7).
+ * Same tenant source as Ads overview (`useTenant` via `useMarketingSocial`).
+ * Identical on `/ads*` and `/marketing/ads*` — no duplicate brand storage.
  */
 import type { AdsBrandContextSummary } from '~/types/ads-brand'
 import { toAdsBrandContextSummary } from '~/utils/ads-brand'

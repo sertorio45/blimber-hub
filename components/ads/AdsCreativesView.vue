@@ -16,11 +16,14 @@ import {
 import {
   ADS_BRAND_CENTER_PATH,
   ADS_CREATIVE_PIPELINE_FACTORS,
+  canOpenBrandCenterFromAds,
 } from '~/utils/ads-brand'
 
 const { adsBasePath } = useAdsShellBase()
 const { currentTenant, tenantId } = useTenant()
+const { isClientExperience } = useMarketingAudience()
 const clientName = computed(() => currentTenant.value?.name?.trim() || null)
+const canOpenBrandCenter = computed(() => canOpenBrandCenterFromAds(isClientExperience.value))
 </script>
 
 <template>
@@ -45,6 +48,7 @@ const clientName = computed(() => currentTenant.value?.name?.trim() || null)
         </p>
       </div>
       <Button
+        v-if="canOpenBrandCenter"
         variant="outline"
         @click="navigateTo(ADS_BRAND_CENTER_PATH)"
       >

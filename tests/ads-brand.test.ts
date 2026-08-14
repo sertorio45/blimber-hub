@@ -85,4 +85,17 @@ describe('ads-brand helpers', () => {
     const ids = ADS_CREATIVE_PIPELINE_FACTORS.map(f => f.id)
     expect(ids).toEqual(['campaign', 'product', 'brand', 'objective'])
   })
+
+  it('keeps Brand Center path identical regardless of Ads shell', async () => {
+    const { ADS_BRAND_CENTER_ROUTE, ADS_CREATIVES_ROUTE, MARKETING_ADS_CREATIVES_ROUTE } = await import('~/constants/ads-domain')
+    const { canOpenBrandCenterFromAds, resolveAdsCreativesPath } = await import('~/utils/ads-brand')
+
+    expect(ADS_BRAND_CENTER_ROUTE).toBe('/marketing/brand')
+    expect(resolveAdsCreativesPath('/marketing/ads')).toBe(MARKETING_ADS_CREATIVES_ROUTE)
+    expect(resolveAdsCreativesPath('/marketing/ads/campaigns')).toBe(MARKETING_ADS_CREATIVES_ROUTE)
+    expect(resolveAdsCreativesPath('/ads')).toBe(ADS_CREATIVES_ROUTE)
+    expect(resolveAdsCreativesPath('/ads/creatives')).toBe(ADS_CREATIVES_ROUTE)
+    expect(canOpenBrandCenterFromAds(false)).toBe(true)
+    expect(canOpenBrandCenterFromAds(true)).toBe(false)
+  })
 })
