@@ -203,6 +203,7 @@ export {
   buildEngagementRule,
   buildLeadFormRule,
   buildWebsiteRule,
+  serializeCustomAudienceGraphJsonFields,
   hashCustomerListUsers,
   retentionDaysToSeconds,
   suggestCustomAudienceName,

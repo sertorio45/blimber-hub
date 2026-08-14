@@ -105,12 +105,14 @@ describe('meta custom audiences', () => {
     expect((result as any).name).toBe('IG | Engajamento | 365d')
     expect((result as any).metaEvent).toBe('ig_business_profile_all')
     expect((result as any).retentionSeconds).toBe(31536000)
-    expect((result as any).preview.body.rule).toEqual(buildEngagementRule({
+    const expectedRule = buildEngagementRule({
       eventSourceType: 'ig_business',
       sourceId: 'ig_1',
       metaEvent: 'ig_business_profile_all',
       retentionSeconds: 31536000,
-    }))
+    })
+    expect(typeof (result as any).preview.body.rule).toBe('string')
+    expect(JSON.parse((result as any).preview.body.rule)).toEqual(expectedRule)
     expect(graphFetch.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(0)
   })
 
@@ -140,7 +142,8 @@ describe('meta custom audiences', () => {
     )
     expect((result as any).retentionSeconds).toBe(0)
     expect((result as any).metaEvent).toBe('INSTAGRAM_PROFILE_FOLLOW')
-    expect((result as any).preview.body.rule.inclusions.rules[0].retention_seconds).toBe(0)
+    expect(typeof (result as any).preview.body.rule).toBe('string')
+    expect(JSON.parse((result as any).preview.body.rule).inclusions.rules[0].retention_seconds).toBe(0)
   })
 
   it('5. Facebook ENGAGED 365 days', async () => {
@@ -150,7 +153,8 @@ describe('meta custom audiences', () => {
     )
     expect((result as any).name).toBe('FB | Engajamento | 365d')
     expect((result as any).metaEvent).toBe('page_engaged')
-    expect((result as any).preview.body.rule).toEqual(buildEngagementRule({
+    expect(typeof (result as any).preview.body.rule).toBe('string')
+    expect(JSON.parse((result as any).preview.body.rule)).toEqual(buildEngagementRule({
       eventSourceType: 'page',
       sourceId: 'page_1',
       metaEvent: 'page_engaged',
@@ -194,7 +198,8 @@ describe('meta custom audiences', () => {
     )
     expect((result as any).dryRun).toBe(true)
     expect((result as any).name).toBe('LAL 1% | IG | Engajamento | 365d')
-    expect((result as any).preview.body.lookalike_spec).toEqual({
+    expect(typeof (result as any).preview.body.lookalike_spec).toBe('string')
+    expect(JSON.parse((result as any).preview.body.lookalike_spec)).toEqual({
       type: 'similarity',
       country: 'BR',
       ratio: 0.01,
@@ -313,9 +318,65 @@ describe('meta custom audiences', () => {
     expect((result as any).dryRun).toBe(false)
     expect((result as any).id).toBe('aud_created')
     expect((result as any).status).toBe('processing')
-    expect(graphFetch.mock.calls.some(([url, init]) =>
+    const post = graphFetch.mock.calls.find(([url, init]) =>
       init?.method === 'POST' && String(url).includes('/act_555/customaudiences'),
-    )).toBe(true)
+    )
+    expect(post).toBeTruthy()
+    const graphRule = (post![1] as { body?: Record<string, unknown> })?.body?.rule
+    const expectedRule = buildEngagementRule({
+      eventSourceType: 'ig_business',
+      sourceId: 'ig_1',
+      metaEvent: 'ig_business_profile_all',
+      retentionSeconds: 31536000,
+    })
+    expect(typeof graphRule).toBe('string')
+    expect(JSON.parse(graphRule as string)).toEqual(expectedRule)
+  })
+
+  it('15b. Instagram ENGAGED 30d posts rule as JSON string', async () => {
+    const graphFetch = vi.fn(async (url: string, init?: { method?: string, body?: Record<string, unknown> }) => {
+      if (init?.method === 'POST' && String(url).includes('/customaudiences'))
+        return { id: 'aud_ig_30d' }
+      return { data: [] }
+    })
+    const expectedRule = buildEngagementRule({
+      eventSourceType: 'ig_business',
+      sourceId: 'ig_1',
+      metaEvent: 'ig_business_profile_engaged',
+      retentionSeconds: 30 * 86400,
+    })
+    const preview = await metaCreateCustomAudience(
+      { client: createIntegrationClient(baseConfig), graphFetch },
+      {
+        ...confirm,
+        sourceType: 'INSTAGRAM',
+        event: 'ENGAGED',
+        retentionDays: 30,
+        dryRun: true,
+      },
+    )
+    expect((preview as any).metaEvent).toBe('ig_business_profile_engaged')
+    expect((preview as any).name).toBe('IG | Interações | 30d')
+    expect(typeof (preview as any).preview.body.rule).toBe('string')
+    expect(JSON.parse((preview as any).preview.body.rule)).toEqual(expectedRule)
+
+    const result = await metaCreateCustomAudience(
+      { client: createIntegrationClient(baseConfig), graphFetch },
+      {
+        ...confirm,
+        sourceType: 'INSTAGRAM',
+        event: 'ENGAGED',
+        retentionDays: 30,
+        dryRun: false,
+      },
+    )
+    expect((result as any).id).toBe('aud_ig_30d')
+    const post = graphFetch.mock.calls.find(([url, init]) =>
+      init?.method === 'POST' && String(url).includes('/customaudiences'),
+    )
+    const graphRule = (post![1] as { body?: Record<string, unknown> })?.body?.rule
+    expect(typeof graphRule).toBe('string')
+    expect(JSON.parse(graphRule as string)).toEqual(expectedRule)
   })
 
   it('16. Erro Graph mapeado', async () => {
@@ -448,7 +509,8 @@ describe('meta custom audiences', () => {
       { client: createIntegrationClient(baseConfig), graphFetch: vi.fn() },
       { ...confirm, sourceType: 'WEBSITE', event: 'ALL_VISITORS', retentionDays: 180 },
     )
-    const filters = (result as any).preview.body.rule.inclusions.rules[0].filter.filters
+    expect(typeof (result as any).preview.body.rule).toBe('string')
+    const filters = JSON.parse((result as any).preview.body.rule).inclusions.rules[0].filter.filters
     expect(filters).toEqual([{ field: 'url', operator: 'i_contains', value: '' }])
     expect((result as any).preview.body.subtype).toBe('WEBSITE')
   })

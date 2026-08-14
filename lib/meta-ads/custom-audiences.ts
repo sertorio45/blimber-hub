@@ -463,6 +463,23 @@ export function buildWebsiteRule(params: {
   }
 }
 
+/**
+ * Meta documents `rule` and `lookalike_spec` as JSON-encoded strings on
+ * POST /act_{id}/customaudiences (not nested JSON objects).
+ * defaultMetaGraphFetch also JSON.stringifies objects, but we stringify here
+ * so the Graph body / dry-run preview match the wire format exactly.
+ */
+export function serializeCustomAudienceGraphJsonFields(
+  body: Record<string, unknown>,
+): Record<string, unknown> {
+  const next: Record<string, unknown> = { ...body }
+  if (next.rule != null && typeof next.rule !== 'string')
+    next.rule = JSON.stringify(next.rule)
+  if (next.lookalike_spec != null && typeof next.lookalike_spec !== 'string')
+    next.lookalike_spec = JSON.stringify(next.lookalike_spec)
+  return next
+}
+
 export function buildLeadFormRule(params: {
   pageId: string
   instagramAccountId?: string | null
@@ -820,6 +837,18 @@ export async function resolveAudienceSources(params: {
   }
 }
 
+function audienceGraphResult(
+  subtype: string,
+  metaEvent: string | null,
+  body: Record<string, unknown>,
+): { subtype: string, body: Record<string, unknown>, metaEvent: string | null } {
+  return {
+    subtype,
+    metaEvent,
+    body: serializeCustomAudienceGraphJsonFields(body),
+  }
+}
+
 export function buildCreateAudienceGraphBody(params: {
   name: string
   description?: string
@@ -849,21 +878,17 @@ export function buildCreateAudienceGraphBody(params: {
     const igId = params.sources.instagramAccountId
     if (!igId)
       audienceError('META_AUDIENCE_SOURCE_NOT_FOUND', 'instagramAccountId ausente após resolução.', 404)
-    return {
+    return audienceGraphResult('ENGAGEMENT', metaEvent, {
+      ...base,
       subtype: 'ENGAGEMENT',
-      metaEvent,
-      body: {
-        ...base,
-        subtype: 'ENGAGEMENT',
-        prefill,
-        rule: buildEngagementRule({
-          eventSourceType: 'ig_business',
-          sourceId: igId,
-          metaEvent,
-          retentionSeconds: params.retentionSeconds,
-        }),
-      },
-    }
+      prefill,
+      rule: buildEngagementRule({
+        eventSourceType: 'ig_business',
+        sourceId: igId,
+        metaEvent,
+        retentionSeconds: params.retentionSeconds,
+      }),
+    })
   }
 
   if (params.sourceType === 'FACEBOOK_PAGE') {
@@ -874,21 +899,17 @@ export function buildCreateAudienceGraphBody(params: {
     const pageId = params.sources.pageId
     if (!pageId)
       audienceError('META_AUDIENCE_SOURCE_NOT_FOUND', 'pageId ausente após resolução.', 404)
-    return {
+    return audienceGraphResult('ENGAGEMENT', metaEvent, {
+      ...base,
       subtype: 'ENGAGEMENT',
-      metaEvent,
-      body: {
-        ...base,
-        subtype: 'ENGAGEMENT',
-        prefill,
-        rule: buildEngagementRule({
-          eventSourceType: 'page',
-          sourceId: pageId,
-          metaEvent,
-          retentionSeconds: params.retentionSeconds,
-        }),
-      },
-    }
+      prefill,
+      rule: buildEngagementRule({
+        eventSourceType: 'page',
+        sourceId: pageId,
+        metaEvent,
+        retentionSeconds: params.retentionSeconds,
+      }),
+    })
   }
 
   if (params.sourceType === 'WEBSITE') {
@@ -898,21 +919,17 @@ export function buildCreateAudienceGraphBody(params: {
     const pixelId = params.sources.pixelId
     if (!pixelId)
       audienceError('META_AUDIENCE_SOURCE_NOT_FOUND', 'pixelId ausente após resolução.', 404)
-    return {
+    return audienceGraphResult('WEBSITE', params.event, {
+      ...base,
       subtype: 'WEBSITE',
-      metaEvent: params.event,
-      body: {
-        ...base,
-        subtype: 'WEBSITE',
-        prefill,
-        rule: buildWebsiteRule({
-          pixelId,
-          event: params.event,
-          retentionSeconds: params.retentionSeconds,
-          urlContains: params.urlContains,
-        }),
-      },
-    }
+      prefill,
+      rule: buildWebsiteRule({
+        pixelId,
+        event: params.event,
+        retentionSeconds: params.retentionSeconds,
+        urlContains: params.urlContains,
+      }),
+    })
   }
 
   if (params.sourceType === 'LEAD_FORM') {
@@ -924,34 +941,26 @@ export function buildCreateAudienceGraphBody(params: {
     if (!pageId || !leadFormId)
       audienceError('META_AUDIENCE_SOURCE_NOT_FOUND', 'Page ou leadFormId ausente.', 404)
     const metaEvent = LEAD_EVENT_TO_META[params.event]
-    return {
+    return audienceGraphResult('ENGAGEMENT', metaEvent, {
+      ...base,
       subtype: 'ENGAGEMENT',
-      metaEvent,
-      body: {
-        ...base,
-        subtype: 'ENGAGEMENT',
-        prefill,
-        rule: buildLeadFormRule({
-          pageId,
-          instagramAccountId: params.sources.instagramAccountId,
-          leadFormId,
-          metaEvent,
-          retentionSeconds: params.retentionSeconds,
-        }),
-      },
-    }
+      prefill,
+      rule: buildLeadFormRule({
+        pageId,
+        instagramAccountId: params.sources.instagramAccountId,
+        leadFormId,
+        metaEvent,
+        retentionSeconds: params.retentionSeconds,
+      }),
+    })
   }
 
   if (params.sourceType === 'CUSTOMER_LIST') {
-    return {
+    return audienceGraphResult('CUSTOM', null, {
+      ...base,
       subtype: 'CUSTOM',
-      metaEvent: null,
-      body: {
-        ...base,
-        subtype: 'CUSTOM',
-        customer_file_source: 'USER_PROVIDED_ONLY',
-      },
-    }
+      customer_file_source: 'USER_PROVIDED_ONLY',
+    })
   }
 
   if (params.sourceType === 'LOOKALIKE') {
@@ -968,20 +977,16 @@ export function buildCreateAudienceGraphBody(params: {
     if (!origin)
       audienceError('META_AUDIENCE_ORIGIN_NOT_FOUND', 'originAudienceId é obrigatório para LOOKALIKE.', 400)
     const country = (params.lookalikeCountry || 'BR').toUpperCase()
-    return {
+    return audienceGraphResult('LOOKALIKE', null, {
+      ...base,
       subtype: 'LOOKALIKE',
-      metaEvent: null,
-      body: {
-        ...base,
-        subtype: 'LOOKALIKE',
-        origin_audience_id: origin,
-        lookalike_spec: {
-          type: 'similarity',
-          country,
-          ratio,
-        },
+      origin_audience_id: origin,
+      lookalike_spec: {
+        type: 'similarity',
+        country,
+        ratio,
       },
-    }
+    })
   }
 
   audienceError('META_AUDIENCE_INVALID_SOURCE', `sourceType não suportado: ${params.sourceType}.`, 400)
@@ -1165,6 +1170,8 @@ function createPreviewNotes(prepared: PreparedCreateAudience): string[] {
     prepared.sources.pageId ? `pageId=${prepared.sources.pageId}` : null,
     prepared.sources.instagramAccountId ? `instagramAccountId=${prepared.sources.instagramAccountId}` : null,
     prepared.sources.pixelId ? `pixelId=${prepared.sources.pixelId}` : null,
+    typeof prepared.graphBody.rule === 'string' ? 'rule=JSON string (Graph)' : null,
+    typeof prepared.graphBody.lookalike_spec === 'string' ? 'lookalike_spec=JSON string (Graph)' : null,
     ...prepared.notes,
   ].filter((row): row is string => Boolean(row))
 }
@@ -1407,7 +1414,7 @@ export async function metaUpdateCustomAudience(
   if (input.description != null)
     body.description = input.description
   if (input.rule)
-    body.rule = input.rule
+    body.rule = typeof input.rule === 'string' ? input.rule : JSON.stringify(input.rule)
 
   const path = `/${input.audienceId}`
   const run = await withDryRun(
