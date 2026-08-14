@@ -2,6 +2,7 @@
 import type { SidebarMenuButtonVariants } from '~/components/ui/sidebar'
 import type { NavGroup } from '~/types/nav'
 import { useSidebar } from '~/components/ui/sidebar'
+import { resolveNavGroupOpen } from '~/utils/nav-flatten'
 
 const props = withDefaults(
   defineProps<{
@@ -14,8 +15,16 @@ const props = withDefaults(
 )
 
 const { setOpenMobile } = useSidebar()
+const route = useRoute()
 
-const openCollapsible = ref((props.item.children?.length || 0) <= 6)
+const openCollapsible = ref(resolveNavGroupOpen(props.item, route.path))
+
+watch(
+  () => route.path,
+  (path) => {
+    openCollapsible.value = resolveNavGroupOpen(props.item, path)
+  },
+)
 </script>
 
 <template>

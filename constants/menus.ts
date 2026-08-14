@@ -41,7 +41,8 @@ export const navMenu: NavMenu[] = [
          * Advanced items (packages, automations, ops-metrics, logs,
          * notifications) stay reachable by URL but hidden from the main path.
          * Planejamento flattens in the sidebar; Ads and Configurações
-         * keep collapsible groups (keepGroup).
+         * keep collapsible groups (keepGroup), collapsed unless the
+         * current route is inside the group.
          */
         children: [
           {
@@ -132,6 +133,7 @@ export const navMenu: NavMenu[] = [
             icon: 'i-lucide-circle-dollar-sign',
             link: '/marketing/ads',
             keepGroup: true,
+            defaultExpanded: false,
             children: [
               {
                 title: 'Visão Geral',
@@ -171,6 +173,7 @@ export const navMenu: NavMenu[] = [
             icon: 'i-lucide-settings',
             link: '/marketing/settings',
             keepGroup: true,
+            defaultExpanded: false,
             children: [
               {
                 title: 'Marca',

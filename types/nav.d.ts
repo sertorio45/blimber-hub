@@ -12,6 +12,16 @@ export interface NavBase {
   audience?: 'agency' | 'client' | 'both'
   /** Label when the current workspace is the client portal experience. */
   clientTitle?: string
+  /**
+   * Keep this folder as a collapsible in the flattened module sidebar
+   * (e.g. Marketing → Ads) so sibling leaves do not reuse the same labels.
+   */
+  keepGroup?: boolean
+  /**
+   * Initial collapsible state when the current route is not inside the group.
+   * `false` starts collapsed; omit to keep the small-group heuristic.
+   */
+  defaultExpanded?: boolean
 }
 
 export interface NavLink extends NavBase {
@@ -21,11 +31,6 @@ export interface NavLink extends NavBase {
   new?: boolean
   /** Optional sidebar chip (e.g. "Em evolução") — distinct from the `new` flag. */
   badge?: string
-  /**
-   * Keep this folder as a collapsible in the flattened module sidebar
-   * (e.g. Marketing → Ads) so sibling leaves do not reuse the same labels.
-   */
-  keepGroup?: boolean
   children?: NavLink[]
 }
 
@@ -37,6 +42,8 @@ export interface NavGroup extends NavBase {
   title: string
   icon?: string
   new?: boolean
+  /** Group index route; used to auto-expand when the path is inside this folder. */
+  link?: string
   children: NavLink[]
 }
 

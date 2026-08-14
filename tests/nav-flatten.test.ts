@@ -1,6 +1,10 @@
 import type { NavLink } from '~/types/nav'
 import { describe, expect, it } from 'vitest'
-import { flattenModuleNavItems } from '~/utils/nav-flatten'
+import {
+  flattenModuleNavItems,
+  isNavGroupActive,
+  resolveNavGroupOpen,
+} from '~/utils/nav-flatten'
 
 describe('flattenModuleNavItems', () => {
   it('flattens Planejamento and keeps Ads as a group', () => {
@@ -52,5 +56,77 @@ describe('flattenModuleNavItems', () => {
     ])
     expect(items.filter(item => item.title === 'Campanhas').length).toBe(0)
     expect(items.filter(item => item.title === 'Relatórios').length).toBe(0)
+  })
+})
+
+describe('resolveNavGroupOpen', () => {
+  const ads = {
+    title: 'Ads',
+    link: '/marketing/ads',
+    defaultExpanded: false,
+    children: [
+      { title: 'Visão Geral', link: '/marketing/ads' },
+      { title: 'Campanhas', link: '/marketing/ads/campaigns' },
+    ],
+  }
+
+  const settings = {
+    title: 'Configurações',
+    link: '/marketing/settings',
+    defaultExpanded: false,
+    children: [
+      { title: 'Marca', link: '/marketing/brand' },
+      { title: 'Contas sociais', link: '/settings/integrations' },
+      { title: 'Contas de anúncios', link: '/marketing/settings/ad-accounts' },
+    ],
+  }
+
+  it('keeps Ads and Configurações collapsed off their routes', () => {
+    expect(resolveNavGroupOpen(ads, '/marketing')).toBe(false)
+    expect(resolveNavGroupOpen(ads, '/marketing/campaigns')).toBe(false)
+    expect(resolveNavGroupOpen(settings, '/marketing')).toBe(false)
+    expect(resolveNavGroupOpen(settings, '/marketing/ads/campaigns')).toBe(false)
+  })
+
+  it('expands Ads only on /marketing/ads*', () => {
+    expect(resolveNavGroupOpen(ads, '/marketing/ads')).toBe(true)
+    expect(resolveNavGroupOpen(ads, '/marketing/ads/campaigns')).toBe(true)
+    expect(isNavGroupActive(settings, '/marketing/ads')).toBe(false)
+  })
+
+  it('expands Configurações on settings children, including Marca', () => {
+    expect(resolveNavGroupOpen(settings, '/marketing/settings')).toBe(true)
+    expect(resolveNavGroupOpen(settings, '/marketing/settings/ad-accounts')).toBe(true)
+    expect(resolveNavGroupOpen(settings, '/marketing/brand')).toBe(true)
+    expect(resolveNavGroupOpen(settings, '/settings/integrations')).toBe(true)
+  })
+
+  it('does not change CRM/WhatsApp small-group heuristic', () => {
+    const crm = {
+      title: 'CRM',
+      children: [
+        { title: 'Painel', link: '/crm/dashboard' },
+        { title: 'Funil', link: '/crm/funnel' },
+        { title: 'Empresas', link: '/crm/company' },
+        { title: 'Contatos', link: '/crm/contacts' },
+        { title: 'Reuniões', link: '/crm/meetings' },
+        { title: 'Produtos', link: '/crm/products' },
+        { title: 'Config', link: '/crm/config' },
+      ],
+    }
+    const articles = {
+      title: 'Articles',
+      children: [
+        { title: 'View', link: '/articles' },
+        { title: 'Create', link: '/articles/new' },
+        { title: 'Categories', link: '/articles/category' },
+        { title: 'Tags', link: '/articles/tag' },
+      ],
+    }
+
+    expect(resolveNavGroupOpen(crm, '/')).toBe(false)
+    expect(resolveNavGroupOpen(crm, '/crm/contacts')).toBe(true)
+    expect(resolveNavGroupOpen(articles, '/')).toBe(true)
+    expect(resolveNavGroupOpen(articles, '/whatsapp/dashboard')).toBe(true)
   })
 })

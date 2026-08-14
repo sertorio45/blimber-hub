@@ -146,6 +146,7 @@ describe('guarda de rotas por tipo de organização', () => {
     expect(editorialCampaigns.title).toBe('Campanhas editoriais')
     expect(reports.title).toBe('Relatórios orgânicos')
     expect(settings?.keepGroup).toBe(true)
+    expect(settings?.defaultExpanded).toBe(false)
     expect(settings?.link).toBe('/marketing/settings')
     expect(settings?.children?.map(child => child.title)).toEqual([
       'Marca',
@@ -171,6 +172,7 @@ describe('guarda de rotas por tipo de organização', () => {
     const adsSubmenu = marketing.children.find(child => child.title === 'Ads')
     expect(adsSubmenu?.link).toBe('/marketing/ads')
     expect(adsSubmenu?.keepGroup).toBe(true)
+    expect(adsSubmenu?.defaultExpanded).toBe(false)
     expect(adsSubmenu?.children?.map(child => child.title)).toEqual([
       'Visão Geral',
       'Campanhas',
