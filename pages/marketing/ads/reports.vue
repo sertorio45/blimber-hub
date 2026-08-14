@@ -1,15 +1,19 @@
 <script setup lang="ts">
 /**
- * Marketing → Ads relatórios pagos.
+ * Legacy Ads reports URL — canonical hub is `/marketing/reports/ads`.
  */
-import AdsReportsView from '@/components/ads/AdsReportsView.vue'
+import { MARKETING_REPORTS_REDIRECTS } from '~/constants/ads-domain'
 
 definePageMeta({
   middleware: ['auth'],
   title: 'Relatórios de Ads',
 })
+
+await navigateTo(MARKETING_REPORTS_REDIRECTS['/marketing/ads/reports'], { redirectCode: 301 })
 </script>
 
 <template>
-  <AdsReportsView />
+  <div class="text-sm text-muted-foreground">
+    Redirecionando para relatórios de anúncios…
+  </div>
 </template>

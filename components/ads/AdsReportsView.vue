@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Paid media + analytics reports. Shared by `/ads/reports` and `/marketing/ads/reports`.
+ * Paid media reports. Canonical hub: `/marketing/reports/ads`.
  * Editorial campaigns stay in Marketing.
  */
 import AdsMarketingChrome from '@/components/ads/AdsMarketingChrome.vue'

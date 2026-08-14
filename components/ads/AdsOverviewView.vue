@@ -74,7 +74,7 @@ const channels = computed(() => [
   {
     title: 'Analytics',
     description: 'Tráfego e conversões',
-    to: `${adsBasePath.value}/analytics`,
+    to: '/marketing/reports/analytics',
     brand: 'analytics' as const,
   },
 ])
@@ -105,11 +105,10 @@ const channels = computed(() => [
         </Button>
         <Button
           v-if="canReports"
-          variant="outline"
-          @click="navigateTo(`${adsBasePath}/reports`)"
+          @click="navigateTo('/marketing/reports/ads')"
         >
           <Icon name="lucide:bar-chart-3" class="mr-2 h-4 w-4" />
-          Relatórios
+          Ver relatório completo
         </Button>
       </div>
     </div>

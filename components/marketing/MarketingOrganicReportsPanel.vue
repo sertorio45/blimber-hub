@@ -12,32 +12,73 @@ import {
   defaultOrganicPlatform,
   isOrganicPlatformAvailable,
 } from '~/lib/marketing/organic-report-platforms'
+import { toUserFacingReportError } from '~/lib/marketing/report-user-error'
+import { defaultCustomDateRange } from '~/lib/marketing/reports-hub'
 
 const props = withDefaults(defineProps<{
   title?: string
   description?: string
+  hideHeader?: boolean
+  hidePeriod?: boolean
+  syncRangeQuery?: boolean
 }>(), {
   title: 'Relatórios de Marketing',
   description: 'Métricas orgânicas das redes conectadas — Facebook Page e Instagram Business.',
+  hideHeader: false,
+  hidePeriod: false,
+  syncRangeQuery: false,
 })
 
 const { tenantId } = useTenant()
+const queryRange = useMarketingReportsRange()
 
 const platform = ref<OrganicReportPlatform>('facebook')
-const datePreset = ref<string>('last_7d')
-const dateStart = ref('')
-const dateEnd = ref('')
+const localDatePreset = ref<string>('last_7d')
+const localDateStart = ref('')
+const localDateEnd = ref('')
 const metaPeriod = ref<MetaOrganicPeriod>('day')
 
+const datePreset = computed({
+  get: () => (props.syncRangeQuery ? queryRange.datePreset.value : localDatePreset.value),
+  set: (value: string) => {
+    if (props.syncRangeQuery)
+      queryRange.datePreset.value = value
+    else
+      localDatePreset.value = value
+  },
+})
+
+const dateStart = computed({
+  get: () => (props.syncRangeQuery ? queryRange.dateStart.value : localDateStart.value),
+  set: (value: string) => {
+    if (props.syncRangeQuery)
+      queryRange.dateStart.value = value
+    else
+      localDateStart.value = value
+  },
+})
+
+const dateEnd = computed({
+  get: () => (props.syncRangeQuery ? queryRange.dateEnd.value : localDateEnd.value),
+  set: (value: string) => {
+    if (props.syncRangeQuery)
+      queryRange.dateEnd.value = value
+    else
+      localDateEnd.value = value
+  },
+})
+
 watch(datePreset, (value) => {
-  if (value === 'custom' && !dateStart.value) {
-    const end = new Date()
-    const start = new Date()
-    start.setDate(end.getDate() - 30)
-    dateEnd.value = end.toISOString().slice(0, 10)
-    dateStart.value = start.toISOString().slice(0, 10)
+  if (props.syncRangeQuery)
+    return
+  if (value === 'custom' && !localDateStart.value) {
+    const range = defaultCustomDateRange()
+    localDateEnd.value = range.dateEnd
+    localDateStart.value = range.dateStart
   }
 })
+
+const forceRefreshOnce = ref(false)
 
 function reportsQuery() {
   const query: Record<string, string | undefined> = {
@@ -56,8 +97,6 @@ function reportsQuery() {
   }
   return query
 }
-
-const forceRefreshOnce = ref(false)
 
 const { data, pending, showSkeleton, refresh, error: loadError } = useMarketingFetch<{ data: OrganicReportsPayload } | OrganicReportsPayload>({
   key: () =>
@@ -87,20 +126,9 @@ watch(connectedPlatforms, (platforms) => {
 const showSidebar = computed(() => connectedPlatforms.value.length > 1)
 const hasAccounts = computed(() => connectedPlatforms.value.length > 0)
 
-const loadErrorMessage = computed(() => {
-  const err = loadError.value as {
-    data?: { statusMessage?: string, message?: string }
-    statusMessage?: string
-    message?: string
-  } | null
-  if (!err)
-    return ''
-  return err.data?.statusMessage
-    || err.data?.message
-    || err.statusMessage
-    || err.message
-    || 'Não foi possível carregar os relatórios orgânicos.'
-})
+const loadErrorMessage = computed(() =>
+  loadError.value ? toUserFacingReportError(loadError.value) : '',
+)
 
 const activeBlock = computed(() => {
   if (platform.value === 'facebook')
@@ -124,7 +152,10 @@ async function refreshReports() {
 
 <template>
   <div class="w-full flex flex-col gap-6">
-    <div class="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
+    <div
+      v-if="!hideHeader"
+      class="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between"
+    >
       <div>
         <h1 class="text-2xl font-bold tracking-tight">
           {{ title }}
@@ -139,11 +170,11 @@ async function refreshReports() {
 
     <div
       v-else-if="loadErrorMessage"
-      class="flex flex-col items-center justify-center gap-4 rounded-xl border border-destructive/30 bg-destructive/5 px-6 py-16 text-center"
+      class="flex flex-col items-center justify-center gap-4 border border-destructive/30 rounded-xl bg-destructive/5 px-6 py-16 text-center"
     >
       <Icon name="lucide:alert-circle" class="h-10 w-10 text-destructive" />
       <div class="max-w-md space-y-2">
-        <p class="font-medium text-destructive">
+        <p class="text-destructive font-medium">
           Erro ao carregar relatórios
         </p>
         <p class="text-sm text-muted-foreground">
@@ -157,7 +188,7 @@ async function refreshReports() {
 
     <div
       v-else-if="!hasAccounts"
-      class="flex flex-col items-center justify-center gap-4 rounded-xl border border-dashed bg-card/40 px-6 py-16 text-center"
+      class="flex flex-col items-center justify-center gap-4 border rounded-xl border-dashed bg-card/40 px-6 py-16 text-center"
     >
       <Icon name="lucide:link-2-off" class="h-10 w-10 text-muted-foreground" />
       <div class="max-w-md space-y-2">
@@ -169,7 +200,7 @@ async function refreshReports() {
         </p>
       </div>
       <Button as-child>
-        <NuxtLink to="/marketing/integrations">
+        <NuxtLink to="/settings/integrations">
           Ir para Integrações
         </NuxtLink>
       </Button>
@@ -186,45 +217,47 @@ async function refreshReports() {
       <div class="min-w-0 flex flex-1 flex-col gap-6">
         <div class="flex flex-col gap-4 border rounded-xl bg-card/50 p-4 lg:flex-row lg:flex-wrap lg:items-end lg:justify-between">
           <div class="flex flex-wrap items-center gap-2">
-            <Label class="whitespace-nowrap text-xs text-muted-foreground">
-              Período
-            </Label>
-            <Select v-model="datePreset">
-              <SelectTrigger class="w-[180px]">
-                <SelectValue placeholder="Período" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="today">
-                  Hoje
-                </SelectItem>
-                <SelectItem value="yesterday">
-                  Ontem
-                </SelectItem>
-                <SelectItem value="last_7d">
-                  Últimos 7 dias
-                </SelectItem>
-                <SelectItem value="last_14d">
-                  Últimos 14 dias
-                </SelectItem>
-                <SelectItem value="last_30d">
-                  Últimos 30 dias
-                </SelectItem>
-                <SelectItem value="last_90d">
-                  Últimos 90 dias
-                </SelectItem>
-                <SelectItem value="custom">
-                  Período personalizado
-                </SelectItem>
-              </SelectContent>
-            </Select>
-            <DateRangePicker
-              v-if="datePreset === 'custom'"
-              v-model:start="dateStart"
-              v-model:end="dateEnd"
-              class="shrink-0"
-            />
+            <template v-if="!hidePeriod">
+              <Label class="whitespace-nowrap text-xs text-muted-foreground">
+                Período
+              </Label>
+              <Select v-model="datePreset">
+                <SelectTrigger class="w-[180px]">
+                  <SelectValue placeholder="Período" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="today">
+                    Hoje
+                  </SelectItem>
+                  <SelectItem value="yesterday">
+                    Ontem
+                  </SelectItem>
+                  <SelectItem value="last_7d">
+                    Últimos 7 dias
+                  </SelectItem>
+                  <SelectItem value="last_14d">
+                    Últimos 14 dias
+                  </SelectItem>
+                  <SelectItem value="last_30d">
+                    Últimos 30 dias
+                  </SelectItem>
+                  <SelectItem value="last_90d">
+                    Últimos 90 dias
+                  </SelectItem>
+                  <SelectItem value="custom">
+                    Período personalizado
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              <DateRangePicker
+                v-if="datePreset === 'custom'"
+                v-model:start="dateStart"
+                v-model:end="dateEnd"
+                class="shrink-0"
+              />
+            </template>
 
-            <Label class="ml-2 whitespace-nowrap text-xs text-muted-foreground">
+            <Label class="whitespace-nowrap text-xs text-muted-foreground" :class="hidePeriod ? '' : 'ml-2'">
               Agregação Meta
             </Label>
             <Select v-model="metaPeriod">
@@ -255,9 +288,9 @@ async function refreshReports() {
 
         <div
           v-if="platform === 'linkedin'"
-          class="rounded-xl border bg-card p-8 text-center text-sm text-muted-foreground"
+          class="border rounded-xl bg-card p-8 text-center text-sm text-muted-foreground"
         >
-          <p class="font-medium text-foreground">
+          <p class="text-foreground font-medium">
             {{ payload?.linkedin?.account?.name }}
           </p>
           <p class="mt-2">

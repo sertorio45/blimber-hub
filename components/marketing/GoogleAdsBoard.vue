@@ -1,11 +1,11 @@
 <script setup lang="ts">
+import type { ReportTableColumn } from '@/components/marketing/ReportInsightTable.vue'
+import type { MarketingOverviewPeriod } from '~/types/marketing'
 import type {
   GoogleAdsOverviewBlock,
   GoogleAdsReportTemplateId,
   GoogleAdsSeriesPoint,
 } from '~/types/marketing-reports'
-import type { MarketingOverviewPeriod } from '~/types/marketing'
-import type { ReportTableColumn } from '@/components/marketing/ReportInsightTable.vue'
 
 import GoogleAdsBrandIcon from '@/components/brand/GoogleAdsBrandIcon.vue'
 import GoogleAdsTestTokenNotice from '@/components/marketing/GoogleAdsTestTokenNotice.vue'
@@ -13,16 +13,17 @@ import ReportInsightTable from '@/components/marketing/ReportInsightTable.vue'
 import ReportKpiCard from '@/components/marketing/ReportKpiCard.vue'
 import ReportTrendChart from '@/components/marketing/ReportTrendChart.vue'
 import {
-  detailMetricsOf,
-  getReportTemplate,
-  primaryMetricsOf,
-} from '~/constants/marketing-report-templates'
-import { isGoogleAdsTestTokenUserMessage } from '~/constants/google-ads'
-import {
   formatReportMetricValue,
   periodLabelPt,
   readMetricBag,
 } from '~/composables/marketing/useMarketingReportMetrics'
+import { isGoogleAdsTestTokenUserMessage } from '~/constants/google-ads'
+import {
+  detailMetricsOf,
+  getReportTemplate,
+  primaryMetricsOf,
+} from '~/constants/marketing-report-templates'
+import { toUserFacingReportError } from '~/lib/marketing/report-user-error'
 
 const props = defineProps<{
   google?: GoogleAdsOverviewBlock | null
@@ -48,6 +49,12 @@ const deltas = computed(() =>
 const isTestTokenError = computed(() =>
   isGoogleAdsTestTokenUserMessage(props.google?.error),
 )
+
+const userFacingError = computed(() => {
+  if (!props.google?.error || isTestTokenError.value)
+    return ''
+  return toUserFacingReportError(props.google.error)
+})
 
 const campaigns = computed(() => props.google?.campaigns ?? [])
 const networks = computed(() => props.google?.networks ?? [])
@@ -230,7 +237,7 @@ watch(activeCampaignsOnly, () => {
       <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <CardTitle class="flex items-center gap-2 text-base font-semibold">
-            <span class="flex h-9 w-9 items-center justify-center rounded-md border bg-muted/40">
+            <span class="h-9 w-9 flex items-center justify-center border rounded-md bg-muted/40">
               <GoogleAdsBrandIcon size="sm" />
             </span>
             Google Ads
@@ -253,7 +260,7 @@ watch(activeCampaignsOnly, () => {
             v-if="google?.error && !isTestTokenError"
             class="mt-2 text-xs text-destructive"
           >
-            {{ google.error }}
+            {{ userFacingError }}
           </p>
           <p
             v-else-if="isTestTokenError"
@@ -275,13 +282,13 @@ watch(activeCampaignsOnly, () => {
           </p>
         </div>
 
-        <div class="flex w-full flex-col gap-4 lg:max-w-lg lg:shrink-0">
+        <div class="w-full flex flex-col gap-4 lg:max-w-lg lg:shrink-0">
           <div class="flex flex-col gap-2">
-            <Label for="gads-campaign" class="text-xs font-medium text-muted-foreground">
+            <Label for="gads-campaign" class="text-xs text-muted-foreground font-medium">
               Campanha
             </Label>
             <Select v-model="selectedCampaignId">
-              <SelectTrigger id="gads-campaign" class="w-full min-w-0">
+              <SelectTrigger id="gads-campaign" class="min-w-0 w-full">
                 <SelectValue placeholder="Todas" />
               </SelectTrigger>
               <SelectContent>
@@ -300,7 +307,7 @@ watch(activeCampaignsOnly, () => {
             </Select>
           </div>
           <div
-            class="flex items-center justify-between gap-3 rounded-xl border border-border/70 bg-muted/25 px-3 py-2.5 shadow-sm"
+            class="flex items-center justify-between gap-3 border border-border/70 rounded-xl bg-muted/25 px-3 py-2.5 shadow-sm"
           >
             <Label for="gads-active" class="cursor-pointer text-sm font-medium">
               Campanhas ativas
@@ -312,9 +319,9 @@ watch(activeCampaignsOnly, () => {
     </CardHeader>
 
     <CardContent class="p-0">
-      <div v-if="loading" class="space-y-4 p-4 sm:p-6">
+      <div v-if="loading" class="p-4 space-y-4 sm:p-6">
         <div class="grid gap-4 lg:grid-cols-3">
-          <div v-for="n in 3" :key="`g-sk-p-${n}`" class="space-y-3 rounded-lg border p-4">
+          <div v-for="n in 3" :key="`g-sk-p-${n}`" class="border rounded-lg p-4 space-y-3">
             <Skeleton class="h-3 w-24" />
             <Skeleton class="h-8 w-32" />
             <Skeleton class="h-10 w-full" />
@@ -334,7 +341,7 @@ watch(activeCampaignsOnly, () => {
           v-else-if="google?.error"
           class="px-4 py-8 text-center text-sm text-destructive sm:px-6"
         >
-          {{ google.error }}
+          {{ userFacingError }}
         </div>
 
         <template v-else>
@@ -356,10 +363,10 @@ watch(activeCampaignsOnly, () => {
           </div>
 
           <div class="border-b px-4 py-4 sm:px-6">
-            <p class="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <p class="mb-3 text-xs text-muted-foreground font-medium tracking-wide uppercase">
               Detalhamento
             </p>
-            <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div class="grid gap-3 lg:grid-cols-4 sm:grid-cols-2">
               <ReportKpiCard
                 v-for="item in detailDefs"
                 :key="item.key"
@@ -377,7 +384,7 @@ watch(activeCampaignsOnly, () => {
 
           <div v-if="trendData.length" class="border-b px-4 py-4 sm:px-6">
             <div class="mb-3">
-              <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              <p class="text-xs text-muted-foreground font-medium tracking-wide uppercase">
                 Investimento vs resultados
               </p>
               <p class="mt-0.5 text-sm text-muted-foreground">
@@ -401,7 +408,7 @@ watch(activeCampaignsOnly, () => {
             v-if="networkRows.length > 1"
             class="border-b px-4 py-4 sm:px-6"
           >
-            <p class="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <p class="mb-3 text-xs text-muted-foreground font-medium tracking-wide uppercase">
               Por tipo de campanha
             </p>
             <ReportInsightTable
@@ -412,7 +419,7 @@ watch(activeCampaignsOnly, () => {
           </div>
 
           <div class="px-4 py-4 sm:px-6">
-            <p class="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <p class="mb-3 text-xs text-muted-foreground font-medium tracking-wide uppercase">
               Campanhas
             </p>
             <ReportInsightTable

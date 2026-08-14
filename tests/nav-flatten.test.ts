@@ -7,7 +7,7 @@ import {
 } from '~/utils/nav-flatten'
 
 describe('flattenModuleNavItems', () => {
-  it('flattens Planejamento and keeps Ads as a group', () => {
+  it('flattens Planejamento and keeps Ads, Relatórios and Configurações as groups', () => {
     const tree: NavLink[] = [
       { title: 'Visão Geral', link: '/marketing' },
       {
@@ -18,7 +18,16 @@ describe('flattenModuleNavItems', () => {
           { title: 'Campanhas editoriais', link: '/marketing/campaigns' },
         ],
       },
-      { title: 'Relatórios orgânicos', link: '/marketing/reports' },
+      {
+        title: 'Relatórios',
+        link: '/marketing/reports',
+        keepGroup: true,
+        children: [
+          { title: 'Anúncios', link: '/marketing/reports/ads' },
+          { title: 'Analytics', link: '/marketing/reports/analytics' },
+          { title: 'Redes sociais', link: '/marketing/reports/social' },
+        ],
+      },
       {
         title: 'Ads',
         link: '/marketing/ads',
@@ -26,7 +35,7 @@ describe('flattenModuleNavItems', () => {
         children: [
           { title: 'Visão Geral', link: '/marketing/ads' },
           { title: 'Campanhas', link: '/marketing/ads/campaigns' },
-          { title: 'Relatórios', link: '/marketing/ads/reports' },
+          { title: 'Criativos', link: '/marketing/ads/creatives' },
         ],
       },
       {
@@ -44,17 +53,22 @@ describe('flattenModuleNavItems', () => {
       'Visão Geral',
       'Calendário',
       'Campanhas editoriais',
-      'Relatórios orgânicos',
+      'Relatórios',
       'Ads',
       'Configurações',
     ])
     expect(items.find(item => item.title === 'Ads')?.children?.map(child => child.title)).toEqual([
       'Visão Geral',
       'Campanhas',
-      'Relatórios',
+      'Criativos',
+    ])
+    expect(items.find(item => item.title === 'Relatórios')?.children?.map(child => child.title)).toEqual([
+      'Anúncios',
+      'Analytics',
+      'Redes sociais',
     ])
     expect(items.filter(item => item.title === 'Campanhas').length).toBe(0)
-    expect(items.filter(item => item.title === 'Relatórios').length).toBe(0)
+    expect(items.filter(item => item.title === 'Anúncios').length).toBe(0)
   })
 })
 
@@ -78,6 +92,17 @@ describe('resolveNavGroupOpen', () => {
     ],
   }
 
+  const reports = {
+    title: 'Relatórios',
+    link: '/marketing/reports',
+    defaultExpanded: false,
+    children: [
+      { title: 'Anúncios', link: '/marketing/reports/ads' },
+      { title: 'Analytics', link: '/marketing/reports/analytics' },
+      { title: 'Redes sociais', link: '/marketing/reports/social' },
+    ],
+  }
+
   it('keeps Ads and Configurações collapsed off their routes', () => {
     expect(resolveNavGroupOpen(ads, '/marketing')).toBe(false)
     expect(resolveNavGroupOpen(ads, '/marketing/campaigns')).toBe(false)
@@ -89,6 +114,14 @@ describe('resolveNavGroupOpen', () => {
     expect(resolveNavGroupOpen(ads, '/marketing/ads')).toBe(true)
     expect(resolveNavGroupOpen(ads, '/marketing/ads/campaigns')).toBe(true)
     expect(isNavGroupActive(settings, '/marketing/ads')).toBe(false)
+  })
+
+  it('expands Relatórios on hub routes without opening Ads', () => {
+    expect(resolveNavGroupOpen(reports, '/marketing/reports')).toBe(true)
+    expect(resolveNavGroupOpen(reports, '/marketing/reports/ads')).toBe(true)
+    expect(resolveNavGroupOpen(reports, '/marketing/reports/social')).toBe(true)
+    expect(resolveNavGroupOpen(ads, '/marketing/reports/ads')).toBe(false)
+    expect(isNavGroupActive(ads, '/marketing/reports/analytics')).toBe(false)
   })
 
   it('expands Configurações on Brand Center, not on global Integrações', () => {

@@ -115,18 +115,42 @@ export const navMenu: NavMenu[] = [
             audience: 'agency',
           },
           {
-            // Organic reports surface kept in Marketing; Ads has its own Relatórios.
-            // Do not redirect /marketing/reports to Ads in this stage.
-            title: 'Relatórios orgânicos',
+            /**
+             * Unified reports hub. Ads submenu must not duplicate Relatórios.
+             * Editorial campaigns stay under Planejamento, not here.
+             */
+            title: 'Relatórios',
             icon: 'i-lucide-bar-chart-3',
             link: '/marketing/reports',
+            keepGroup: true,
+            defaultExpanded: false,
             roles: ['admin', 'funcionario', 'cliente'],
             capability: 'marketing.social.reports',
+            children: [
+              {
+                title: 'Anúncios',
+                icon: 'i-lucide-circle-dollar-sign',
+                link: '/marketing/reports/ads',
+                capability: 'marketing.social.reports',
+              },
+              {
+                title: 'Analytics',
+                icon: 'i-lucide-line-chart',
+                link: '/marketing/reports/analytics',
+                capability: 'marketing.social.reports',
+              },
+              {
+                title: 'Redes sociais',
+                icon: 'i-lucide-share-2',
+                link: '/marketing/reports/social',
+                capability: 'marketing.social.reports',
+              },
+            ],
           },
           {
             /**
              * Ads stays a collapsible under Marketing so flattened
-             * siblings do not show two "Campanhas" / "Relatórios".
+             * siblings do not show two "Campanhas". Relatórios lives in its own group.
              * Canonical paid UI is `/marketing/ads*` (ETAPA 6: no Ads product tile).
              */
             title: 'Ads',
@@ -154,12 +178,6 @@ export const navMenu: NavMenu[] = [
                 link: '/marketing/ads/creatives',
                 capability: 'marketing.social.brand_guide.read',
                 badge: 'Em evolução',
-              },
-              {
-                title: 'Relatórios',
-                icon: 'i-lucide-bar-chart-3',
-                link: '/marketing/ads/reports',
-                capability: 'marketing.social.reports',
               },
             ],
           },

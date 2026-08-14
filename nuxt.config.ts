@@ -1,11 +1,11 @@
 import process from 'node:process'
 
 // https://nuxt.com/docs/api/configuration/nuxt-config
-import { ADS_LEGACY_REDIRECTS, MARKETING_SETTINGS_REDIRECTS } from './constants/ads-domain'
+import { ADS_LEGACY_REDIRECTS, MARKETING_REPORTS_REDIRECTS, MARKETING_SETTINGS_REDIRECTS } from './constants/ads-domain'
 import { APP_DESCRIPTION, APP_FULL_NAME, APP_NAME } from './constants/app'
 
 const redirectRouteRules = Object.fromEntries(
-  Object.entries({ ...ADS_LEGACY_REDIRECTS, ...MARKETING_SETTINGS_REDIRECTS }).map(([from, to]) => [
+  Object.entries({ ...ADS_LEGACY_REDIRECTS, ...MARKETING_SETTINGS_REDIRECTS, ...MARKETING_REPORTS_REDIRECTS }).map(([from, to]) => [
     from,
     { redirect: { to, statusCode: 301 as const } },
   ]),

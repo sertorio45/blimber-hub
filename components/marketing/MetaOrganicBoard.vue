@@ -5,13 +5,14 @@ import ReportInsightTable from '@/components/marketing/ReportInsightTable.vue'
 import ReportKpiCard from '@/components/marketing/ReportKpiCard.vue'
 import ReportTrendChart from '@/components/marketing/ReportTrendChart.vue'
 import {
-  detailOrganicMetrics,
-  primaryOrganicMetrics,
-} from '~/constants/marketing-organic-metrics'
-import {
   periodLabelPt,
   readMetricBag,
 } from '~/composables/marketing/useMarketingReportMetrics'
+import {
+  detailOrganicMetrics,
+  primaryOrganicMetrics,
+} from '~/constants/marketing-organic-metrics'
+import { toUserFacingReportError } from '~/lib/marketing/report-user-error'
 
 const props = defineProps<{
   block?: MetaOrganicReportBlock | null
@@ -20,6 +21,9 @@ const props = defineProps<{
 }>()
 
 const platformLabel = computed(() => props.block?.platform === 'instagram' ? 'Instagram' : 'Facebook')
+const userFacingError = computed(() =>
+  props.block?.error ? toUserFacingReportError(props.block.error) : '',
+)
 
 const primaryDefs = computed(() =>
   props.block?.platform ? primaryOrganicMetrics(props.block.platform) : [],
@@ -78,17 +82,17 @@ const tableColumns = computed(() => [
 
     <div
       v-else-if="block?.error"
-      class="rounded-xl border border-destructive/30 bg-destructive/5 p-6 text-sm text-destructive"
+      class="border border-destructive/30 rounded-xl bg-destructive/5 p-6 text-sm text-destructive"
     >
-      {{ block.error }}
+      {{ userFacingError }}
     </div>
 
     <div
       v-else-if="!block?.connected"
-      class="rounded-xl border border-dashed p-8 text-center text-sm text-muted-foreground"
+      class="border rounded-xl border-dashed p-8 text-center text-sm text-muted-foreground"
     >
       Conecte a integração Meta em
-      <NuxtLink to="/marketing/integrations" class="text-primary underline-offset-4 hover:underline">
+      <NuxtLink to="/settings/integrations" class="text-primary underline-offset-4 hover:underline">
         Integrações
       </NuxtLink>
       para ver métricas orgânicas de {{ platformLabel }}.
@@ -119,7 +123,7 @@ const tableColumns = computed(() => [
         />
       </div>
 
-      <div v-if="block.series.length && chartSeries.length" class="rounded-xl border bg-card p-4">
+      <div v-if="block.series.length && chartSeries.length" class="border rounded-xl bg-card p-4">
         <p class="mb-4 text-sm font-medium">
           Tendência — {{ chartSeries[0].label }}
         </p>
@@ -129,7 +133,7 @@ const tableColumns = computed(() => [
         />
       </div>
 
-      <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div class="grid gap-4 lg:grid-cols-3 sm:grid-cols-2">
         <ReportKpiCard
           v-for="def in detailDefs"
           :key="def.key"
@@ -142,7 +146,7 @@ const tableColumns = computed(() => [
         />
       </div>
 
-      <div class="rounded-xl border bg-card p-4">
+      <div class="border rounded-xl bg-card p-4">
         <p class="mb-4 text-sm font-medium">
           Detalhamento diário
         </p>

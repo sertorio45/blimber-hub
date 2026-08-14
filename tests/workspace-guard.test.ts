@@ -126,7 +126,10 @@ describe('guarda de rotas por tipo de organização', () => {
     const content = leaves.find(child => child.link === '/marketing/content')!
     const publishing = leaves.find(child => child.link === '/marketing/publishing')!
     const brand = leaves.find(child => child.link === '/marketing/brand')!
-    const reports = leaves.find(child => child.link === '/marketing/reports')!
+    const reportsGroup = marketing.children.find(child => child.title === 'Relatórios')
+    const reportsAds = leaves.find(child => child.link === '/marketing/reports/ads')!
+    const reportsAnalytics = leaves.find(child => child.link === '/marketing/reports/analytics')!
+    const reportsSocial = leaves.find(child => child.link === '/marketing/reports/social')!
     const editorialCampaigns = leaves.find(child => child.link === '/marketing/campaigns')!
     const settings = marketing.children.find(child => child.title === 'Configurações')
     const socialAccounts = leaves.find(child => child.link === '/settings/integrations')
@@ -145,7 +148,17 @@ describe('guarda de rotas por tipo de organização', () => {
     expect(publishing.title).toBe('Publicações')
     expect(calendar.title).toBe('Calendário')
     expect(editorialCampaigns.title).toBe('Campanhas editoriais')
-    expect(reports.title).toBe('Relatórios orgânicos')
+    expect(reportsGroup?.keepGroup).toBe(true)
+    expect(reportsGroup?.defaultExpanded).toBe(false)
+    expect(reportsGroup?.link).toBe('/marketing/reports')
+    expect(reportsGroup?.children?.map(child => child.title)).toEqual([
+      'Anúncios',
+      'Analytics',
+      'Redes sociais',
+    ])
+    expect(reportsAds.title).toBe('Anúncios')
+    expect(reportsAnalytics.title).toBe('Analytics')
+    expect(reportsSocial.title).toBe('Redes sociais')
     expect(settings?.keepGroup).toBe(true)
     expect(settings?.defaultExpanded).toBe(false)
     expect(settings?.link).toBe('/marketing/settings')
@@ -161,7 +174,7 @@ describe('guarda de rotas por tipo de organização', () => {
       'Aprovações',
       'Biblioteca',
       'Publicações',
-      'Relatórios orgânicos',
+      'Relatórios',
       'Ads',
       'Configurações',
     ])
@@ -174,22 +187,23 @@ describe('guarda de rotas por tipo de organização', () => {
       'Visão Geral',
       'Campanhas',
       'Criativos',
-      'Relatórios',
     ])
     expect(adsSubmenu?.children?.map(child => child.link)).toEqual([
       '/marketing/ads',
       '/marketing/ads/campaigns',
       '/marketing/ads/creatives',
-      '/marketing/ads/reports',
     ])
     expect(leaves.find(leaf => leaf.link === '/marketing/ads/creatives')?.badge).toBe('Em evolução')
 
-    // ETAPA 2: paid Ads subset under Marketing uses `/marketing/ads*`; Meta/Google/Analytics stay on the Ads product.
     expect(leaves.filter(leaf => leaf.link?.startsWith('/marketing/ads')).map(leaf => leaf.link)).toEqual([
       '/marketing/ads',
       '/marketing/ads/campaigns',
       '/marketing/ads/creatives',
-      '/marketing/ads/reports',
+    ])
+    expect(leaves.filter(leaf => leaf.link?.startsWith('/marketing/reports')).map(leaf => leaf.link)).toEqual([
+      '/marketing/reports/ads',
+      '/marketing/reports/analytics',
+      '/marketing/reports/social',
     ])
     expect(leaves.some(leaf => leaf.link?.startsWith('/ads'))).toBe(false)
     expect(leaves.some(leaf => leaf.link === '/ads/meta' || leaf.link === '/ads/google')).toBe(false)
@@ -242,6 +256,9 @@ describe('matchesNavAudience', () => {
     expect(isClientPortalMarketingLink('/marketing/ads/campaigns')).toBe(true)
     expect(isClientPortalMarketingLink('/marketing/ads/creatives')).toBe(true)
     expect(isClientPortalMarketingLink('/marketing/ads/reports')).toBe(true)
+    expect(isClientPortalMarketingLink('/marketing/reports/ads')).toBe(true)
+    expect(isClientPortalMarketingLink('/marketing/reports/analytics')).toBe(true)
+    expect(isClientPortalMarketingLink('/marketing/reports/social')).toBe(true)
     expect(isClientPortalMarketingLink('/settings/integrations')).toBe(true)
     expect(isClientPortalMarketingLink('/settings/integrations/meta-capi')).toBe(true)
     expect(isClientPortalMarketingLink('/marketing/settings/ad-accounts')).toBe(true)

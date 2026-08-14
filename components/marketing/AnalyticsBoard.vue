@@ -1,26 +1,27 @@
 <script setup lang="ts">
+import type { ReportTableColumn } from '@/components/marketing/ReportInsightTable.vue'
+import type { MarketingOverviewPeriod } from '~/types/marketing'
 import type {
   AnalyticsOverviewBlock,
   AnalyticsReportTemplateId,
   AnalyticsSeriesPoint,
 } from '~/types/marketing-reports'
-import type { MarketingOverviewPeriod } from '~/types/marketing'
-import type { ReportTableColumn } from '@/components/marketing/ReportInsightTable.vue'
 
 import GoogleAnalyticsBrandIcon from '@/components/brand/GoogleAnalyticsBrandIcon.vue'
 import ReportInsightTable from '@/components/marketing/ReportInsightTable.vue'
 import ReportKpiCard from '@/components/marketing/ReportKpiCard.vue'
 import ReportTrendChart from '@/components/marketing/ReportTrendChart.vue'
 import {
-  detailMetricsOf,
-  getReportTemplate,
-  primaryMetricsOf,
-} from '~/constants/marketing-report-templates'
-import {
   formatReportMetricValue,
   periodLabelPt,
   readMetricBag,
 } from '~/composables/marketing/useMarketingReportMetrics'
+import {
+  detailMetricsOf,
+  getReportTemplate,
+  primaryMetricsOf,
+} from '~/constants/marketing-report-templates'
+import { toUserFacingReportError } from '~/lib/marketing/report-user-error'
 
 const props = defineProps<{
   analytics?: AnalyticsOverviewBlock | null
@@ -35,6 +36,9 @@ const template = computed(() =>
 const primaryDefs = computed(() => primaryMetricsOf(template.value))
 const detailDefs = computed(() => detailMetricsOf(template.value))
 const periodLabel = computed(() => periodLabelPt(props.period))
+const userFacingError = computed(() =>
+  props.analytics?.error ? toUserFacingReportError(props.analytics.error) : '',
+)
 
 const metrics = computed(() => props.analytics?.metrics)
 const deltas = computed(() => props.analytics?.deltas || null)
@@ -155,7 +159,7 @@ const pageviewsPerSession = computed(() => {
       <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <CardTitle class="flex items-center gap-2 text-base font-semibold">
-            <span class="flex h-9 w-9 items-center justify-center rounded-md border bg-muted/40">
+            <span class="h-9 w-9 flex items-center justify-center border rounded-md bg-muted/40">
               <GoogleAnalyticsBrandIcon size="sm" />
             </span>
             Google Analytics
@@ -178,7 +182,7 @@ const pageviewsPerSession = computed(() => {
             v-if="analytics?.error"
             class="mt-2 text-xs text-destructive"
           >
-            {{ analytics.error }}
+            {{ userFacingError }}
           </p>
           <p
             v-else-if="analytics && !analytics.connected"
@@ -197,9 +201,9 @@ const pageviewsPerSession = computed(() => {
     </CardHeader>
 
     <CardContent class="p-0">
-      <div v-if="loading" class="space-y-4 p-4 sm:p-6">
+      <div v-if="loading" class="p-4 space-y-4 sm:p-6">
         <div class="grid gap-4 lg:grid-cols-3">
-          <div v-for="n in 3" :key="`a-sk-${n}`" class="space-y-3 rounded-lg border p-4">
+          <div v-for="n in 3" :key="`a-sk-${n}`" class="border rounded-lg p-4 space-y-3">
             <Skeleton class="h-3 w-24" />
             <Skeleton class="h-8 w-28" />
             <Skeleton class="h-10 w-full" />
@@ -213,7 +217,7 @@ const pageviewsPerSession = computed(() => {
           v-if="analytics?.error"
           class="px-4 py-8 text-center text-sm text-destructive sm:px-6"
         >
-          {{ analytics.error }}
+          {{ userFacingError }}
         </div>
 
         <template v-else>
@@ -237,10 +241,10 @@ const pageviewsPerSession = computed(() => {
 
           <!-- Detail KPIs -->
           <div class="border-b px-4 py-4 sm:px-6">
-            <p class="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <p class="mb-3 text-xs text-muted-foreground font-medium tracking-wide uppercase">
               Detalhamento
             </p>
-            <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div class="grid gap-3 lg:grid-cols-4 sm:grid-cols-2">
               <ReportKpiCard
                 v-for="item in detailDefs"
                 :key="item.key"
@@ -260,7 +264,7 @@ const pageviewsPerSession = computed(() => {
           <div v-if="trendData.length" class="border-b px-4 py-4 sm:px-6">
             <div class="mb-3 flex items-end justify-between gap-2">
               <div>
-                <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                <p class="text-xs text-muted-foreground font-medium tracking-wide uppercase">
                   Evolução diária
                 </p>
                 <p class="mt-0.5 text-sm text-muted-foreground">
@@ -282,8 +286,8 @@ const pageviewsPerSession = computed(() => {
 
           <!-- Secondary insight strip -->
           <div class="border-b px-4 py-4 sm:px-6">
-            <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <div class="rounded-lg border bg-muted/20 px-3 py-3">
+            <div class="grid gap-3 lg:grid-cols-4 sm:grid-cols-2">
+              <div class="border rounded-lg bg-muted/20 px-3 py-3">
                 <p class="text-xs text-muted-foreground">
                   Duração média
                 </p>
@@ -291,7 +295,7 @@ const pageviewsPerSession = computed(() => {
                   {{ durationLabel }}
                 </p>
               </div>
-              <div class="rounded-lg border bg-muted/20 px-3 py-3">
+              <div class="border rounded-lg bg-muted/20 px-3 py-3">
                 <p class="text-xs text-muted-foreground">
                   Taxa de rejeição
                 </p>
@@ -299,7 +303,7 @@ const pageviewsPerSession = computed(() => {
                   {{ bounceLabel }}
                 </p>
               </div>
-              <div class="rounded-lg border bg-muted/20 px-3 py-3">
+              <div class="border rounded-lg bg-muted/20 px-3 py-3">
                 <p class="text-xs text-muted-foreground">
                   Páginas / sessão
                 </p>
@@ -307,7 +311,7 @@ const pageviewsPerSession = computed(() => {
                   {{ pageviewsPerSession }}
                 </p>
               </div>
-              <div class="rounded-lg border bg-muted/20 px-3 py-3">
+              <div class="border rounded-lg bg-muted/20 px-3 py-3">
                 <p class="text-xs text-muted-foreground">
                   {{ hasEcommerce ? 'Receita' : 'Eventos-chave' }}
                 </p>
@@ -328,7 +332,7 @@ const pageviewsPerSession = computed(() => {
 
           <!-- Channels -->
           <div class="border-b px-4 py-4 sm:px-6">
-            <p class="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <p class="mb-3 text-xs text-muted-foreground font-medium tracking-wide uppercase">
               Por canal de aquisição
             </p>
             <ReportInsightTable
@@ -340,8 +344,8 @@ const pageviewsPerSession = computed(() => {
 
           <!-- Pages + Devices -->
           <div class="grid gap-0 border-b lg:grid-cols-2">
-            <div class="border-b px-4 py-4 sm:px-6 lg:border-b-0 lg:border-r">
-              <p class="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <div class="border-b px-4 py-4 lg:border-b-0 lg:border-r sm:px-6">
+              <p class="mb-3 text-xs text-muted-foreground font-medium tracking-wide uppercase">
                 Top páginas
               </p>
               <ReportInsightTable
@@ -352,7 +356,7 @@ const pageviewsPerSession = computed(() => {
               />
             </div>
             <div class="px-4 py-4 sm:px-6">
-              <p class="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              <p class="mb-3 text-xs text-muted-foreground font-medium tracking-wide uppercase">
                 Dispositivos
               </p>
               <ReportInsightTable
@@ -365,7 +369,7 @@ const pageviewsPerSession = computed(() => {
 
           <!-- Events -->
           <div v-if="events.length" class="px-4 py-4 sm:px-6">
-            <p class="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <p class="mb-3 text-xs text-muted-foreground font-medium tracking-wide uppercase">
               Eventos-chave
             </p>
             <ReportInsightTable

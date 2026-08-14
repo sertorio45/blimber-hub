@@ -45,6 +45,15 @@ export const MARKETING_SETTINGS_REDIRECTS = {
   '/marketing/settings/integrations': SETTINGS_INTEGRATIONS_ROUTE,
 } as const
 
+export const MARKETING_REPORTS_ADS_ROUTE = '/marketing/reports/ads' as const
+export const MARKETING_REPORTS_ANALYTICS_ROUTE = '/marketing/reports/analytics' as const
+
+/** After the unified reports hub exists. */
+export const MARKETING_REPORTS_REDIRECTS = {
+  '/marketing/ads/reports': MARKETING_REPORTS_ADS_ROUTE,
+  '/marketing/ads/analytics': MARKETING_REPORTS_ANALYTICS_ROUTE,
+} as const
+
 /**
  * Bookmarks on the old Ads product shell (ETAPA 7).
  * Do not map `/ads/**` as a glob — integrations/settings have distinct targets.
@@ -53,10 +62,10 @@ export const ADS_LEGACY_REDIRECTS = {
   '/ads': '/marketing/ads',
   '/ads/campaigns': '/marketing/ads/campaigns',
   '/ads/creatives': '/marketing/ads/creatives',
-  '/ads/reports': '/marketing/ads/reports',
+  '/ads/reports': MARKETING_REPORTS_ADS_ROUTE,
   '/ads/meta': '/marketing/ads/meta',
   '/ads/google': '/marketing/ads/google',
-  '/ads/analytics': '/marketing/ads/analytics',
+  '/ads/analytics': MARKETING_REPORTS_ANALYTICS_ROUTE,
   '/ads/integrations': SETTINGS_INTEGRATIONS_ROUTE,
   '/ads/settings': MARKETING_SETTINGS_ROUTE,
 } as const
