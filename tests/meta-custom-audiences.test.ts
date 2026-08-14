@@ -5,6 +5,7 @@ import {
   buildEngagementRule,
   hashCustomerListUsers,
   MetaAdsToolError,
+  META_GRAPH_FORM_CONTENT_TYPE,
   metaCreateCustomAudience,
   metaCreateCustomAudiencesBatch,
   metaDeleteCustomAudience,
@@ -12,6 +13,7 @@ import {
   metaUpdateAdsetTargeting,
   resolveAdsetTargeting,
   retentionDaysToSeconds,
+  serializeCustomAudienceGraphJsonFields,
   setMetaWriteAuditSink,
   suggestCustomAudienceName,
 } from '~/lib/meta-ads'
@@ -113,6 +115,9 @@ describe('meta custom audiences', () => {
     })
     expect(typeof (result as any).preview.body.rule).toBe('string')
     expect(JSON.parse((result as any).preview.body.rule)).toEqual(expectedRule)
+    expect((result as any).preview.contentType).toBe(META_GRAPH_FORM_CONTENT_TYPE)
+    expect((result as any).preview.body.prefill).toBe('1')
+    expect((result as any).preview.notes).toContain(`Content-Type=${META_GRAPH_FORM_CONTENT_TYPE}`)
     expect(graphFetch.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(0)
   })
 
@@ -205,6 +210,14 @@ describe('meta custom audiences', () => {
       ratio: 0.01,
     })
     expect((result as any).preview.body.origin_audience_id).toBe('origin_1')
+    expect((result as any).preview.contentType).toBe(META_GRAPH_FORM_CONTENT_TYPE)
+    const once = JSON.stringify({
+      type: 'similarity',
+      country: 'BR',
+      ratio: 0.01,
+    })
+    expect((result as any).preview.body.lookalike_spec).toBe(once)
+    expect((result as any).preview.body.lookalike_spec).not.toBe(JSON.stringify(once))
   })
 
   it('9. Lookalike ratio inválido', async () => {
@@ -331,6 +344,9 @@ describe('meta custom audiences', () => {
     })
     expect(typeof graphRule).toBe('string')
     expect(JSON.parse(graphRule as string)).toEqual(expectedRule)
+    expect((post![1] as { bodyEncoding?: string }).bodyEncoding).toBe('form')
+    expect((post![1] as { contentType?: string }).contentType).toBe(META_GRAPH_FORM_CONTENT_TYPE)
+    expect((post![1] as { body?: Record<string, unknown> }).body?.prefill).toBe('1')
   })
 
   it('15b. Instagram ENGAGED 30d posts rule as JSON string', async () => {
@@ -357,8 +373,12 @@ describe('meta custom audiences', () => {
     )
     expect((preview as any).metaEvent).toBe('ig_business_profile_engaged')
     expect((preview as any).name).toBe('IG | Interações | 30d')
+    expect((preview as any).preview.contentType).toBe(META_GRAPH_FORM_CONTENT_TYPE)
+    expect((preview as any).preview.body.prefill).toBe('1')
     expect(typeof (preview as any).preview.body.rule).toBe('string')
+    expect((preview as any).preview.body.rule[0]).toBe('{')
     expect(JSON.parse((preview as any).preview.body.rule)).toEqual(expectedRule)
+    expect((preview as any).preview.body.rule).not.toBe(JSON.stringify(JSON.stringify(expectedRule)))
 
     const result = await metaCreateCustomAudience(
       { client: createIntegrationClient(baseConfig), graphFetch },
@@ -376,7 +396,27 @@ describe('meta custom audiences', () => {
     )
     const graphRule = (post![1] as { body?: Record<string, unknown> })?.body?.rule
     expect(typeof graphRule).toBe('string')
+    expect((graphRule as string)[0]).toBe('{')
     expect(JSON.parse(graphRule as string)).toEqual(expectedRule)
+    expect(graphRule).not.toBe(JSON.stringify(JSON.stringify(expectedRule)))
+    expect((post![1] as { bodyEncoding?: string }).bodyEncoding).toBe('form')
+    expect((post![1] as { contentType?: string }).contentType).toBe(META_GRAPH_FORM_CONTENT_TYPE)
+    expect((post![1] as { body?: Record<string, unknown> }).body?.prefill).toBe('1')
+  })
+
+  it('does not double-stringify rule or lookalike_spec', () => {
+    const rule = buildEngagementRule({
+      eventSourceType: 'ig_business',
+      sourceId: 'ig_1',
+      metaEvent: 'ig_business_profile_engaged',
+      retentionSeconds: 2592000,
+    })
+    const once = serializeCustomAudienceGraphJsonFields({ rule, prefill: '1' })
+    const twice = serializeCustomAudienceGraphJsonFields(once)
+    expect(once.rule).toBe(JSON.stringify(rule))
+    expect(twice.rule).toBe(once.rule)
+    expect(twice.rule).not.toBe(JSON.stringify(JSON.stringify(rule)))
+    expect(typeof JSON.parse(twice.rule as string)).toBe('object')
   })
 
   it('16. Erro Graph mapeado', async () => {

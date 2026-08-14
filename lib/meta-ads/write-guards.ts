@@ -39,6 +39,7 @@ export interface MetaDryRunPreview {
   method: string
   path: string
   body?: Record<string, unknown>
+  contentType?: string
   notes?: string[]
 }
 

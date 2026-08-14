@@ -2,12 +2,17 @@ export {
   actPath,
   buildMetaDateQuery,
   defaultMetaGraphFetch,
+  DEFAULT_META_ADS_STUDIES_GRAPH_VERSION,
   encodeMetaGraphBodyValue,
   enrichMetaGraphWriteError,
   extractMetaGraphErrorFields,
+  META_GRAPH_FORM_CONTENT_TYPE,
+  metaAdsStudiesGraphUrl,
   metaGraphUrl,
   normalizeMetaAdAccountId,
+  resolveMetaAdsStudiesGraphVersion,
   resolveMetaGraphVersion,
+  toMetaGraphFormParams,
   type MetaGraphErrorFields,
 } from './graph'
 export {
@@ -156,6 +161,7 @@ export {
   resolveOwningBusinessId,
   extractBusinessIdFromAdAccountNode,
   deleteCopiedAdsForFailedStudy,
+  formatAdStudiesWritePreview,
 } from './experiment-service'
 export {
   META_ADSET_BILLING_EVENTS,
@@ -184,6 +190,8 @@ export {
   type MetaCampaignStatusUpdate,
   type MetaDatePreset,
   type MetaGraphFetch,
+  type MetaGraphFetchInit,
+  type MetaGraphBodyEncoding,
   type MetaInsightLevel,
   type MetaIntegrationPublicConfig,
   type ResolvedMetaCredentials,

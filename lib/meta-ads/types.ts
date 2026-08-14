@@ -11,12 +11,19 @@ export type MetaInsightLevel = 'account' | 'campaign' | 'adset' | 'ad'
 
 export type MetaCampaignStatusUpdate = 'ACTIVE' | 'PAUSED'
 
+/** `form` = POST application/x-www-form-urlencoded (customaudiences). Default `query` keeps fields on the URL. */
+export type MetaGraphBodyEncoding = 'query' | 'form'
+
+export interface MetaGraphFetchInit {
+  method?: string
+  query?: Record<string, string | number | undefined>
+  body?: Record<string, unknown>
+  bodyEncoding?: MetaGraphBodyEncoding
+  contentType?: string
+}
+
 export interface MetaGraphFetch {
-  (url: string, init?: {
-    method?: string
-    query?: Record<string, string | number | undefined>
-    body?: Record<string, unknown>
-  }): Promise<any>
+  (url: string, init?: MetaGraphFetchInit): Promise<any>
 }
 
 export interface MetaIntegrationPublicConfig {

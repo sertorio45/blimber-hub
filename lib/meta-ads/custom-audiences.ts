@@ -13,6 +13,7 @@ import {
   defaultMetaGraphFetch,
   enrichMetaGraphWriteError,
   extractMetaGraphErrorFields,
+  META_GRAPH_FORM_CONTENT_TYPE,
   metaGraphUrl,
 } from './graph'
 import { resolveMetaCredentials } from './integration'
@@ -465,9 +466,8 @@ export function buildWebsiteRule(params: {
 
 /**
  * Meta documents `rule` and `lookalike_spec` as JSON-encoded strings on
- * POST /act_{id}/customaudiences (not nested JSON objects).
- * defaultMetaGraphFetch also JSON.stringifies objects, but we stringify here
- * so the Graph body / dry-run preview match the wire format exactly.
+ * POST /act_{id}/customaudiences (form-urlencoded, not nested JSON objects).
+ * Stringify once; if already a string, leave it (never JSON.stringify(JSON.stringify(x))).
  */
 export function serializeCustomAudienceGraphJsonFields(
   body: Record<string, unknown>,
@@ -588,6 +588,12 @@ export function mapAudienceGraphError(error: unknown): never {
   throw error
 }
 
+const CUSTOM_AUDIENCE_FORM_POST = {
+  method: 'POST' as const,
+  bodyEncoding: 'form' as const,
+  contentType: META_GRAPH_FORM_CONTENT_TYPE,
+}
+
 async function graphWrite(
   graph: MetaGraphFetch,
   url: string,
@@ -595,6 +601,8 @@ async function graphWrite(
     method?: string
     query?: Record<string, string | number | undefined>
     body?: Record<string, unknown>
+    bodyEncoding?: 'query' | 'form'
+    contentType?: string
   },
   requestPayload?: Record<string, unknown> | null,
 ) {
@@ -863,7 +871,7 @@ export function buildCreateAudienceGraphBody(params: {
   lookalikeCountry?: string
   prefill?: boolean
 }): { subtype: string, body: Record<string, unknown>, metaEvent: string | null } {
-  const prefill = params.prefill !== false
+  const prefill = params.prefill !== false ? '1' : '0'
   const base: Record<string, unknown> = {
     name: params.name,
   }
@@ -1170,8 +1178,9 @@ function createPreviewNotes(prepared: PreparedCreateAudience): string[] {
     prepared.sources.pageId ? `pageId=${prepared.sources.pageId}` : null,
     prepared.sources.instagramAccountId ? `instagramAccountId=${prepared.sources.instagramAccountId}` : null,
     prepared.sources.pixelId ? `pixelId=${prepared.sources.pixelId}` : null,
-    typeof prepared.graphBody.rule === 'string' ? 'rule=JSON string (Graph)' : null,
-    typeof prepared.graphBody.lookalike_spec === 'string' ? 'lookalike_spec=JSON string (Graph)' : null,
+    `Content-Type=${META_GRAPH_FORM_CONTENT_TYPE}`,
+    typeof prepared.graphBody.rule === 'string' ? 'rule=JSON string (stringify once)' : null,
+    typeof prepared.graphBody.lookalike_spec === 'string' ? 'lookalike_spec=JSON string (stringify once)' : null,
     ...prepared.notes,
   ].filter((row): row is string => Boolean(row))
 }
@@ -1213,7 +1222,7 @@ async function executeCreateAudience(params: {
     graph,
     metaGraphUrl(creds.apiVersion, path),
     {
-      method: 'POST',
+      ...CUSTOM_AUDIENCE_FORM_POST,
       query: { access_token: creds.accessToken },
       body: prepared.graphBody,
     },
@@ -1277,6 +1286,7 @@ export async function metaCreateCustomAudience(
     {
       method: 'POST',
       path,
+      contentType: META_GRAPH_FORM_CONTENT_TYPE,
       body: sanitizeMetaWriteAuditPayload(prepared.graphBody) as Record<string, unknown>,
       notes,
     },
@@ -1422,13 +1432,21 @@ export async function metaUpdateCustomAudience(
     {
       method: 'POST',
       path,
+      contentType: META_GRAPH_FORM_CONTENT_TYPE,
       body: sanitizeMetaWriteAuditPayload(body) as Record<string, unknown>,
-      notes: ['Atualiza nome/descrição/rule se a Meta permitir no subtype.'],
+      notes: [
+        `Content-Type=${META_GRAPH_FORM_CONTENT_TYPE}`,
+        'Atualiza nome/descrição/rule se a Meta permitir no subtype.',
+      ],
     },
     async () => graphWrite(
       graph,
       metaGraphUrl(creds.apiVersion, path),
-      { method: 'POST', query: { access_token: creds.accessToken }, body },
+      {
+        ...CUSTOM_AUDIENCE_FORM_POST,
+        query: { access_token: creds.accessToken },
+        body,
+      },
       body,
     ),
   )

@@ -1,18 +1,22 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi, afterEach } from 'vitest'
 import {
   assertWhatsAppAdsetCompatibility,
   buildMetaCreateAdCreativeBody,
   buildMetaCreateAdCreativeBodyByType,
   buildMetaCreateAdsetGraphBody,
   buildMetaCreateCampaignGraphBody,
+  defaultMetaGraphFetch,
   encodeMetaGraphBodyValue,
   enrichMetaGraphWriteError,
   extractMetaGraphErrorFields,
   isMetaMessagingProtocolUrl,
   MetaAdsToolError,
+  META_GRAPH_FORM_CONTENT_TYPE,
   META_WHATSAPP_MESSAGING_LINK,
   normalizeMetaAdCreativeType,
+  resolveMetaAdsStudiesGraphVersion,
   resolveMetaGraphVersion,
+  toMetaGraphFormParams,
 } from '~/lib/meta-ads'
 
 describe('resolveMetaGraphVersion', () => {
@@ -54,6 +58,56 @@ describe('resolveMetaGraphVersion', () => {
         delete process.env.META_GRAPH_VERSION
       else
         process.env.META_GRAPH_VERSION = prevGraph
+    }
+  })
+})
+
+describe('resolveMetaAdsStudiesGraphVersion', () => {
+  it('defaults to v26.0 without bumping Ads Graph v25.0', () => {
+    const prevAds = process.env.META_ADS_GRAPH_VERSION
+    const prevGraph = process.env.META_GRAPH_VERSION
+    const prevStudies = process.env.META_ADS_STUDIES_GRAPH_VERSION
+    delete process.env.META_ADS_GRAPH_VERSION
+    delete process.env.META_GRAPH_VERSION
+    delete process.env.META_ADS_STUDIES_GRAPH_VERSION
+    try {
+      expect(resolveMetaGraphVersion()).toBe('v25.0')
+      expect(resolveMetaAdsStudiesGraphVersion()).toBe('v26.0')
+    }
+    finally {
+      if (prevAds === undefined)
+        delete process.env.META_ADS_GRAPH_VERSION
+      else
+        process.env.META_ADS_GRAPH_VERSION = prevAds
+      if (prevGraph === undefined)
+        delete process.env.META_GRAPH_VERSION
+      else
+        process.env.META_GRAPH_VERSION = prevGraph
+      if (prevStudies === undefined)
+        delete process.env.META_ADS_STUDIES_GRAPH_VERSION
+      else
+        process.env.META_ADS_STUDIES_GRAPH_VERSION = prevStudies
+    }
+  })
+
+  it('honors META_ADS_STUDIES_GRAPH_VERSION independently of Ads version', () => {
+    const prevAds = process.env.META_ADS_GRAPH_VERSION
+    const prevStudies = process.env.META_ADS_STUDIES_GRAPH_VERSION
+    process.env.META_ADS_GRAPH_VERSION = 'v25.0'
+    process.env.META_ADS_STUDIES_GRAPH_VERSION = 'v25.0'
+    try {
+      expect(resolveMetaGraphVersion()).toBe('v25.0')
+      expect(resolveMetaAdsStudiesGraphVersion()).toBe('v25.0')
+    }
+    finally {
+      if (prevAds === undefined)
+        delete process.env.META_ADS_GRAPH_VERSION
+      else
+        process.env.META_ADS_GRAPH_VERSION = prevAds
+      if (prevStudies === undefined)
+        delete process.env.META_ADS_STUDIES_GRAPH_VERSION
+      else
+        process.env.META_ADS_STUDIES_GRAPH_VERSION = prevStudies
     }
   })
 })
@@ -531,5 +585,77 @@ describe('meta graph error parsing', () => {
     expect(encodeMetaGraphBodyValue(true)).toBe(1)
     expect(encodeMetaGraphBodyValue([])).toBe('[]')
     expect(encodeMetaGraphBodyValue(undefined)).toBeUndefined()
+    expect(encodeMetaGraphBodyValue('{"already":"string"}')).toBe('{"already":"string"}')
+  })
+
+  it('form-urlencoded body stringifies nested fields once', () => {
+    const rule = { inclusions: { operator: 'or', rules: [{ filter: { value: 'ig_business_profile_engaged' } }] } }
+    const params = toMetaGraphFormParams({
+      name: 'IM_IG_ENGAJAMENTO_30D',
+      subtype: 'ENGAGEMENT',
+      prefill: '1',
+      rule: JSON.stringify(rule),
+    })
+    expect(params.get('prefill')).toBe('1')
+    expect(params.get('rule')![0]).toBe('{')
+    expect(JSON.parse(params.get('rule')!)).toEqual(rule)
+    expect(params.get('rule')).not.toBe(JSON.stringify(JSON.stringify(rule)))
+    expect(params.toString()).toContain('rule=%7B')
+    expect(params.toString()).toContain(encodeURIComponent(JSON.stringify(rule)).replace(/%20/g, '+'))
+  })
+})
+
+describe('defaultMetaGraphFetch form encoding', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.restoreAllMocks()
+  })
+
+  it('POSTs customaudiences as application/x-www-form-urlencoded', async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ id: 'aud_1' }),
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const rule = {
+      inclusions: {
+        operator: 'or',
+        rules: [{
+          event_sources: [{ type: 'ig_business', id: 'ig_1' }],
+          retention_seconds: 2592000,
+          filter: {
+            operator: 'and',
+            filters: [{ field: 'event', operator: 'eq', value: 'ig_business_profile_engaged' }],
+          },
+        }],
+      },
+    }
+
+    await defaultMetaGraphFetch('https://graph.facebook.com/v25.0/act_1/customaudiences', {
+      method: 'POST',
+      query: { access_token: 'tok' },
+      body: {
+        name: 'IM_IG_ENGAJAMENTO_30D',
+        subtype: 'ENGAGEMENT',
+        prefill: '1',
+        rule: JSON.stringify(rule),
+      },
+      bodyEncoding: 'form',
+    })
+
+    expect(fetchMock).toHaveBeenCalledOnce()
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toContain('https://graph.facebook.com/v25.0/act_1/customaudiences')
+    expect(url).toContain('access_token=tok')
+    expect(url).not.toContain('rule=')
+    expect((init.headers as Record<string, string>)['Content-Type']).toBe(META_GRAPH_FORM_CONTENT_TYPE)
+    const form = new URLSearchParams(String(init.body))
+    expect(form.get('prefill')).toBe('1')
+    expect(form.get('subtype')).toBe('ENGAGEMENT')
+    expect(typeof form.get('rule')).toBe('string')
+    expect(form.get('rule')![0]).toBe('{')
+    expect(JSON.parse(form.get('rule')!)).toEqual(rule)
+    expect(form.get('rule')).not.toBe(JSON.stringify(JSON.stringify(rule)))
   })
 })

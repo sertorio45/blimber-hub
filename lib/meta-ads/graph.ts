@@ -29,6 +29,21 @@ export function resolveMetaGraphVersion(explicit?: string | null) {
   ).replace(/^\/*/, '')
 }
 
+/** Isolated Ad Studies Graph version. Does not bump Ads, CAPI, or WhatsApp Cloud. */
+export const DEFAULT_META_ADS_STUDIES_GRAPH_VERSION = 'v26.0'
+
+/**
+ * Graph version for Ad Studies only (POST/GET `/{business_id}/ad_studies`, GET study).
+ * v25 POST was rejected with GraphMethodException code 100 on this app; studies use v26 as isolated trial.
+ * Override with META_ADS_STUDIES_GRAPH_VERSION (e.g. v25.0) without a code change.
+ */
+export function resolveMetaAdsStudiesGraphVersion() {
+  return String(
+    process.env.META_ADS_STUDIES_GRAPH_VERSION
+    || DEFAULT_META_ADS_STUDIES_GRAPH_VERSION,
+  ).replace(/^\/*/, '')
+}
+
 export function buildMetaDateQuery(
   datePreset: MetaDatePreset | string,
   dateStart?: string,
@@ -52,10 +67,13 @@ export function buildMetaDateQuery(
   return { date_preset: preset }
 }
 
+export const META_GRAPH_FORM_CONTENT_TYPE = 'application/x-www-form-urlencoded'
+
 /**
  * Encode a body field for Meta Graph form/query POST.
  * Booleans → 0/1 (Marketing API create examples use is_adset_budget_sharing_enabled=0).
- * Objects/arrays → JSON string. Skip undefined/null (never send "undefined").
+ * Objects/arrays → JSON string. Strings pass through (never JSON.stringify a JSON string again).
+ * Skip undefined/null (never send "undefined").
  */
 export function encodeMetaGraphBodyValue(value: unknown): string | number | undefined {
   if (value === undefined || value === null)
@@ -65,6 +83,18 @@ export function encodeMetaGraphBodyValue(value: unknown): string | number | unde
   if (typeof value === 'boolean')
     return value ? 1 : 0
   return JSON.stringify(value)
+}
+
+/** Build application/x-www-form-urlencoded fields. Nested objects are stringified once. */
+export function toMetaGraphFormParams(body: Record<string, unknown>): URLSearchParams {
+  const params = new URLSearchParams()
+  for (const [key, value] of Object.entries(body)) {
+    const encoded = encodeMetaGraphBodyValue(value)
+    if (encoded === undefined)
+      continue
+    params.set(key, String(encoded))
+  }
+  return params
 }
 
 function toQueryString(query?: Record<string, string | number | undefined>) {
@@ -146,22 +176,33 @@ export function enrichMetaGraphWriteError(
 /** Default fetch used outside Nuxt ($fetch). Never logs the access token. */
 export const defaultMetaGraphFetch: MetaGraphFetch = async (url, init = {}) => {
   const method = (init.method || 'GET').toUpperCase()
-  // Meta Marketing API prefers query/form fields over JSON bodies for status updates.
+  // Default: Marketing API query fields. `bodyEncoding: 'form'` uses a form POST body
+  // (required for POST /act_{id}/customaudiences — rule/lookalike_spec as JSON strings).
   const mergedQuery: Record<string, string | number | undefined> = { ...(init.query || {}) }
-  if (init.body && method !== 'GET' && method !== 'HEAD') {
-    for (const [key, value] of Object.entries(init.body)) {
-      const encoded = encodeMetaGraphBodyValue(value)
-      if (encoded === undefined)
-        continue
-      mergedQuery[key] = encoded
-    }
-  }
-  const fullUrl = `${url}${toQueryString(mergedQuery)}`
   const headers: Record<string, string> = {
     Accept: 'application/json',
   }
+  let fetchBody: string | undefined
+  const useForm = init.bodyEncoding === 'form'
+    || init.contentType === META_GRAPH_FORM_CONTENT_TYPE
 
-  const response = await fetch(fullUrl, { method, headers })
+  if (init.body && method !== 'GET' && method !== 'HEAD') {
+    if (useForm) {
+      fetchBody = toMetaGraphFormParams(init.body).toString()
+      headers['Content-Type'] = META_GRAPH_FORM_CONTENT_TYPE
+    }
+    else {
+      for (const [key, value] of Object.entries(init.body)) {
+        const encoded = encodeMetaGraphBodyValue(value)
+        if (encoded === undefined)
+          continue
+        mergedQuery[key] = encoded
+      }
+    }
+  }
+  const fullUrl = `${url}${toQueryString(mergedQuery)}`
+
+  const response = await fetch(fullUrl, { method, headers, body: fetchBody })
   const payload = await response.json().catch(() => ({}))
   if (!response.ok) {
     const fields = extractMetaGraphErrorFields(payload, response.status)
@@ -177,6 +218,13 @@ export const defaultMetaGraphFetch: MetaGraphFetch = async (url, init = {}) => {
 
 export function metaGraphUrl(apiVersion: string, path: string) {
   const version = resolveMetaGraphVersion(apiVersion)
+  const clean = path.startsWith('/') ? path : `/${path}`
+  return `https://graph.facebook.com/${version}${clean}`
+}
+
+/** Business Ad Studies + study node. Meta still documents POST /{business_id}/ad_studies (incl. v26.0 examples). */
+export function metaAdsStudiesGraphUrl(path: string) {
+  const version = resolveMetaAdsStudiesGraphVersion()
   const clean = path.startsWith('/') ? path : `/${path}`
   return `https://graph.facebook.com/${version}${clean}`
 }
