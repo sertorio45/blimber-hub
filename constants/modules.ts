@@ -1,7 +1,7 @@
 /**
  * Metadata for modules displayed in the module selector.
- * module_name must match tenant_modules.module_name in the database
- * (except companion modules — see resolveTenantModuleSlugs).
+ * module_name must match tenant_modules.module_name in the database.
+ * Ads is a Marketing subdomain, not a commercial companion tile.
  */
 export interface ModuleMeta {
   slug: string
@@ -61,7 +61,7 @@ export const TENANT_MODULE_BUNDLE_ALL = 'all'
 
 /**
  * Modules that can be toggled in admin `tenant_modules`.
- * Ads is intentionally omitted: it unlocks with Marketing until a dedicated catalog/billing row exists.
+ * Ads is omitted: paid media ships inside Marketing, not as a billing row.
  */
 export const ASSIGNABLE_MODULE_SLUGS = (
   Object.keys(MODULE_META) as Array<keyof typeof MODULE_META>

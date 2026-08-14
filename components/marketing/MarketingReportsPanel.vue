@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Shared paid-media reports shell used by `/marketing/reports` and `/ads/*`.
+ * Shared paid-media reports shell used by `/marketing/ads*` and organic reports.
  * Boards call live provider APIs via `/api/marketing/overview` (cache:
  * `marketing_campaign_cache`). Do not confuse with editorial `social_campaigns`.
  */

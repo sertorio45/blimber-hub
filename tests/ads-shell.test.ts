@@ -15,15 +15,17 @@ describe('ads-shell', () => {
     expect(isMarketingAdsPath('/marketing')).toBe(false)
   })
 
-  it('resolves page keys from either dual route', () => {
+  it('resolves page keys on canonical Marketing Ads routes', () => {
     expect(resolveAdsShellPage('/marketing/ads')).toBe('overview')
-    expect(resolveAdsShellPage('/ads')).toBe('overview')
     expect(resolveAdsShellPage('/marketing/ads/campaigns')).toBe('campaigns')
-    expect(resolveAdsShellPage('/ads/creatives')).toBe('creatives')
+    expect(resolveAdsShellPage('/marketing/ads/creatives')).toBe('creatives')
     expect(resolveAdsShellPage('/marketing/ads/reports')).toBe('reports')
+    expect(resolveAdsShellPage('/marketing/ads/meta')).toBe('meta')
+    expect(resolveAdsShellPage('/marketing/ads/google')).toBe('google')
+    expect(resolveAdsShellPage('/marketing/ads/analytics')).toBe('analytics')
   })
 
-  it('builds Marketing breadcrumb and skips it on the Ads product', () => {
+  it('builds Marketing breadcrumb and skips leftover /ads paths', () => {
     expect(buildMarketingAdsTrail('/ads/campaigns')).toEqual([])
     expect(buildMarketingAdsTrail('/marketing/ads')).toEqual([
       { title: 'Marketing', href: '/marketing' },
@@ -33,6 +35,11 @@ describe('ads-shell', () => {
       { title: 'Marketing', href: '/marketing' },
       { title: 'Ads', href: '/marketing/ads' },
       { title: 'Relatórios pagos', href: '/marketing/ads/reports' },
+    ])
+    expect(buildMarketingAdsTrail('/marketing/ads/meta')).toEqual([
+      { title: 'Marketing', href: '/marketing' },
+      { title: 'Ads', href: '/marketing/ads' },
+      { title: 'Meta Ads', href: '/marketing/ads/meta' },
     ])
     expect(adsShellPageTitle('campaigns')).toBe('Campanhas pagas')
   })

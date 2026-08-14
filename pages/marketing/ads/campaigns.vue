@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Marketing → Ads campanhas pagas (ETAPA 2). Same view as `/ads/campaigns`.
+ * Marketing → Ads campanhas pagas.
  */
 import AdsCampaignsView from '@/components/ads/AdsCampaignsView.vue'
 

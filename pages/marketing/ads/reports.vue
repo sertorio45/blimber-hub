@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Marketing → Ads relatórios pagos (ETAPA 2). Same view as `/ads/reports`.
+ * Marketing → Ads relatórios pagos.
  */
 import AdsReportsView from '@/components/ads/AdsReportsView.vue'
 

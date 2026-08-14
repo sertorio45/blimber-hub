@@ -9,10 +9,8 @@ import type { BrandContext } from '~/types/brand-context'
 import type { BrandProduct } from '~/types/brand-guide'
 import {
   ADS_BRAND_CENTER_ROUTE,
-  ADS_CREATIVES_ROUTE,
   MARKETING_ADS_CREATIVES_ROUTE,
 } from '~/constants/ads-domain'
-import { isMarketingAdsPath } from '~/utils/ads-shell'
 import { createEmptyBrandContext, isBrandContextForTenant } from '~/utils/brand-context'
 
 export const ADS_BRAND_CENTER_PATH = ADS_BRAND_CENTER_ROUTE
@@ -25,11 +23,9 @@ export function canOpenBrandCenterFromAds(isClientExperience: boolean): boolean 
   return !isClientExperience
 }
 
-/** Dual-entry creatives — no 301 `/ads` → `/marketing/ads` in this etapa. */
-export function resolveAdsCreativesPath(currentPath: string): string {
-  return isMarketingAdsPath(currentPath)
-    ? MARKETING_ADS_CREATIVES_ROUTE
-    : ADS_CREATIVES_ROUTE
+/** Canonical creatives path — legacy `/ads/creatives` redirects here. */
+export function resolveAdsCreativesPath(_currentPath?: string): string {
+  return MARKETING_ADS_CREATIVES_ROUTE
 }
 
 /** Factors the future AI creative pipeline will combine — UI checklist only. */

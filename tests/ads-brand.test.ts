@@ -89,7 +89,6 @@ describe('ads-brand helpers', () => {
   it('keeps Brand Center path identical regardless of Ads shell', async () => {
     const {
       ADS_BRAND_CENTER_ROUTE,
-      ADS_CREATIVES_ROUTE,
       MARKETING_ADS_CREATIVES_ROUTE,
       MARKETING_SETTINGS_ROUTE,
       MARKETING_AD_ACCOUNTS_ROUTE,
@@ -105,8 +104,8 @@ describe('ads-brand helpers', () => {
     expect(SETTINGS_INTEGRATIONS_ROUTE).toBe('/settings/integrations')
     expect(resolveAdsCreativesPath('/marketing/ads')).toBe(MARKETING_ADS_CREATIVES_ROUTE)
     expect(resolveAdsCreativesPath('/marketing/ads/campaigns')).toBe(MARKETING_ADS_CREATIVES_ROUTE)
-    expect(resolveAdsCreativesPath('/ads')).toBe(ADS_CREATIVES_ROUTE)
-    expect(resolveAdsCreativesPath('/ads/creatives')).toBe(ADS_CREATIVES_ROUTE)
+    expect(resolveAdsCreativesPath('/ads')).toBe(MARKETING_ADS_CREATIVES_ROUTE)
+    expect(resolveAdsCreativesPath('/ads/creatives')).toBe(MARKETING_ADS_CREATIVES_ROUTE)
     expect(canOpenBrandCenterFromAds(false)).toBe(true)
     expect(canOpenBrandCenterFromAds(true)).toBe(false)
   })

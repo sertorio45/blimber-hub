@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Marketing-only chrome for Ads views (ETAPA 3). Hidden on the sibling Ads product.
+ * Marketing-only chrome for Ads views.
  */
 import { useAdsShellBase } from '~/composables/ads/useAdsShellBase'
 

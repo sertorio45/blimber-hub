@@ -6,7 +6,7 @@
  *   (`/marketing/campaigns`). Not paid media.
  * - `marketing_campaigns` → paid Meta Ads schema (legacy persisted table).
  *   Live Ads surfaces prefer provider APIs + `marketing_campaign_cache`.
- * - Ads product routes (`/ads/*`) must never query `social_campaigns` for
+ * - Ads paid routes (`/marketing/ads*`, legacy `/ads*` 301) must never query `social_campaigns` for
  *   paid campaign lists.
  *
  * Prefer future renames:
@@ -31,7 +31,7 @@ export const ADS_PAID_CAMPAIGN_TABLE = 'marketing_campaigns' as const
 /** Brand Context is owned by Marketing Brand Center — Ads only reads. */
 export const ADS_BRAND_CONTEXT_API = '/api/marketing/brand/context' as const
 export const ADS_BRAND_CENTER_ROUTE = '/marketing/brand' as const
-/** Canonical creatives under Marketing. Dual entry: Ads product still uses `/ads/creatives`. */
+/** Canonical creatives under Marketing. Legacy `/ads/creatives` 301s here. */
 export const MARKETING_ADS_CREATIVES_ROUTE = '/marketing/ads/creatives' as const
 export const ADS_CREATIVES_ROUTE = '/ads/creatives' as const
 

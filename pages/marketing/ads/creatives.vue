@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Marketing → Ads criativos (ETAPA 2). Same view as `/ads/creatives`.
+ * Marketing → Ads criativos.
  */
 import AdsCreativesView from '@/components/ads/AdsCreativesView.vue'
 

@@ -5,7 +5,7 @@
  *
  * Domain boundary (also `constants/ads-domain.ts`):
  * - `social_campaigns` → editorial Marketing (`/marketing/campaigns`)
- * - Paid Meta/Google (live APIs / `marketing_campaigns`) → Ads (`/ads/*`)
+ * - Paid Meta/Google (live APIs / `marketing_campaigns`) → Marketing → Ads (`/marketing/ads*`)
  *
  * Future flow:
  *   Paid campaign + Product + BrandContext + Objective → Blimber AI → Copy / Image / Variations

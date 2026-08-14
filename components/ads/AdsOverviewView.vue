@@ -17,7 +17,7 @@ import { useAdsShellBase } from '~/composables/ads/useAdsShellBase'
 import { formatReportMetricValue } from '~/composables/marketing/useMarketingReportMetrics'
 import { useWorkspace } from '~/composables/useWorkspace'
 
-const { adsBasePath, isMarketingAdsShell } = useAdsShellBase()
+const { adsBasePath } = useAdsShellBase()
 const { tenantId } = useTenant()
 const workspace = useWorkspace()
 const canReports = computed(() => workspace.can('marketing.social.reports'))
@@ -217,23 +217,6 @@ const channels = computed(() => [
           </Button>
           <Button variant="ghost" @click="navigateTo(`${adsBasePath}/creatives`)">
             Criativos
-          </Button>
-        </CardContent>
-      </Card>
-
-      <Card v-if="!isMarketingAdsShell">
-        <CardHeader>
-          <CardTitle class="text-base">
-            Marketing
-          </CardTitle>
-          <CardDescription>
-            Conteúdo orgânico, calendário e aprovações.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Button variant="outline" class="w-full" @click="navigateTo('/marketing')">
-            Abrir Marketing
-            <Icon name="lucide:arrow-right" class="ml-2 h-4 w-4" />
           </Button>
         </CardContent>
       </Card>

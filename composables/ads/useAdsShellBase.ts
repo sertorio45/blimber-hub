@@ -1,11 +1,12 @@
 /**
- * Dual-route shell (ETAPA 2–3): `/ads*` and `/marketing/ads*` share views.
- * Marketing shell adds breadcrumb + tenant label. Channel boards stay on `/ads/*`.
+ * Ads UI under Marketing. Canonical base is `/marketing/ads`.
+ * Legacy `/ads*` bookmarks 301 via `ADS_LEGACY_REDIRECTS`.
  */
 import {
   adsShellPageTitle,
   buildMarketingAdsTrail,
   isMarketingAdsPath,
+  MARKETING_ADS_BASE_PATH,
   resolveAdsShellPage,
 } from '~/utils/ads-shell'
 
@@ -13,12 +14,7 @@ export function useAdsShellBase() {
   const route = useRoute()
   const { currentTenant } = useTenant()
 
-  const adsBasePath = computed(() => {
-    const path = route.path
-    if (isMarketingAdsPath(path))
-      return '/marketing/ads'
-    return '/ads'
-  })
+  const adsBasePath = computed(() => MARKETING_ADS_BASE_PATH)
 
   const isMarketingAdsShell = computed(() => isMarketingAdsPath(route.path))
 

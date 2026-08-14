@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Marketing → Ads home (ETAPA 2). Same view as `/ads`.
+ * Marketing → Ads home. Canonical paid overview.
  */
 import AdsOverviewView from '@/components/ads/AdsOverviewView.vue'
 
