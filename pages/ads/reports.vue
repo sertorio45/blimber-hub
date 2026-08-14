@@ -1,8 +1,8 @@
 <script setup lang="ts">
 /**
- * Paid media + analytics reports. Editorial campaigns stay in Marketing.
+ * Paid reports for Ads product — same implementation as `/marketing/ads/reports`.
  */
-import MarketingReportsPanel from '@/components/marketing/MarketingReportsPanel.vue'
+import AdsReportsView from '@/components/ads/AdsReportsView.vue'
 
 definePageMeta({
   middleware: ['auth'],
@@ -11,8 +11,5 @@ definePageMeta({
 </script>
 
 <template>
-  <MarketingReportsPanel
-    title="Relatórios"
-    description="Performance de mídia paga e analytics — Meta Ads, Google Ads e Google Analytics."
-  />
+  <AdsReportsView />
 </template>

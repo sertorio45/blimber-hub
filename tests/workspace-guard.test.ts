@@ -127,6 +127,7 @@ describe('guarda de rotas por tipo de organização', () => {
     const publishing = leaves.find(child => child.link === '/marketing/publishing')!
     const brand = leaves.find(child => child.link === '/marketing/brand')!
     const reports = leaves.find(child => child.link === '/marketing/reports')!
+    const editorialCampaigns = leaves.find(child => child.link === '/marketing/campaigns')!
     const settings = leaves.find(child => child.link === '/marketing/settings')!
     const socialAccounts = leaves.find(child => child.link === '/settings/integrations')
     const topTitles = marketing.children.map(child => child.title)
@@ -141,7 +142,8 @@ describe('guarda de rotas por tipo de organização', () => {
     expect(content.title).toBe('Conteúdos')
     expect(publishing.title).toBe('Publicações')
     expect(calendar.title).toBe('Calendário')
-    expect(reports.title).toBe('Relatórios')
+    expect(editorialCampaigns.title).toBe('Campanhas editoriais')
+    expect(reports.title).toBe('Relatórios orgânicos')
     expect(settings.title).toBe('Configurações')
     // Contas sociais moved out of Marketing top-level → Configurações hub.
     expect(socialAccounts).toBeUndefined()
@@ -154,12 +156,43 @@ describe('guarda de rotas por tipo de organização', () => {
       'Biblioteca',
       'Marca',
       'Publicações',
-      'Relatórios',
+      'Relatórios orgânicos',
+      'Ads',
       'Configurações',
     ])
-    // Paid Ads boards must not appear under Marketing.
+
+    const adsSubmenu = marketing.children.find(child => child.title === 'Ads')
+    expect(adsSubmenu?.link).toBe('/marketing/ads')
+    expect(adsSubmenu?.keepGroup).toBe(true)
+    expect(adsSubmenu?.children?.map(child => child.title)).toEqual([
+      'Visão Geral',
+      'Campanhas',
+      'Criativos',
+      'Relatórios',
+    ])
+    expect(adsSubmenu?.children?.map(child => child.link)).toEqual([
+      '/marketing/ads',
+      '/marketing/ads/campaigns',
+      '/marketing/ads/creatives',
+      '/marketing/ads/reports',
+    ])
+    expect(leaves.find(leaf => leaf.link === '/marketing/ads/creatives')?.badge).toBe('Em evolução')
+
+    // ETAPA 2: paid Ads subset under Marketing uses `/marketing/ads*`; Meta/Google/Analytics stay on the Ads product.
+    expect(leaves.filter(leaf => leaf.link?.startsWith('/marketing/ads')).map(leaf => leaf.link)).toEqual([
+      '/marketing/ads',
+      '/marketing/ads/campaigns',
+      '/marketing/ads/creatives',
+      '/marketing/ads/reports',
+    ])
     expect(leaves.some(leaf => leaf.link?.startsWith('/ads'))).toBe(false)
     expect(leaves.some(leaf => leaf.link === '/ads/meta' || leaf.link === '/ads/google')).toBe(false)
+
+    const adsProduct = navMenu
+      .flatMap(section => section.items)
+      .find((item): item is NavGroup => 'children' in item && item.title === 'Ads')
+    expect(adsProduct).toBeTruthy()
+    expect(adsProduct!.children.some(child => child.link === '/ads/meta')).toBe(true)
   })
 })
 
@@ -183,6 +216,7 @@ describe('matchesNavAudience', () => {
       '/marketing/content',
       '/marketing/media',
       '/marketing/reports',
+      '/marketing/ads',
       '/marketing/settings',
       '/settings/integrations',
       '/marketing/posts',
@@ -199,6 +233,10 @@ describe('matchesNavAudience', () => {
     expect(isClientPortalMarketingLink('/marketing/brand')).toBe(false)
     expect(isClientPortalMarketingLink('/marketing/brand-guide')).toBe(false)
     expect(isClientPortalMarketingLink('/marketing/calendar')).toBe(true)
+    expect(isClientPortalMarketingLink('/marketing/ads')).toBe(true)
+    expect(isClientPortalMarketingLink('/marketing/ads/campaigns')).toBe(true)
+    expect(isClientPortalMarketingLink('/marketing/ads/creatives')).toBe(true)
+    expect(isClientPortalMarketingLink('/marketing/ads/reports')).toBe(true)
     expect(isClientPortalMarketingLink('/settings/integrations')).toBe(true)
     expect(isClientPortalMarketingLink('/settings/integrations/meta-capi')).toBe(true)
   })

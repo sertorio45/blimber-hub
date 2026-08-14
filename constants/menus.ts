@@ -32,12 +32,16 @@ export const navMenu: NavMenu[] = [
         icon: 'i-lucide-megaphone',
         roles: ['admin', 'funcionario', 'cliente', 'atendente'],
         /**
-         * ETAPA 3 — organic / editorial product tree.
-         * Campaigns here are editorial (`social_campaigns`), not paid Ads.
-         * Paid Meta/Google boards live under the Ads module.
+         * Organic / editorial product tree, plus Ads submenu (ETAPA 2)
+         * pointing at `/marketing/ads*`. Dual entry: the top-level Ads
+         * product still uses `/ads*` until a later cutover.
+         * Campaigns here are editorial (`social_campaigns`); paid campaigns
+         * live under Ads → Campanhas (`/marketing/ads/campaigns`).
          * Advanced items (packages, automations, ops-metrics, logs,
          * notifications) stay reachable by URL but hidden from the main path.
-         * Nested children under Planejamento flatten in the sidebar.
+         * Planejamento flattens in the sidebar; Ads keeps a collapsible
+         * group (keepGroup) so paid Campanhas/Relatórios do not collide
+         * with the organic leaves.
          */
         children: [
           {
@@ -59,7 +63,7 @@ export const navMenu: NavMenu[] = [
               },
               {
                 // Editorial campaigns (social_campaigns) — paid lives in Ads.
-                title: 'Campanhas',
+                title: 'Campanhas editoriais',
                 icon: 'i-lucide-megaphone',
                 link: '/marketing/campaigns',
                 capability: 'marketing.social.campaigns.read',
@@ -119,11 +123,51 @@ export const navMenu: NavMenu[] = [
           {
             // Organic reports surface kept in Marketing; Ads has its own Relatórios.
             // Do not redirect /marketing/reports to Ads in this stage.
-            title: 'Relatórios',
+            title: 'Relatórios orgânicos',
             icon: 'i-lucide-bar-chart-3',
             link: '/marketing/reports',
             roles: ['admin', 'funcionario', 'cliente'],
             capability: 'marketing.social.reports',
+          },
+          {
+            /**
+             * ETAPA 3 — Ads stays a collapsible under Marketing so flattened
+             * siblings do not show two "Campanhas" / "Relatórios".
+             * Top-level Ads product still points at `/ads*` until later etapas.
+             * Meta/Google/Analytics boards remain only on the Ads product.
+             */
+            title: 'Ads',
+            icon: 'i-lucide-circle-dollar-sign',
+            link: '/marketing/ads',
+            keepGroup: true,
+            children: [
+              {
+                title: 'Visão Geral',
+                icon: 'i-lucide-layout-dashboard',
+                link: '/marketing/ads',
+                capability: 'marketing.social.reports',
+              },
+              {
+                title: 'Campanhas',
+                icon: 'i-lucide-megaphone',
+                link: '/marketing/ads/campaigns',
+                capability: 'marketing.social.reports',
+              },
+              {
+                // Architecture placeholder — keep the route; label incompleteness.
+                title: 'Criativos',
+                icon: 'i-lucide-sparkles',
+                link: '/marketing/ads/creatives',
+                capability: 'marketing.social.brand_guide.read',
+                badge: 'Em evolução',
+              },
+              {
+                title: 'Relatórios',
+                icon: 'i-lucide-bar-chart-3',
+                link: '/marketing/ads/reports',
+                capability: 'marketing.social.reports',
+              },
+            ],
           },
           {
             // Hub for Contas sociais → /settings/integrations (also in global
@@ -145,11 +189,11 @@ export const navMenu: NavMenu[] = [
         icon: 'i-lucide-circle-dollar-sign',
         roles: ['admin', 'funcionario', 'cliente', 'atendente'],
         /**
-         * ETAPA 2 — paid media product. Boards reused from Marketing reports
-         * components; `/marketing/reports` remains as the organic reports
-         * surface until a future cutover. Campaigns here are paid (live APIs /
-         * marketing_campaigns), not editorial social_campaigns under
-         * /marketing/campaigns.
+         * Paid media product (still a sibling of Marketing until a later
+         * cutover). Marketing → Ads uses `/marketing/ads*`; this tree stays
+         * on `/ads*`. Boards reused from Marketing reports components.
+         * Campaigns here are paid (live APIs / marketing_campaigns), not
+         * editorial social_campaigns under /marketing/campaigns.
          */
         children: [
           {
@@ -188,6 +232,7 @@ export const navMenu: NavMenu[] = [
             icon: 'i-lucide-sparkles',
             link: '/ads/creatives',
             capability: 'marketing.social.brand_guide.read',
+            badge: 'Em evolução',
           },
           {
             title: 'Relatórios',

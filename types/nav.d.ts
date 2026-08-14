@@ -19,6 +19,13 @@ export interface NavLink extends NavBase {
   link: string
   icon?: string
   new?: boolean
+  /** Optional sidebar chip (e.g. "Em evolução") — distinct from the `new` flag. */
+  badge?: string
+  /**
+   * Keep this folder as a collapsible in the flattened module sidebar
+   * (e.g. Marketing → Ads) so sibling leaves do not reuse the same labels.
+   */
+  keepGroup?: boolean
   children?: NavLink[]
 }
 

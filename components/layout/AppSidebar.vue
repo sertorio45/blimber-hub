@@ -12,6 +12,7 @@ import { isClientPortalAdsLink, isClientPortalMarketingLink } from '~/constants/
 import { navMenu, navMenuAdmin, navMenuGlobal, navMenuOrganization } from '~/constants/menus'
 import { isTenantScopedRole } from '~/constants/roles'
 import { holdsCapability } from '~/constants/workspace'
+import { flattenModuleNavItems } from '~/utils/nav-flatten'
 import { canEnterWorkspaceRoute, matchesNavAudience } from '~/utils/workspace-guard'
 
 function resolveNavItemComponent(item: NavLink | NavGroup | NavSectionTitle): any {
@@ -118,18 +119,9 @@ function filterNavChildren(children: NavLink[] = []): NavLink[] {
     .filter((child): child is NavLink => child != null)
 }
 
-/** Flat sidebar: expand nested menu folders into leaf links (MVP IA tree). */
+/** Flat sidebar: expand nested folders; `keepGroup` folders stay collapsible. */
 function flattenNavLeaves(children: NavLink[] = []): NavLink[] {
-  const leaves: NavLink[] = []
-  for (const child of children) {
-    if (child.children?.length) {
-      leaves.push(...flattenNavLeaves(child.children))
-      continue
-    }
-    if (child.link)
-      leaves.push(child)
-  }
-  return leaves
+  return flattenModuleNavItems(children)
 }
 
 /**
@@ -286,22 +278,14 @@ onMounted(() => {
           <SidebarGroupLabel>
             {{ currentModuleMeta?.title || 'Módulos' }}
           </SidebarGroupLabel>
-          <SidebarMenu v-if="showFlatModuleMenu">
-            <SidebarMenuItem v-for="(link, idx) in flatModuleLinks" :key="idx">
-              <SidebarMenuButton as-child :tooltip="link.title">
-                <NuxtLink :to="link.link">
-                  <ModuleIcon :name="link.icon || 'i-lucide-circle'" class="size-4 shrink-0" />
-                  <span>{{ link.title }}</span>
-                  <span
-                    v-if="link.new"
-                    class="rounded-md bg-#adfa1d px-1.5 py-0.5 text-xs text-black leading-none"
-                  >
-                    New
-                  </span>
-                </NuxtLink>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
+          <template v-if="showFlatModuleMenu">
+            <component
+              :is="resolveNavItemComponent(item)"
+              v-for="(item, idx) in flatModuleLinks"
+              :key="item.link || item.title || idx"
+              :item="item"
+            />
+          </template>
           <template v-else>
             <component
               :is="resolveNavItemComponent(item)"

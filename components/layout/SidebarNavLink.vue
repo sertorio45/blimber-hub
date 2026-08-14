@@ -29,6 +29,12 @@ const { setOpenMobile } = useSidebar()
           >
             New
           </span>
+          <span
+            v-if="item.badge"
+            class="rounded-md bg-muted px-1.5 py-0.5 text-xs text-muted-foreground leading-none no-underline group-hover:no-underline"
+          >
+            {{ item.badge }}
+          </span>
         </NuxtLink>
       </SidebarMenuButton>
     </SidebarMenuItem>

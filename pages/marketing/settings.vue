@@ -10,6 +10,7 @@ const workspace = useWorkspace()
 const { isClientExperience } = useMarketingAudience()
 
 const canIntegrations = computed(() => workspace.can('marketing.social.integrations'))
+const canReports = computed(() => workspace.can('marketing.social.reports'))
 const canBrandGuide = computed(() =>
   workspace.can('marketing.social.brand_guide.read') && !isClientExperience.value,
 )
@@ -17,10 +18,17 @@ const canBrandGuide = computed(() =>
 const links = computed(() => [
   {
     title: 'Contas sociais',
-    description: 'Conecte Instagram, Facebook, LinkedIn e demais redes.',
+    description: 'OAuth único: Instagram, LinkedIn, Meta Ads, Google Ads e Analytics.',
     icon: 'lucide:share-2',
     to: '/settings/integrations',
     enabled: canIntegrations.value,
+  },
+  {
+    title: 'Ads',
+    description: 'Mídia paga: campanhas, criativos e relatórios de Meta e Google.',
+    icon: 'lucide:circle-dollar-sign',
+    to: '/marketing/ads',
+    enabled: canReports.value,
   },
   {
     title: 'Marca',
@@ -39,7 +47,7 @@ const links = computed(() => [
         Configurações
       </h1>
       <p class="mt-1 text-muted-foreground">
-        Contas sociais e atalhos secundários. Marca também está no menu principal.
+        Contas sociais, Ads e atalhos secundários. Marca também está no menu principal.
       </p>
     </div>
 

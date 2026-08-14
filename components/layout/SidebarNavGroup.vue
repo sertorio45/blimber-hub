@@ -50,6 +50,12 @@ const openCollapsible = ref((props.item.children?.length || 0) <= 6)
                   >
                     New
                   </span>
+                  <span
+                    v-if="subItem.badge"
+                    class="rounded-md bg-muted px-1.5 py-0.5 text-xs text-muted-foreground leading-none no-underline group-hover:no-underline"
+                  >
+                    {{ subItem.badge }}
+                  </span>
                 </NuxtLink>
               </SidebarMenuSubButton>
             </SidebarMenuSubItem>

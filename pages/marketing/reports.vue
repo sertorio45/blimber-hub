@@ -4,7 +4,7 @@ import { useWorkspace } from '~/composables/useWorkspace'
 
 definePageMeta({
   middleware: ['auth'],
-  title: 'Relatórios de Marketing',
+  title: 'Relatórios orgânicos',
 })
 
 const workspace = useWorkspace()
@@ -24,12 +24,12 @@ const canPaidReports = computed(() => workspace.can('marketing.social.reports'))
             Relatórios de campanhas pagas
           </p>
           <p class="text-sm text-muted-foreground">
-            Meta Ads, Google Ads e Google Analytics agora ficam em Ads → Relatórios.
+            Meta Ads, Google Ads e Google Analytics ficam em Marketing → Ads → Relatórios.
           </p>
         </div>
       </div>
       <Button as-child variant="outline" class="shrink-0">
-        <NuxtLink to="/ads/reports">
+        <NuxtLink to="/marketing/ads/reports">
           Ver relatórios de Ads
           <Icon name="lucide:arrow-right" class="ml-2 h-4 w-4" />
         </NuxtLink>
@@ -37,7 +37,7 @@ const canPaidReports = computed(() => workspace.can('marketing.social.reports'))
     </div>
 
     <MarketingOrganicReportsPanel
-      title="Relatórios de Marketing"
+      title="Relatórios orgânicos"
       description="Métricas orgânicas das redes conectadas — Facebook Page e Instagram Business."
     />
   </div>

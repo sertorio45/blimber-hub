@@ -11,6 +11,7 @@ export const CLIENT_PORTAL_MARKETING_LINKS = [
   '/marketing/content',
   '/marketing/media',
   '/marketing/reports',
+  '/marketing/ads',
   '/marketing/settings',
   '/settings/integrations',
   // Legacy bookmarks (redirected to MVP routes).

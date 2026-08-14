@@ -4,7 +4,7 @@ import { useWorkspace } from '~/composables/useWorkspace'
 
 definePageMeta({
   middleware: ['auth'],
-  title: 'Campanhas',
+  title: 'Campanhas editoriais',
 })
 
 const social = useMarketingSocial()
@@ -89,7 +89,7 @@ async function createCampaign() {
     <div class="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
       <div>
         <h1 class="text-2xl font-bold tracking-tight">
-          Campanhas
+          Campanhas editoriais
         </h1>
         <p class="mt-1 text-muted-foreground">
           Agrupe posts, briefings e entregas em uma campanha editorial.
