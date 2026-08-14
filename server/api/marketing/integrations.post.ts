@@ -38,7 +38,7 @@ export default defineEventHandler(async (event) => {
   const config: Record<string, any> = { ...(existingIntegration?.config || {}), ...incomingConfig }
 
   if (provider === 'meta') {
-    const optionalMetaKeys = ['ad_account_id', 'page_id', 'pixel_id', 'instagram_business_account_id'] as const
+    const optionalMetaKeys = ['ad_account_id', 'business_id', 'page_id', 'pixel_id', 'instagram_business_account_id'] as const
     for (const k of optionalMetaKeys) {
       if (k in incomingConfig && (incomingConfig[k] === '' || incomingConfig[k] == null))
         delete config[k]

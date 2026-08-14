@@ -125,10 +125,10 @@ export function getMetaCapabilities(explicitVersion?: string | null): MetaCapabi
     },
     experiments: {
       splitTestV2Creative: ok(
-        'POST /me/ad_studies type=SPLIT_TEST_V2 + creative_test_config; 2–5 cells, 1 ad/célula; list via impacting_ad_studies',
+        'POST /{user_id|business_id}/ad_studies type=SPLIT_TEST_V2 + creative_test_config; 2–5 cells, 1 ad/célula; list via impacting_ad_studies',
       ),
       splitTestAdsetLevel: ok(
-        'POST /me/ad_studies type=SPLIT_TEST; cells with adsets[] (máx. 150 células; clássico)',
+        'POST /{user_id|business_id}/ad_studies type=SPLIT_TEST; cells with adsets[] (máx. 150 células; clássico)',
       ),
       levels: ['ad (creative test SPLIT_TEST_V2, 2–5 cells)', 'adset (SPLIT_TEST classico)'],
     },

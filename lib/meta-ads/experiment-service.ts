@@ -1,7 +1,8 @@
 /**
  * Official Meta Ad Studies / Experiments (Split Testing).
- * Creative A/B: SPLIT_TEST_V2 + creative_test_config on /me/ad_studies.
+ * Creative A/B: SPLIT_TEST_V2 + creative_test_config on /{user_id|business_id}/ad_studies.
  * Classic: SPLIT_TEST with adsets[] per cell.
+ * POST /me/ad_studies is unsupported (Graph: "Unsupported request - method type: post").
  *
  * Documented limits (Marketing API Split Testing + Ad Study):
  * - Creative Tests (SPLIT_TEST_V2): 2–5 cells, exactly one ad per cell.
@@ -554,18 +555,95 @@ export async function assertStudyOnAdAccount(
   )
 }
 
+/** Graph User/Business ids used as Ad Studies POST parents are numeric strings. Never "me". */
+export function normalizeAdStudyParentId(raw: unknown): string | null {
+  const id = String(raw ?? '').trim()
+  if (!id || id.toLowerCase() === 'me')
+    return null
+  return /^\d+$/.test(id) ? id : null
+}
+
+export function adStudiesCreatePath(parentId: string): string {
+  const id = normalizeAdStudyParentId(parentId)
+  if (!id) {
+    throw new MetaAdsToolError(
+      'EXPERIMENT_PARENT_REQUIRED',
+      'Parent de Ad Study inválido. Use o user id numérico do token ou o business_id da BM — nunca /me.',
+      400,
+    )
+  }
+  return `/${id}/ad_studies`
+}
+
+export function assertSupportedAdStudiesCreatePath(path: string): string {
+  const clean = String(path || '').split('?')[0]
+  if (!clean || clean === '/me/ad_studies' || clean.endsWith('/me/ad_studies')) {
+    throw new MetaAdsToolError(
+      'EXPERIMENT_PARENT_REQUIRED',
+      'POST /me/ad_studies não é suportado pela Graph. Use /{user_id}/ad_studies ou /{business_id}/ad_studies.',
+      400,
+    )
+  }
+  if (!/^\/\d+\/ad_studies$/.test(clean)) {
+    throw new MetaAdsToolError(
+      'EXPERIMENT_PARENT_REQUIRED',
+      'Path de criação de Ad Study inválido. Esperado /{numeric_id}/ad_studies.',
+      400,
+      { path: clean },
+    )
+  }
+  return clean
+}
+
+/**
+ * Resolve POST parent for Ad Studies (User Ad Studies or Business Ad Studies).
+ * GET /me is only used to read the token user id; POST always goes to /{id}/ad_studies.
+ */
+export async function resolveAdStudyCreatePath(
+  ctx: ExperimentServiceContext,
+  options?: { businessId?: string | null },
+): Promise<{ path: string, parentId: string, parentKind: 'user' | 'business' }> {
+  let userId: string | null = null
+  try {
+    const me = await ctx.graph(metaGraphUrl(ctx.apiVersion, '/me'), {
+      query: { fields: 'id', access_token: ctx.accessToken },
+    })
+    userId = normalizeAdStudyParentId(me?.id)
+  }
+  catch (err) {
+    if (err instanceof MetaAdsToolError && err.code === 'EXPERIMENT_PARENT_REQUIRED')
+      throw err
+  }
+
+  if (userId) {
+    return { path: adStudiesCreatePath(userId), parentId: userId, parentKind: 'user' }
+  }
+
+  const businessId = normalizeAdStudyParentId(options?.businessId)
+  if (businessId) {
+    return { path: adStudiesCreatePath(businessId), parentId: businessId, parentKind: 'business' }
+  }
+
+  throw new MetaAdsToolError(
+    'EXPERIMENT_PARENT_REQUIRED',
+    'A Graph não aceita POST /me/ad_studies. Não foi possível resolver o user id do token (GET /me?fields=id) nem business_id na integração Meta deste tenant. Reconecte o OAuth ou grave o business_id da BM na integração.',
+    400,
+  )
+}
+
 export async function createExperiment(
   ctx: ExperimentServiceContext,
   input: CreateExperimentInput,
-  options?: { dryRun?: boolean },
-): Promise<{ studyId: string | null, body: Record<string, unknown>, dryRun: boolean }> {
+  options: { dryRun?: boolean, createPath: string },
+): Promise<{ studyId: string | null, body: Record<string, unknown>, dryRun: boolean, path: string }> {
   const body = buildCreateExperimentGraphBody(input)
+  const path = assertSupportedAdStudiesCreatePath(options.createPath)
   if (options?.dryRun) {
-    return { studyId: null, body, dryRun: true }
+    return { studyId: null, body, dryRun: true, path }
   }
 
   try {
-    const res = await ctx.graph(metaGraphUrl(ctx.apiVersion, '/me/ad_studies'), {
+    const res = await ctx.graph(metaGraphUrl(ctx.apiVersion, path), {
       method: 'POST',
       query: { access_token: ctx.accessToken },
       body,
@@ -574,6 +652,7 @@ export async function createExperiment(
       studyId: res?.id ? String(res.id) : null,
       body,
       dryRun: false,
+      path,
     }
   }
   catch (err) {

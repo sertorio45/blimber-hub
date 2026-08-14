@@ -148,6 +148,7 @@ export {
   getExperiment,
   listExperiments,
   checkExperimentEligibility,
+  resolveAdStudyCreatePath,
   stopExperiment,
   evenTreatmentPercentages,
   flattenGraphIds,

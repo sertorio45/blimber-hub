@@ -21,6 +21,8 @@ export interface MetaGraphFetch {
 
 export interface MetaIntegrationPublicConfig {
   ad_account_id?: string
+  /** Meta Business Manager id, when stored on the tenant integration. */
+  business_id?: string
   page_id?: string
   page_name?: string
   pixel_id?: string

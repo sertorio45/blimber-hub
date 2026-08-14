@@ -17,6 +17,7 @@ function publicConfigFrom(config: Record<string, any> | null | undefined): MetaI
   const c = config || {}
   return {
     ad_account_id: c.ad_account_id ? normalizeMetaAdAccountId(String(c.ad_account_id)) : undefined,
+    business_id: c.business_id ? String(c.business_id).trim() || undefined : undefined,
     page_id: c.page_id,
     page_name: c.page_name,
     pixel_id: c.pixel_id,

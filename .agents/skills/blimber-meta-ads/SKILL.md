@@ -72,7 +72,7 @@ description: >-
 | `meta_list_pixels` / `meta_list_datasets` | Pixels (`adspixels`) e Datasets (`offline_conversion_data_sets`) da ad account |
 | `meta_list_experiments` | Lista Ad Studies da ad account (`impacting_ad_studies`) sem `studyId` |
 | `meta_check_experiment_eligibility` | Conflitos com testes **ativos/agendados** (ad / adset / campaign) |
-| `meta_create_experiment` / `meta_get_experiment` / `meta_stop_experiment` | Ad Studies oficiais (SPLIT_TEST_V2 / SPLIT_TEST). Create: `cells[]` **ou** `baseAdId` + `variations` (duplica `/copies`) |
+| `meta_create_experiment` / `meta_get_experiment` / `meta_stop_experiment` | Ad Studies oficiais (SPLIT_TEST_V2 / SPLIT_TEST). Create: POST `/{user_id}/ad_studies` (id via GET `/me`) ou `/{business_id}/ad_studies`; `cells[]` **ou** `baseAdId` + `variations` (duplica `/copies`). Nunca POST `/me/ad_studies`. |
 | `meta_preview_bulk_delete` | Preview exclusão (IDs + previewToken) |
 | `meta_execute_bulk_delete` | Execute exclusão (confirmações + dryRun false) |
 | `meta_get_insights` | Métricas (level + datePreset) |

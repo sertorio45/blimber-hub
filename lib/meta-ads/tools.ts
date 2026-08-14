@@ -69,6 +69,7 @@ import {
   evenTreatmentPercentages,
   getExperiment,
   listExperiments,
+  resolveAdStudyCreatePath,
   stopExperiment,
   type ExperimentVariationInput,
 } from './experiment-service'
@@ -4071,6 +4072,11 @@ export async function metaCreateExperiment(ctx: MetaToolContext, raw: unknown) {
   let cells = input.cells
   let copiedAds: { variationName: string | null, adId: string, copyBody: Record<string, unknown> }[] = []
   let baseAdId: string | null = input.baseAdId ?? null
+  let studyParent: Awaited<ReturnType<typeof resolveAdStudyCreatePath>> | undefined
+
+  const resolveStudyParent = () => resolveAdStudyCreatePath(svc, {
+    businessId: creds.publicConfig.business_id,
+  })
 
   if (input.baseAdId) {
     const variations = (input.variations || []) as ExperimentVariationInput[]
@@ -4103,6 +4109,8 @@ export async function metaCreateExperiment(ctx: MetaToolContext, raw: unknown) {
     }))
 
     if (dryRun) {
+      const parent = await resolveStudyParent()
+      studyParent = parent
       const plannedCells = [
         { name: 'Base', treatmentPercentage: percents[0]!, adId: input.baseAdId },
         ...plannedCopies.map((row, i) => ({
@@ -4141,18 +4149,21 @@ export async function metaCreateExperiment(ctx: MetaToolContext, raw: unknown) {
           dryRun: true as const,
           wouldMutate: true as const,
           method: 'POST',
-          path: `/${input.baseAdId}/copies then /me/ad_studies`,
+          path: `/${input.baseAdId}/copies then ${parent.path}`,
           body: bodyPreview,
           notes: [
             `Creative Test: ${input.name}`,
             `baseAdId ${input.baseAdId} + ${variations.length} variação(ões) = ${1 + variations.length} células (limite Meta 2–5).`,
             'Duplicará ads via POST /{adId}/copies (status PAUSED).',
+            `Ad Study: POST ${parent.path} (${parent.parentKind === 'user' ? 'User Ad Studies' : 'Business Ad Studies'}).`,
             'dryRun=true: nenhuma mutação.',
           ],
         },
         warning: 'Dry-run: ads não duplicados e experiment não criado.',
       }
     }
+
+    studyParent = await resolveStudyParent()
 
     for (const [index, variation] of variations.entries()) {
       const copyBody = plannedCopies[index]!.copyBody
@@ -4199,6 +4210,8 @@ export async function metaCreateExperiment(ctx: MetaToolContext, raw: unknown) {
     assertEligibleOrThrow(eligibility)
   }
 
+  const parent = studyParent ?? await resolveStudyParent()
+
   const bodyPreview = buildCreateExperimentGraphBody({
     name: input.name,
     description: input.description,
@@ -4213,11 +4226,12 @@ export async function metaCreateExperiment(ctx: MetaToolContext, raw: unknown) {
     dryRun,
     {
       method: 'POST',
-      path: '/me/ad_studies',
+      path: parent.path,
       body: bodyPreview,
       notes: [
         `Experiment ${input.type}: ${input.name}`,
         `cells: ${cells.length}`,
+        `POST ${parent.path} (${parent.parentKind === 'user' ? 'User Ad Studies' : 'Business Ad Studies'}).`,
         dryRun ? 'dryRun=true: nenhuma mutação.' : 'Criará Ad Study oficial Meta.',
       ],
     },
@@ -4234,7 +4248,7 @@ export async function metaCreateExperiment(ctx: MetaToolContext, raw: unknown) {
           creativeTestDailyBudget: input.creativeTestDailyBudget,
           creativeTestLifetimeBudgetPercentage: input.creativeTestLifetimeBudgetPercentage,
         },
-        { dryRun: false },
+        { dryRun: false, createPath: parent.path },
       )
       return {
         tenantId: input.tenantId,

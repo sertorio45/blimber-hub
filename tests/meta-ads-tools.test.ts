@@ -2630,6 +2630,8 @@ describe('meta-ads MCP tools', () => {
     const graphFetch = vi.fn(async (url: string, init?: any) => {
       if (init?.method === 'POST')
         throw new Error('should not POST in dryRun')
+      if (/\/v[\d.]+\/me$/.test(String(url).split('?')[0]))
+        return { id: '111222333' }
       if (String(url).includes('/ad_base')) {
         return {
           id: 'ad_base',
@@ -2664,10 +2666,12 @@ describe('meta-ads MCP tools', () => {
     expect((result as any).dryRun).toBe(true)
     expect((result as any).cells).toHaveLength(2)
     expect((result as any).plannedCopies).toHaveLength(1)
+    expect(String((result as any).preview.path)).not.toContain('/me/ad_studies')
+    expect(String((result as any).preview.path)).toMatch(/\/\d+\/ad_studies$/)
     expect(graphFetch.mock.calls.every(([, init]) => init?.method !== 'POST')).toBe(true)
   })
 
-  it('create experiment from baseAdId copies ads then POSTs /me/ad_studies', async () => {
+  it('create experiment from baseAdId copies ads then POSTs /{user_id}/ad_studies (not /me)', async () => {
     const client = createIntegrationClient({
       access_token_enc: encryptSecret('tok'),
       ad_account_id: '555',
@@ -2675,10 +2679,14 @@ describe('meta-ads MCP tools', () => {
     })
     const graphFetch = vi.fn(async (url: string, init?: any) => {
       const u = String(url)
+      if (/\/v[\d.]+\/me$/.test(u.split('?')[0]))
+        return { id: '111222333' }
       if (init?.method === 'POST' && u.includes('/ad_base/copies'))
         return { copied_ad_id: 'ad_copy_1' }
-      if (init?.method === 'POST' && u.includes('/me/ad_studies'))
+      if (init?.method === 'POST' && u.includes('/111222333/ad_studies'))
         return { id: 'study_new' }
+      if (init?.method === 'POST' && u.includes('/me/ad_studies'))
+        throw new Error('POST /me/ad_studies is unsupported')
       if (u.includes('/ad_copy_1')) {
         return {
           id: 'ad_copy_1',
@@ -2721,7 +2729,113 @@ describe('meta-ads MCP tools', () => {
     expect((result as any).copiedAds[0].adId).toBe('ad_copy_1')
     const posts = graphFetch.mock.calls.filter(([, init]) => init?.method === 'POST')
     expect(posts.some(([url]) => String(url).includes('/ad_base/copies'))).toBe(true)
-    expect(posts.some(([url]) => String(url).includes('/me/ad_studies'))).toBe(true)
+    expect(posts.some(([url]) => String(url).includes('/me/ad_studies'))).toBe(false)
+    expect(posts.some(([url]) => String(url).includes('/111222333/ad_studies'))).toBe(true)
+  })
+
+  it('create experiment falls back to /{business_id}/ad_studies when GET /me has no user id', async () => {
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret('tok'),
+      ad_account_id: '555',
+      business_id: '9988776655',
+      api_version: 'v25.0',
+    })
+    const graphFetch = vi.fn(async (url: string, init?: any) => {
+      const u = String(url)
+      if (/\/v[\d.]+\/me$/.test(u.split('?')[0]))
+        return { name: 'token without id' }
+      if (init?.method === 'POST' && u.includes('/ad_base/copies'))
+        return { copied_ad_id: 'ad_copy_1' }
+      if (init?.method === 'POST' && u.includes('/9988776655/ad_studies'))
+        return { id: 'study_biz' }
+      if (init?.method === 'POST' && u.includes('/me/ad_studies'))
+        throw new Error('POST /me/ad_studies is unsupported')
+      if (u.includes('/ad_copy_1')) {
+        return {
+          id: 'ad_copy_1',
+          account_id: '555',
+          adset_id: 'as_1',
+          campaign_id: 'c_1',
+          creative: { object_story_spec: { link_data: { message: 'copy B', link: 'https://ex.com' } } },
+        }
+      }
+      if (u.includes('/ad_base')) {
+        return {
+          id: 'ad_base',
+          name: 'Base',
+          account_id: '555',
+          adset_id: 'as_1',
+          campaign_id: 'c_1',
+          creative: { object_story_spec: { page_id: 'p', link_data: { message: 'm', link: 'https://ex.com' } } },
+        }
+      }
+      return { data: [] }
+    })
+
+    const result = await metaCreateExperiment(
+      { client, graphFetch },
+      {
+        tenantId: 'tenant-1',
+        confirmTenantId: 'tenant-1',
+        confirm: true,
+        dryRun: false,
+        name: 'Teste BM',
+        type: 'SPLIT_TEST_V2',
+        baseAdId: 'ad_base',
+        variations: [{ name: 'V2', message: 'copy B' }],
+        startTime: 1800000000,
+        endTime: 1800600000,
+        creativeTestDailyBudget: 15000,
+      },
+    )
+    expect((result as any).studyId).toBe('study_biz')
+    const posts = graphFetch.mock.calls.filter(([, init]) => init?.method === 'POST')
+    expect(posts.some(([url]) => String(url).includes('/me/ad_studies'))).toBe(false)
+    expect(posts.some(([url]) => String(url).includes('/9988776655/ad_studies'))).toBe(true)
+  })
+
+  it('create experiment errors clearly when neither user id nor business_id is available', async () => {
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret('tok'),
+      ad_account_id: '555',
+      api_version: 'v25.0',
+    })
+    const graphFetch = vi.fn(async (url: string, init?: any) => {
+      if (init?.method === 'POST' && String(url).includes('/ad_base/copies'))
+        return { copied_ad_id: 'ad_copy_1' }
+      if (/\/v[\d.]+\/me$/.test(String(url).split('?')[0]))
+        return {}
+      if (String(url).includes('/ad_copy_1') || String(url).includes('/ad_base')) {
+        return {
+          id: String(url).includes('/ad_copy_1') ? 'ad_copy_1' : 'ad_base',
+          account_id: '555',
+          adset_id: 'as_1',
+          campaign_id: 'c_1',
+          creative: { object_story_spec: { page_id: 'p', link_data: { message: 'm', link: 'https://ex.com' } } },
+        }
+      }
+      return { data: [] }
+    })
+
+    await expect(metaCreateExperiment(
+      { client, graphFetch },
+      {
+        tenantId: 'tenant-1',
+        confirmTenantId: 'tenant-1',
+        confirm: true,
+        dryRun: false,
+        name: 'Sem parent',
+        type: 'SPLIT_TEST_V2',
+        baseAdId: 'ad_base',
+        variations: [{ name: 'V2' }],
+        startTime: 1800000000,
+        endTime: 1800600000,
+        creativeTestDailyBudget: 15000,
+      },
+    )).rejects.toMatchObject({ code: 'EXPERIMENT_PARENT_REQUIRED' })
+    const posts = graphFetch.mock.calls.filter(([, init]) => init?.method === 'POST')
+    expect(posts.some(([url]) => String(url).includes('/ad_studies'))).toBe(false)
+    expect(posts.some(([url]) => String(url).includes('/copies'))).toBe(false)
   })
 
   it('rejects 6 variations (7 versions) against Meta 2–5 cell Creative Test', async () => {

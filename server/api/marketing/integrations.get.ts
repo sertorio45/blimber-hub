@@ -38,6 +38,7 @@ export default defineEventHandler(async (event) => {
       analytics_account_id: config.analytics_account_id,
       property_id: config.property_id,
       ad_account_id: config.ad_account_id,
+      business_id: config.business_id,
       page_id: config.page_id,
       page_name: config.page_name,
       pixel_id: config.pixel_id,
