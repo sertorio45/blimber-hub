@@ -238,11 +238,17 @@ const TOOL_INPUT_HINTS: Record<MetaToolName, string[]> = {
     'dryRun? (default true)',
     'adAccountId?',
   ],
+  meta_list_experiments: ['tenantId', 'adAccountId?', 'limit?'],
+  meta_check_experiment_eligibility: [
+    'tenantId',
+    'adId? | adIds[]? | adsetId? | campaignId?',
+    'adAccountId?',
+  ],
   meta_create_experiment: [
     'tenantId',
     'name',
     'type (SPLIT_TEST_V2|SPLIT_TEST)',
-    'cells[] (2–5)',
+    'cells[] (2–5 V2 / 2–150 clássico) XOR baseAdId+variations (1–4 efetivas)',
     'startTime',
     'endTime',
     'confirmTenantId',

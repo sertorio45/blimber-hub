@@ -125,12 +125,12 @@ export function getMetaCapabilities(explicitVersion?: string | null): MetaCapabi
     },
     experiments: {
       splitTestV2Creative: ok(
-        'POST /me/ad_studies type=SPLIT_TEST_V2 + creative_test_config; cells with ads[] (1 ad/celula)',
+        'POST /me/ad_studies type=SPLIT_TEST_V2 + creative_test_config; 2–5 cells, 1 ad/célula; list via impacting_ad_studies',
       ),
       splitTestAdsetLevel: ok(
-        'POST /me/ad_studies type=SPLIT_TEST; cells with adsets[] (split classico)',
+        'POST /me/ad_studies type=SPLIT_TEST; cells with adsets[] (máx. 150 células; clássico)',
       ),
-      levels: ['ad (creative test SPLIT_TEST_V2)', 'adset (SPLIT_TEST classico)'],
+      levels: ['ad (creative test SPLIT_TEST_V2, 2–5 cells)', 'adset (SPLIT_TEST classico)'],
     },
     catalog: {
       listProductCatalogs: ok('GET act_{adAccountId}/product_catalogs (ownership via ad account do tenant)'),

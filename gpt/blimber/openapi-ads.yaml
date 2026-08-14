@@ -2044,6 +2044,8 @@ components:
             - meta_list_pixels
             - meta_list_datasets
             - meta_update_ad_tracking
+            - meta_list_experiments
+            - meta_check_experiment_eligibility
             - meta_create_experiment
             - meta_get_experiment
             - meta_stop_experiment

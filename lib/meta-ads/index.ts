@@ -61,6 +61,8 @@ export {
   metaUpdateAdTracking,
   metaCreateExperiment,
   metaGetExperiment,
+  metaListExperiments,
+  metaCheckExperimentEligibility,
   metaStopExperiment,
   metaUpdateAdsetStatus,
   metaUpdateAdStatus,
@@ -140,10 +142,16 @@ export {
   type MetaTrackingSpecInput,
 } from './tracking-specs'
 export {
+  buildCopyAdGraphBody,
   buildCreateExperimentGraphBody,
   createExperiment,
   getExperiment,
+  listExperiments,
+  checkExperimentEligibility,
   stopExperiment,
+  evenTreatmentPercentages,
+  flattenGraphIds,
+  mergeVariationCreativeParameters,
 } from './experiment-service'
 export {
   META_ADSET_BILLING_EVENTS,

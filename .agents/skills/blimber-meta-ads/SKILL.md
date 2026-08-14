@@ -70,7 +70,9 @@ description: >-
 | `meta_upload_image` / `meta_upload_video` / `meta_get_video_status` | Upload/reuse mídia (SSRF) |
 | `meta_list_catalogs` / `meta_list_product_sets` | Catalogs + product sets (ownership) |
 | `meta_list_pixels` / `meta_list_datasets` | Pixels (`adspixels`) e Datasets (`offline_conversion_data_sets`) da ad account |
-| `meta_create_experiment` / `meta_get_experiment` / `meta_stop_experiment` | Ad Studies oficiais (SPLIT_TEST_V2 / SPLIT_TEST) |
+| `meta_list_experiments` | Lista Ad Studies da ad account (`impacting_ad_studies`) sem `studyId` |
+| `meta_check_experiment_eligibility` | Conflitos com testes **ativos/agendados** (ad / adset / campaign) |
+| `meta_create_experiment` / `meta_get_experiment` / `meta_stop_experiment` | Ad Studies oficiais (SPLIT_TEST_V2 / SPLIT_TEST). Create: `cells[]` **ou** `baseAdId` + `variations` (duplica `/copies`) |
 | `meta_preview_bulk_delete` | Preview exclusão (IDs + previewToken) |
 | `meta_execute_bulk_delete` | Execute exclusão (confirmações + dryRun false) |
 | `meta_get_insights` | Métricas (level + datePreset) |
@@ -78,7 +80,7 @@ description: >-
 | `meta_update_adset_status` | ACTIVE / PAUSED |
 | `meta_update_ad_status` | ACTIVE / PAUSED |
 
-OpenAPI: `gpt/blimber/openapi-ads.yaml` (`createCampaign`, `createAdset`, `createAd`, `updateAdTracking`, `searchInterests`, `searchGeolocations`, `listCustomAudiences`, `createCustomAudience`, `updateAdsetStatus`, `updateAdsetBudget`, `updateAdCreativeCopy`, `previewBulkDelete`, `executeBulkDelete`, …; overflow via `invokeMetaTool`: capabilities, upload, catalogs, pixels, datasets, audience update/delete/usage/batch, experiments)  
+OpenAPI: `gpt/blimber/openapi-ads.yaml` (`createCampaign`, `createAdset`, `createAd`, `updateAdTracking`, `searchInterests`, `searchGeolocations`, `listCustomAudiences`, `createCustomAudience`, `updateAdsetStatus`, `updateAdsetBudget`, `updateAdCreativeCopy`, `previewBulkDelete`, `executeBulkDelete`, …; overflow via `invokeMetaTool`: capabilities, upload, catalogs, pixels, datasets, audience update/delete/usage/batch, experiments list/eligibility/create/get/stop)  
 Catálogo: `GET /api/gpt/meta/tools`
 
 `createAd.creativeType`: IMAGE (default) | VIDEO | CAROUSEL | DYNAMIC_CREATIVE_LEGACY | CATALOG — ou `creativeId` XOR. Upload HTTPS opcional (`imageUrl`/`videoUrl`) com SSRF; dryRun não faz upload.  
@@ -92,7 +94,7 @@ Catálogo: `GET /api/gpt/meta/tools`
 - **Flexible Ad Format** (`creative_asset_groups_spec`) = capability=false (não implementado; `META_ADS_GRAPH_VERSION` / `META_GRAPH_VERSION` sobem Graph sem habilitar o campo; default Ads **v25.0**).
 - **advantage_audience**: create/update adset sempre envia `targeting_automation.advantage_audience` (default `0`; opcional `advantageAudience: 1`).
 - **Dynamic Creative** = `DYNAMIC_CREATIVE_LEGACY` (`asset_feed_spec` + adset `is_dynamic_creative` via `isDynamicCreative`).
-- **Teste de criativo** = `meta_create_experiment` (SPLIT_TEST_V2).
+- **Teste de criativo** = `meta_create_experiment` (SPLIT_TEST_V2). Meta documenta **2–5 células** (1 ad/célula), não 2–7. `baseAdId` + no máximo **4** variações. “Até 6 variações” excede o teto oficial.
 - **Competição prática:** vários ads IMAGE|VIDEO no mesmo adset.
 
 ## Fluxo sugerido

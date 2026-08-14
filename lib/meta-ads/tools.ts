@@ -58,10 +58,19 @@ import {
   type AssetFeedSpecInput,
 } from './creative-types'
 import {
+  assertEligibleOrThrow,
+  assertStudyOnAdAccount,
+  assertCreativeTestVersionCount,
+  buildCopyAdGraphBody,
   buildCreateExperimentGraphBody,
+  checkExperimentEligibility,
+  copyAdForExperiment,
   createExperiment,
+  evenTreatmentPercentages,
   getExperiment,
+  listExperiments,
   stopExperiment,
+  type ExperimentVariationInput,
 } from './experiment-service'
 import {
   getVideoStatus,
@@ -1117,6 +1126,25 @@ export const metaListProductSetsSchema = tenantContextSchema.extend({
   limit: z.number().int().min(1).max(200).optional().default(50),
 })
 
+const experimentVariationSchema = z.object({
+  name: z.string().min(1).max(200).optional().describe('Nome da célula / sufixo do anúncio copiado.'),
+  message: z.string().optional(),
+  headline: z.string().optional(),
+  description: z.string().optional(),
+  linkUrl: z.string().optional(),
+})
+
+export const metaListExperimentsSchema = tenantContextSchema.extend({
+  limit: z.number().int().min(1).max(100).optional().default(50),
+})
+
+export const metaCheckExperimentEligibilitySchema = tenantContextSchema.extend({
+  adId: z.string().min(1).optional(),
+  adIds: z.array(z.string().min(1)).optional(),
+  adsetId: z.string().min(1).optional(),
+  campaignId: z.string().min(1).optional(),
+})
+
 export const metaCreateExperimentSchema = tenantContextSchema
   .extend({
     name: z.string().min(1).max(400),
@@ -1124,16 +1152,45 @@ export const metaCreateExperimentSchema = tenantContextSchema
     type: z.enum(['SPLIT_TEST_V2', 'SPLIT_TEST']).default('SPLIT_TEST_V2'),
     cells: z.array(z.object({
       name: z.string().min(1),
-      treatmentPercentage: z.number().int().min(1).max(99),
+      treatmentPercentage: z.number().int().min(10).max(90),
       adId: z.string().min(1).optional(),
       adsetIds: z.array(z.string().min(1)).optional(),
-    })).min(2).max(5),
+    })).min(2).max(150).optional(),
+    baseAdId: z.string().min(1).optional()
+      .describe('Atalho SPLIT_TEST_V2: anúncio base + variations (duplica via /copies). XOR com cells[].'),
+    variations: z.array(experimentVariationSchema).min(1).max(6).optional()
+      .describe('Até 4 variações efetivas (Meta: 2–5 células). 5–6 variações são rejeitadas com erro claro.'),
     startTime: z.number().int().positive().describe('Unix timestamp (seconds).'),
     endTime: z.number().int().positive().describe('Unix timestamp (seconds).'),
     creativeTestDailyBudget: z.number().int().positive().optional(),
     creativeTestLifetimeBudgetPercentage: z.number().int().min(1).max(100).optional(),
     ...metaWriteConfirmationFields,
     ...metaWriteDryRunField,
+  })
+  .superRefine((data, ctx) => {
+    const hasCells = Array.isArray(data.cells) && data.cells.length > 0
+    const hasBase = Boolean(data.baseAdId)
+    if (hasCells === hasBase) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Informe cells[] (2+) OU baseAdId + variations[] (XOR).',
+        path: hasCells ? ['baseAdId'] : ['cells'],
+      })
+    }
+    if (hasBase && (!data.variations || data.variations.length < 1)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'baseAdId exige variations[] (mínimo 1).',
+        path: ['variations'],
+      })
+    }
+    if (hasBase && data.type !== 'SPLIT_TEST_V2') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'baseAdId + variations só se aplica a SPLIT_TEST_V2 (Creative Test).',
+        path: ['type'],
+      })
+    }
   })
 
 export const metaGetExperimentSchema = tenantContextSchema.extend({
@@ -1227,6 +1284,8 @@ export type MetaToolName =
   | 'meta_list_pixels'
   | 'meta_list_datasets'
   | 'meta_update_ad_tracking'
+  | 'meta_list_experiments'
+  | 'meta_check_experiment_eligibility'
   | 'meta_create_experiment'
   | 'meta_get_experiment'
   | 'meta_stop_experiment'
@@ -3914,17 +3973,237 @@ export async function metaUpdateAdTracking(ctx: MetaToolContext, raw: unknown) {
   }
 }
 
+export async function metaListExperiments(ctx: MetaToolContext, raw: unknown) {
+  const input = metaListExperimentsSchema.parse(raw)
+  const creds = await withCreds(ctx, input.tenantId, input.adAccountId)
+  const graph = fetchGraph(ctx)
+  const listed = await listExperiments(
+    { apiVersion: creds.apiVersion, accessToken: creds.accessToken, graph },
+    creds.adAccountId,
+    { limit: input.limit },
+  )
+  return {
+    tenantId: input.tenantId,
+    adAccountId: creds.adAccountId,
+    studies: listed.studies,
+    paging: listed.paging,
+  }
+}
+
+async function loadOwnedAdsForExperiment(
+  ctx: MetaToolContext,
+  params: { tenantId: string, adAccountId?: string, adIds: string[] },
+) {
+  const ads = []
+  for (const adId of params.adIds) {
+    const owned = await fetchOwnedAdWithCreative(ctx, {
+      tenantId: params.tenantId,
+      adAccountId: params.adAccountId,
+      adId,
+    })
+    ads.push(owned)
+  }
+  return ads
+}
+
+export async function metaCheckExperimentEligibility(ctx: MetaToolContext, raw: unknown) {
+  const input = metaCheckExperimentEligibilitySchema.parse(raw)
+  const adIds = [
+    ...(input.adId ? [input.adId] : []),
+    ...(input.adIds || []),
+  ]
+  if (!adIds.length && !input.adsetId && !input.campaignId) {
+    throw new MetaAdsToolError(
+      'EXPERIMENT_ELIGIBILITY_TARGET_REQUIRED',
+      'Informe adId/adIds, adsetId ou campaignId para checar conflitos.',
+      400,
+    )
+  }
+
+  const creds = await withCreds(ctx, input.tenantId, input.adAccountId)
+  const graph = fetchGraph(ctx)
+  const adsetIds = new Set<string>()
+  const campaignIds = new Set<string>()
+  if (input.adsetId)
+    adsetIds.add(input.adsetId)
+  if (input.campaignId)
+    campaignIds.add(input.campaignId)
+
+  if (adIds.length) {
+    const owned = await loadOwnedAdsForExperiment(ctx, {
+      tenantId: input.tenantId,
+      adAccountId: input.adAccountId,
+      adIds,
+    })
+    for (const row of owned) {
+      if (row.ad?.adset_id)
+        adsetIds.add(String(row.ad.adset_id))
+      if (row.ad?.campaign_id)
+        campaignIds.add(String(row.ad.campaign_id))
+    }
+  }
+
+  const eligibility = await checkExperimentEligibility(
+    { apiVersion: creds.apiVersion, accessToken: creds.accessToken, graph },
+    {
+      adAccountId: creds.adAccountId,
+      adIds,
+      adsetIds: [...adsetIds],
+      campaignIds: [...campaignIds],
+    },
+  )
+  return {
+    tenantId: input.tenantId,
+    adAccountId: creds.adAccountId,
+    adIds,
+    ...eligibility,
+  }
+}
+
 export async function metaCreateExperiment(ctx: MetaToolContext, raw: unknown) {
   const input = metaCreateExperimentSchema.parse(raw)
   assertWriteConfirmation(input)
   const dryRun = resolveDryRun(input.dryRun, true)
   const creds = await withCreds(ctx, input.tenantId, input.adAccountId)
   const graph = fetchGraph(ctx)
+  const svc = { apiVersion: creds.apiVersion, accessToken: creds.accessToken, graph }
+
+  let cells = input.cells
+  let copiedAds: { variationName: string | null, adId: string, copyBody: Record<string, unknown> }[] = []
+  let baseAdId: string | null = input.baseAdId ?? null
+
+  if (input.baseAdId) {
+    const variations = (input.variations || []) as ExperimentVariationInput[]
+    assertCreativeTestVersionCount(1 + variations.length)
+    const { ad } = await fetchOwnedAdWithCreative(ctx, {
+      tenantId: input.tenantId,
+      adAccountId: input.adAccountId,
+      adId: input.baseAdId,
+    })
+    const objectStorySpec = ad?.creative?.object_story_spec && typeof ad.creative.object_story_spec === 'object'
+      ? ad.creative.object_story_spec as Record<string, unknown>
+      : null
+
+    const eligibility = await checkExperimentEligibility(svc, {
+      adAccountId: creds.adAccountId,
+      adIds: [input.baseAdId],
+      adsetIds: ad?.adset_id ? [String(ad.adset_id)] : [],
+      campaignIds: ad?.campaign_id ? [String(ad.campaign_id)] : [],
+    })
+    assertEligibleOrThrow(eligibility)
+
+    const percents = evenTreatmentPercentages(1 + variations.length)
+    const plannedCopies = variations.map((variation, index) => ({
+      variationName: variation.name ?? null,
+      copyBody: buildCopyAdGraphBody({
+        variation,
+        index,
+        objectStorySpec,
+      }),
+    }))
+
+    if (dryRun) {
+      const plannedCells = [
+        { name: 'Base', treatmentPercentage: percents[0]!, adId: input.baseAdId },
+        ...plannedCopies.map((row, i) => ({
+          name: row.variationName || `Variação ${i + 1}`,
+          treatmentPercentage: percents[i + 1]!,
+          adId: `(copy de ${input.baseAdId})`,
+        })),
+      ]
+      const bodyPreview = buildCreateExperimentGraphBody({
+        name: input.name,
+        description: input.description,
+        type: 'SPLIT_TEST_V2',
+        cells: plannedCells.map(cell => ({
+          ...cell,
+          adId: typeof cell.adId === 'string' && cell.adId.startsWith('(copy')
+            ? 'COPIED_AD_ID'
+            : cell.adId,
+        })),
+        startTime: input.startTime,
+        endTime: input.endTime,
+        creativeTestDailyBudget: input.creativeTestDailyBudget,
+        creativeTestLifetimeBudgetPercentage: input.creativeTestLifetimeBudgetPercentage,
+      })
+      return {
+        tenantId: input.tenantId,
+        adAccountId: creds.adAccountId,
+        studyId: null,
+        type: 'SPLIT_TEST_V2' as const,
+        name: input.name,
+        baseAdId: input.baseAdId,
+        plannedCopies,
+        cells: plannedCells,
+        success: true as const,
+        dryRun: true as const,
+        preview: {
+          dryRun: true as const,
+          wouldMutate: true as const,
+          method: 'POST',
+          path: `/${input.baseAdId}/copies then /me/ad_studies`,
+          body: bodyPreview,
+          notes: [
+            `Creative Test: ${input.name}`,
+            `baseAdId ${input.baseAdId} + ${variations.length} variação(ões) = ${1 + variations.length} células (limite Meta 2–5).`,
+            'Duplicará ads via POST /{adId}/copies (status PAUSED).',
+            'dryRun=true: nenhuma mutação.',
+          ],
+        },
+        warning: 'Dry-run: ads não duplicados e experiment não criado.',
+      }
+    }
+
+    for (const [index, variation] of variations.entries()) {
+      const copyBody = plannedCopies[index]!.copyBody
+      const copiedAdId = await copyAdForExperiment(svc, input.baseAdId, copyBody)
+      const ownedCopy = await fetchOwnedAdWithCreative(ctx, {
+        tenantId: input.tenantId,
+        adAccountId: input.adAccountId,
+        adId: copiedAdId,
+      })
+      copiedAds.push({
+        variationName: variation.name ?? null,
+        adId: String(ownedCopy.ad?.id || copiedAdId),
+        copyBody,
+      })
+    }
+
+    cells = [
+      { name: 'Base', treatmentPercentage: percents[0]!, adId: input.baseAdId },
+      ...copiedAds.map((row, i) => ({
+        name: row.variationName || `Variação ${i + 1}`,
+        treatmentPercentage: percents[i + 1]!,
+        adId: row.adId,
+      })),
+    ]
+  }
+
+  if (!cells?.length) {
+    throw new MetaAdsToolError('EXPERIMENT_CELLS_INVALID', 'cells[] é obrigatório sem baseAdId.', 400)
+  }
+
+  const cellAdIds = cells.map(c => c.adId).filter((id): id is string => Boolean(id))
+  if (cellAdIds.length && !input.baseAdId) {
+    const owned = await loadOwnedAdsForExperiment(ctx, {
+      tenantId: input.tenantId,
+      adAccountId: input.adAccountId,
+      adIds: cellAdIds,
+    })
+    const eligibility = await checkExperimentEligibility(svc, {
+      adAccountId: creds.adAccountId,
+      adIds: cellAdIds,
+      adsetIds: owned.map(row => row.ad?.adset_id).filter(Boolean).map(String),
+      campaignIds: owned.map(row => row.ad?.campaign_id).filter(Boolean).map(String),
+    })
+    assertEligibleOrThrow(eligibility)
+  }
+
   const bodyPreview = buildCreateExperimentGraphBody({
     name: input.name,
     description: input.description,
     type: input.type,
-    cells: input.cells,
+    cells,
     startTime: input.startTime,
     endTime: input.endTime,
     creativeTestDailyBudget: input.creativeTestDailyBudget,
@@ -3938,18 +4217,18 @@ export async function metaCreateExperiment(ctx: MetaToolContext, raw: unknown) {
       body: bodyPreview,
       notes: [
         `Experiment ${input.type}: ${input.name}`,
-        `cells: ${input.cells.length}`,
+        `cells: ${cells.length}`,
         dryRun ? 'dryRun=true: nenhuma mutação.' : 'Criará Ad Study oficial Meta.',
       ],
     },
     async () => {
       const created = await createExperiment(
-        { apiVersion: creds.apiVersion, accessToken: creds.accessToken, graph },
+        svc,
         {
           name: input.name,
           description: input.description,
           type: input.type,
-          cells: input.cells,
+          cells,
           startTime: input.startTime,
           endTime: input.endTime,
           creativeTestDailyBudget: input.creativeTestDailyBudget,
@@ -3963,6 +4242,9 @@ export async function metaCreateExperiment(ctx: MetaToolContext, raw: unknown) {
         studyId: created.studyId,
         type: input.type,
         name: input.name,
+        baseAdId,
+        copiedAds,
+        cells,
         success: true as const,
         dryRun: false as const,
       }
@@ -3975,6 +4257,7 @@ export async function metaCreateExperiment(ctx: MetaToolContext, raw: unknown) {
       studyId: null,
       type: input.type,
       name: input.name,
+      cells,
       success: true as const,
       dryRun: true as const,
       preview: run.preview,
@@ -3984,15 +4267,44 @@ export async function metaCreateExperiment(ctx: MetaToolContext, raw: unknown) {
   return run.result!
 }
 
+async function assertExperimentOwnedByTenant(
+  ctx: MetaToolContext,
+  creds: { apiVersion: string, accessToken: string, adAccountId: string },
+  studyId: string,
+) {
+  const graph = fetchGraph(ctx)
+  const svc = { apiVersion: creds.apiVersion, accessToken: creds.accessToken, graph }
+  const result = await getExperiment(svc, studyId)
+  const probeId = result.ads[0] || result.adsets[0] || result.campaigns[0]
+  if (probeId) {
+    const node = await graph(metaGraphUrl(creds.apiVersion, `/${probeId}`), {
+      query: {
+        fields: 'id,account_id',
+        access_token: creds.accessToken,
+      },
+    })
+    assertAdAccountOwnership({
+      objectAccountId: node?.account_id,
+      tenantAdAccountId: creds.adAccountId,
+      code: 'EXPERIMENT_TENANT_MISMATCH',
+      message: 'Study não pertence à ad account do tenant.',
+    })
+    return result
+  }
+  await assertStudyOnAdAccount(svc, creds.adAccountId, studyId)
+  return result
+}
+
 export async function metaGetExperiment(ctx: MetaToolContext, raw: unknown) {
   const input = metaGetExperimentSchema.parse(raw)
   const creds = await withCreds(ctx, input.tenantId, input.adAccountId)
-  const graph = fetchGraph(ctx)
-  const study = await getExperiment(
-    { apiVersion: creds.apiVersion, accessToken: creds.accessToken, graph },
-    input.studyId,
-  )
-  return { tenantId: input.tenantId, adAccountId: creds.adAccountId, study }
+  const result = await assertExperimentOwnedByTenant(ctx, creds, input.studyId)
+  return {
+    tenantId: input.tenantId,
+    adAccountId: creds.adAccountId,
+    studyId: input.studyId,
+    ...result,
+  }
 }
 
 export async function metaStopExperiment(ctx: MetaToolContext, raw: unknown) {
@@ -4001,8 +4313,10 @@ export async function metaStopExperiment(ctx: MetaToolContext, raw: unknown) {
   const dryRun = resolveDryRun(input.dryRun, true)
   const creds = await withCreds(ctx, input.tenantId, input.adAccountId)
   const graph = fetchGraph(ctx)
+  const svc = { apiVersion: creds.apiVersion, accessToken: creds.accessToken, graph }
+  await assertExperimentOwnedByTenant(ctx, creds, input.studyId)
   const stopped = await stopExperiment(
-    { apiVersion: creds.apiVersion, accessToken: creds.accessToken, graph },
+    svc,
     input.studyId,
     { dryRun },
   )
@@ -4415,6 +4729,8 @@ export const META_TOOL_HANDLERS: Record<MetaToolName, ToolHandler> = {
   meta_list_pixels: metaListPixels,
   meta_list_datasets: metaListDatasets,
   meta_update_ad_tracking: metaUpdateAdTracking,
+  meta_list_experiments: metaListExperiments,
+  meta_check_experiment_eligibility: metaCheckExperimentEligibility,
   meta_create_experiment: metaCreateExperiment,
   meta_get_experiment: metaGetExperiment,
   meta_stop_experiment: metaStopExperiment,
@@ -4457,6 +4773,8 @@ export const META_TOOL_SCHEMAS: Record<MetaToolName, z.ZodTypeAny> = {
   meta_list_pixels: metaListPixelsSchema,
   meta_list_datasets: metaListDatasetsSchema,
   meta_update_ad_tracking: metaUpdateAdTrackingSchema,
+  meta_list_experiments: metaListExperimentsSchema,
+  meta_check_experiment_eligibility: metaCheckExperimentEligibilitySchema,
   meta_create_experiment: metaCreateExperimentSchema,
   meta_get_experiment: metaGetExperimentSchema,
   meta_stop_experiment: metaStopExperimentSchema,
@@ -4535,10 +4853,14 @@ export const META_TOOL_DESCRIPTIONS: Record<MetaToolName, string> = {
     'Lista Datasets da ad account (GET act_{id}/offline_conversion_data_sets). Use type=offline + datasetId (ou actionType=offline_conversion).',
   meta_update_ad_tracking:
     'Atualiza tracking_specs do Ad (website Pixel / offline Dataset / crm). Merge default; replaceTrackingSpecs=true substitui. dryRun true. confirm+confirmTenantId.',
+  meta_list_experiments:
+    'Lista Ad Studies da ad account (GET act_{id}/impacting_ad_studies). Sem studyId.',
+  meta_check_experiment_eligibility:
+    'Checa conflitos com testes ativos/agendados (ad/adset/campaign vs studies).',
   meta_create_experiment:
-    'Cria Ad Study oficial (SPLIT_TEST_V2 creative cells com ads[] ou SPLIT_TEST com adsets[]). dryRun default true.',
+    'Cria Ad Study. cells[] (SPLIT_TEST_V2: 2–5 ads; SPLIT_TEST: adsets) OU baseAdId+variations (duplica /copies). dryRun default true.',
   meta_get_experiment:
-    'Lê Ad Study / experiment por studyId.',
+    'Lê study + cells + ads + winner (results_first_available_date; Graph não documenta winner_cell_id).',
   meta_stop_experiment:
     'Encerra experiment antecipadamente (end_time=now). dryRun default true.',
 }

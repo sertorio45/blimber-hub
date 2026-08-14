@@ -24,6 +24,10 @@ import {
   metaUpdateAdStatus,
   metaUpdateCampaignStatus,
   setMetaWriteAuditSink,
+  metaListExperiments,
+  metaCheckExperimentEligibility,
+  metaCreateExperiment,
+  metaGetExperiment,
 } from '~/lib/meta-ads'
 
 process.env.MARKETING_ENCRYPTION_SECRET = 'test-marketing-encryption-secret-for-mcp'
@@ -2554,6 +2558,238 @@ describe('meta-ads MCP tools', () => {
     expect(postCalls.length).toBeGreaterThanOrEqual(1)
     expect(postCalls[0]![1]?.body).toEqual({ status: 'DELETED' })
     expect(audits.some((a: any) => a.action === 'meta.gpt.bulk.delete' && a.dryRun === false)).toBe(true)
+  })
+
+  it('lists experiments via impacting_ad_studies (account scoped)', async () => {
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret('tok'),
+      ad_account_id: '555',
+      api_version: 'v25.0',
+    })
+    const graphFetch = vi.fn(async () => ({
+      data: [{ id: 'study_1', name: 'A/B criativo', type: 'SPLIT_TEST_V2' }],
+    }))
+    const result = await metaListExperiments(
+      { client, graphFetch },
+      { tenantId: 'tenant-1' },
+    )
+    expect((result as any).studies).toHaveLength(1)
+    const [url] = graphFetch.mock.calls[0]!
+    expect(String(url)).toContain('/act_555/impacting_ad_studies')
+  })
+
+  it('eligibility fails when the ad is already in an active study', async () => {
+    const now = Math.floor(Date.now() / 1000)
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret('tok'),
+      ad_account_id: '555',
+      api_version: 'v25.0',
+    })
+    const graphFetch = vi.fn(async (url: string) => {
+      if (String(url).includes('/ad_1') && !String(url).includes('ad_studies') && !String(url).includes('copies')) {
+        return {
+          id: 'ad_1',
+          name: 'Base',
+          account_id: '555',
+          adset_id: 'as_1',
+          campaign_id: 'c_1',
+          creative: { id: 'cr_1', object_story_spec: { page_id: 'p', link_data: { message: 'm', link: 'https://ex.com' } } },
+        }
+      }
+      if (String(url).includes('impacting_ad_studies')) {
+        return {
+          data: [{
+            id: 'study_live',
+            name: 'Já rodando',
+            type: 'SPLIT_TEST_V2',
+            start_time: now - 100,
+            end_time: now + 86400,
+            cells: { data: [{ id: 'cell_a', ads: { data: [{ id: 'ad_1' }] } }] },
+          }],
+        }
+      }
+      if (String(url).includes('/ad_studies'))
+        return { data: [] }
+      return { data: [] }
+    })
+
+    const result = await metaCheckExperimentEligibility(
+      { client, graphFetch },
+      { tenantId: 'tenant-1', adId: 'ad_1' },
+    )
+    expect((result as any).eligible).toBe(false)
+    expect((result as any).conflicts[0].studyId).toBe('study_live')
+  })
+
+  it('create experiment from baseAdId dryRun duplicates plan without Graph POST', async () => {
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret('tok'),
+      ad_account_id: '555',
+      api_version: 'v25.0',
+    })
+    const graphFetch = vi.fn(async (url: string, init?: any) => {
+      if (init?.method === 'POST')
+        throw new Error('should not POST in dryRun')
+      if (String(url).includes('/ad_base')) {
+        return {
+          id: 'ad_base',
+          name: 'Base',
+          account_id: '555',
+          adset_id: 'as_1',
+          campaign_id: 'c_1',
+          creative: { id: 'cr_1', object_story_spec: { page_id: 'p', link_data: { message: 'm', link: 'https://ex.com' } } },
+        }
+      }
+      return { data: [] }
+    })
+
+    const result = await metaCreateExperiment(
+      { client, graphFetch },
+      {
+        tenantId: 'tenant-1',
+        confirmTenantId: 'tenant-1',
+        confirm: true,
+        dryRun: true,
+        name: 'Teste copy',
+        type: 'SPLIT_TEST_V2',
+        baseAdId: 'ad_base',
+        variations: [
+          { name: 'V2', message: 'copy B' },
+        ],
+        startTime: 1800000000,
+        endTime: 1800600000,
+        creativeTestDailyBudget: 15000,
+      },
+    )
+    expect((result as any).dryRun).toBe(true)
+    expect((result as any).cells).toHaveLength(2)
+    expect((result as any).plannedCopies).toHaveLength(1)
+    expect(graphFetch.mock.calls.every(([, init]) => init?.method !== 'POST')).toBe(true)
+  })
+
+  it('create experiment from baseAdId copies ads then POSTs /me/ad_studies', async () => {
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret('tok'),
+      ad_account_id: '555',
+      api_version: 'v25.0',
+    })
+    const graphFetch = vi.fn(async (url: string, init?: any) => {
+      const u = String(url)
+      if (init?.method === 'POST' && u.includes('/ad_base/copies'))
+        return { copied_ad_id: 'ad_copy_1' }
+      if (init?.method === 'POST' && u.includes('/me/ad_studies'))
+        return { id: 'study_new' }
+      if (u.includes('/ad_copy_1')) {
+        return {
+          id: 'ad_copy_1',
+          account_id: '555',
+          adset_id: 'as_1',
+          campaign_id: 'c_1',
+          creative: { object_story_spec: { link_data: { message: 'copy B', link: 'https://ex.com' } } },
+        }
+      }
+      if (u.includes('/ad_base')) {
+        return {
+          id: 'ad_base',
+          name: 'Base',
+          account_id: '555',
+          adset_id: 'as_1',
+          campaign_id: 'c_1',
+          creative: { object_story_spec: { page_id: 'p', link_data: { message: 'm', link: 'https://ex.com' } } },
+        }
+      }
+      return { data: [] }
+    })
+
+    const result = await metaCreateExperiment(
+      { client, graphFetch },
+      {
+        tenantId: 'tenant-1',
+        confirmTenantId: 'tenant-1',
+        confirm: true,
+        dryRun: false,
+        name: 'Teste copy',
+        type: 'SPLIT_TEST_V2',
+        baseAdId: 'ad_base',
+        variations: [{ name: 'V2', message: 'copy B' }],
+        startTime: 1800000000,
+        endTime: 1800600000,
+        creativeTestDailyBudget: 15000,
+      },
+    )
+    expect((result as any).studyId).toBe('study_new')
+    expect((result as any).copiedAds[0].adId).toBe('ad_copy_1')
+    const posts = graphFetch.mock.calls.filter(([, init]) => init?.method === 'POST')
+    expect(posts.some(([url]) => String(url).includes('/ad_base/copies'))).toBe(true)
+    expect(posts.some(([url]) => String(url).includes('/me/ad_studies'))).toBe(true)
+  })
+
+  it('rejects 6 variations (7 versions) against Meta 2–5 cell Creative Test', async () => {
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret('tok'),
+      ad_account_id: '555',
+    })
+    const graphFetch = vi.fn(async () => ({
+      id: 'ad_base',
+      account_id: '555',
+      adset_id: 'as_1',
+      campaign_id: 'c_1',
+      creative: { object_story_spec: { link_data: { message: 'm', link: 'https://ex.com' } } },
+    }))
+    await expect(metaCreateExperiment(
+      { client, graphFetch },
+      {
+        tenantId: 'tenant-1',
+        confirmTenantId: 'tenant-1',
+        confirm: true,
+        dryRun: true,
+        name: 'Too many',
+        baseAdId: 'ad_base',
+        variations: [
+          { name: '1' }, { name: '2' }, { name: '3' }, { name: '4' }, { name: '5' }, { name: '6' },
+        ],
+        startTime: 1,
+        endTime: 2,
+        creativeTestDailyBudget: 1000,
+      },
+    )).rejects.toMatchObject({ code: 'EXPERIMENT_CELLS_INVALID' })
+  })
+
+  it('get experiment returns cells, ads and winner summary without inventing winner_cell_id', async () => {
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret('tok'),
+      ad_account_id: '555',
+      api_version: 'v25.0',
+    })
+    const graphFetch = vi.fn(async (url: string) => {
+      const u = String(url)
+      if (u.endsWith('/study_1/cells')) {
+        return { data: [{ id: 'cell_a', name: 'A', treatment_percentage: 50, ads: { data: [{ id: 'ad_1' }] } }] }
+      }
+      if (u.endsWith('/study_1/objectives'))
+        return { data: [] }
+      if (u.includes('/ad_1'))
+        return { id: 'ad_1', account_id: '555' }
+      if (u.includes('/study_1')) {
+        return {
+          id: 'study_1',
+          name: 'Teste',
+          type: 'SPLIT_TEST_V2',
+          results_first_available_date: '2026-08-01',
+          confidence_level: 0.95,
+        }
+      }
+      return { data: [] }
+    })
+
+    const result = await metaGetExperiment(
+      { client, graphFetch },
+      { tenantId: 'tenant-1', studyId: 'study_1' },
+    )
+    expect((result as any).ads).toEqual(['ad_1'])
+    expect((result as any).winner.documentedWinnerField).toBe(false)
+    expect((result as any).winner.resultsFirstAvailableDate).toBe('2026-08-01')
+    expect((result as any).study.id).toBe('study_1')
   })
 
   it('invokeMetaTool routes unknown tool as error only via registry keys', async () => {

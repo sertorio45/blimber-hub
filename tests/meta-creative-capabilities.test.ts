@@ -1,10 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import {
   assertSafeMediaUrl,
+  buildCopyAdGraphBody,
   buildCreateExperimentGraphBody,
   buildDegreesOfFreedomSpec,
+  evenTreatmentPercentages,
   getMetaCapabilities,
   MetaAdsToolError,
+  mergeVariationCreativeParameters,
 } from '~/lib/meta-ads'
 
 describe('meta capabilities + media SSRF + experiments builders', () => {
@@ -68,5 +71,59 @@ describe('meta capabilities + media SSRF + experiments builders', () => {
       { name: 'A', treatment_percentage: 50, ads: ['ad_1'] },
       { name: 'B', treatment_percentage: 50, ads: ['ad_2'] },
     ])
+  })
+
+  it('rejects Creative Test outside 2–5 cells (not 2–7)', () => {
+    expect(() => buildCreateExperimentGraphBody({
+      name: 'Too many',
+      type: 'SPLIT_TEST_V2',
+      cells: [
+        { name: 'A', treatmentPercentage: 20, adId: '1' },
+        { name: 'B', treatmentPercentage: 20, adId: '2' },
+        { name: 'C', treatmentPercentage: 20, adId: '3' },
+        { name: 'D', treatmentPercentage: 20, adId: '4' },
+        { name: 'E', treatmentPercentage: 10, adId: '5' },
+        { name: 'F', treatmentPercentage: 10, adId: '6' },
+      ],
+      startTime: 1,
+      endTime: 2,
+      creativeTestDailyBudget: 1000,
+    })).toThrow(MetaAdsToolError)
+
+    expect(() => buildCreateExperimentGraphBody({
+      name: 'One cell',
+      type: 'SPLIT_TEST_V2',
+      cells: [{ name: 'A', treatmentPercentage: 100, adId: '1' }],
+      startTime: 1,
+      endTime: 2,
+      creativeTestDailyBudget: 1000,
+    })).toThrow(/2–5/)
+  })
+
+  it('evenTreatmentPercentages always sums to 100', () => {
+    expect(evenTreatmentPercentages(2)).toEqual([50, 50])
+    expect(evenTreatmentPercentages(3)).toEqual([34, 33, 33])
+    expect(evenTreatmentPercentages(5).reduce((a, b) => a + b, 0)).toBe(100)
+  })
+
+  it('merges variation copy onto link_data and builds /copies body', () => {
+    const creative = mergeVariationCreativeParameters({
+      page_id: 'p1',
+      link_data: { message: 'old', name: 'h', link: 'https://ex.com' },
+    }, { message: 'novo', headline: 'H2' })
+    expect(creative).toMatchObject({
+      object_story_spec: {
+        page_id: 'p1',
+        link_data: { message: 'novo', name: 'H2', link: 'https://ex.com' },
+      },
+    })
+    const copyBody = buildCopyAdGraphBody({
+      variation: { name: 'Vídeo A', message: 'novo' },
+      index: 0,
+      objectStorySpec: { page_id: 'p1', link_data: { message: 'old', link: 'https://ex.com' } },
+    })
+    expect(copyBody.status_option).toBe('PAUSED')
+    expect(copyBody.rename_options).toMatchObject({ rename_suffix: ' - Vídeo A' })
+    expect(copyBody.creative_parameters).toBeDefined()
   })
 })

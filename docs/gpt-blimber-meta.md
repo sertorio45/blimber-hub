@@ -124,7 +124,7 @@ Create/update adset sempre envia `targeting.targeting_automation.advantage_audie
 | Catalog / Advantage+ Catalog | ✅ | `meta_list_catalogs` + `meta_list_product_sets` + creativeType `CATALOG` |
 | Pixel / Dataset tracking | ✅ | `createAd` / `updateAdTracking` → Graph `tracking_specs` (`offsite_conversion`+`fb_pixel`, `offline_conversion`+`dataset`) |
 | Collection | ❌ | Instant Experience/canvas não implementado |
-| A/B Experiments | ✅ | `meta_create_experiment` / get / stop — `SPLIT_TEST_V2` (ads) e `SPLIT_TEST` (adsets) |
+| A/B Experiments | ✅ | `meta_list_experiments` + eligibility + create (`cells[]` ou `baseAdId`+variations) / get / stop. Creative Test: **2–5 células** (doc Meta). |
 | WEBSITE + WHATSAPP CTWA | ✅ | Preservados |
 | advantage_audience (adset targeting) | ✅ | Sempre enviado; default `0`; campo opcional `advantageAudience` |
 
