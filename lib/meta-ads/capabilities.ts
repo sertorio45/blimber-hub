@@ -3,7 +3,7 @@
  * Never announce features the schema/implementation cannot execute.
  */
 
-import { resolveMetaGraphVersion } from './graph'
+import { resolveMetaAdsStudiesGraphVersion, resolveMetaGraphVersion } from './graph'
 
 export type MetaCapabilityFlag = {
   supported: boolean
@@ -13,6 +13,8 @@ export type MetaCapabilityFlag = {
 
 export type MetaCapabilitiesReport = {
   graphVersion: string
+  /** Isolated Ad Studies Graph (POST/GET business ad_studies). Default v26.0. */
+  studiesGraphVersion: string
   destinations: {
     WEBSITE: MetaCapabilityFlag
     WHATSAPP_CTWA: MetaCapabilityFlag
@@ -72,9 +74,11 @@ function no(reason: string): MetaCapabilityFlag {
  */
 export function getMetaCapabilities(explicitVersion?: string | null): MetaCapabilitiesReport {
   const graphVersion = resolveMetaGraphVersion(explicitVersion)
+  const studiesGraphVersion = resolveMetaAdsStudiesGraphVersion()
 
   return {
     graphVersion,
+    studiesGraphVersion,
     destinations: {
       WEBSITE: ok('link_data / video_data com linkUrl https'),
       WHATSAPP_CTWA: ok(
@@ -125,10 +129,10 @@ export function getMetaCapabilities(explicitVersion?: string | null): MetaCapabi
     },
     experiments: {
       splitTestV2Creative: ok(
-        'POST /{business_id}/ad_studies type=SPLIT_TEST_V2 + creative_test_config; 2–5 cells, 1 ad/célula; list GET /{business_id}/ad_studies + impacting_ad_studies',
+        `POST ${studiesGraphVersion} /{business_id}/ad_studies type=SPLIT_TEST_V2 + creative_test_config; 2–5 cells, 1 ad/célula; list GET business ad_studies (v26 trial) + impacting_ad_studies (versão Ads)`,
       ),
       splitTestAdsetLevel: ok(
-        'POST /{business_id}/ad_studies type=SPLIT_TEST; cells with adsets[] (máx. 150 células; clássico)',
+        `POST ${studiesGraphVersion} /{business_id}/ad_studies type=SPLIT_TEST; cells with adsets[] (máx. 150 células; clássico)`,
       ),
       levels: ['ad (creative test SPLIT_TEST_V2, 2–5 cells)', 'adset (SPLIT_TEST classico)'],
     },

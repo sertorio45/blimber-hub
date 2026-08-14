@@ -70,9 +70,9 @@ description: >-
 | `meta_upload_image` / `meta_upload_video` / `meta_get_video_status` | Upload/reuse mídia (SSRF) |
 | `meta_list_catalogs` / `meta_list_product_sets` | Catalogs + product sets (ownership) |
 | `meta_list_pixels` / `meta_list_datasets` | Pixels (`adspixels`) e Datasets (`offline_conversion_data_sets`) da ad account |
-| `meta_list_experiments` | Lista Ad Studies: `GET /{business_id}/ad_studies` + `GET act_{id}/impacting_ad_studies` (dedupe; isolamento por ad account) |
+| `meta_list_experiments` | Lista Ad Studies: `GET v26 /{business_id}/ad_studies` (`META_ADS_STUDIES_GRAPH_VERSION`, default v26.0) + `GET act_{id}/impacting_ad_studies` na versão Ads (v25). Dedupe; isolamento por ad account |
 | `meta_check_experiment_eligibility` | Conflitos com testes **ativos/agendados** (ad / adset / campaign) |
-| `meta_create_experiment` / `meta_get_experiment` / `meta_stop_experiment` | Ad Studies oficiais (SPLIT_TEST_V2 / SPLIT_TEST). Create: **POST `/{business_id}/ad_studies`** (Business Ad Studies). `business_id` = config da integração **ou** `GET act_{id}?fields=business`. `cells[]` **ou** `baseAdId` + `variations` (duplica `/copies`). Nunca POST `/me` nem `/{user_id}/ad_studies`. Se o study falhar após cópias, remove só as cópias PAUSED. |
+| `meta_create_experiment` / `meta_get_experiment` / `meta_stop_experiment` | Ad Studies oficiais (SPLIT_TEST_V2 / SPLIT_TEST). Create: **POST v26 `/{business_id}/ad_studies`**. `business_id` = config da integração **ou** `GET act_{id}?fields=business`. `cells[]` **ou** `baseAdId` + `variations` (duplica `/copies` na versão Ads). Nunca POST `/me` nem `/{user_id}/ad_studies`. Se o study falhar após cópias, remove só as cópias PAUSED. Trial isolado: POST v25 neste app retornou GraphMethodException code 100; Ads continua v25. Meta ainda documenta o POST Business Ad Studies (exemplos v26.0). |
 | `meta_preview_bulk_delete` | Preview exclusão (IDs + previewToken) |
 | `meta_execute_bulk_delete` | Execute exclusão (confirmações + dryRun false) |
 | `meta_get_insights` | Métricas (level + datePreset) |

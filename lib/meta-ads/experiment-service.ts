@@ -6,6 +6,11 @@
  * POST /me/ad_studies and POST /{user_id}/ad_studies are not used: Graph returns
  * "Unsupported request - method type: post" for those parents in production.
  *
+ * v25 POST /{business_id}/ad_studies was rejected with GraphMethodException code 100
+ * on this app; studies use v26 as isolated trial (META_ADS_STUDIES_GRAPH_VERSION).
+ * Meta still documents Business Ad Studies POST (examples include v26.0).
+ * Ad copies, impacting_ad_studies, and the rest of Ads stay on the Ads Graph version.
+ *
  * Documented limits (Marketing API Split Testing + Ad Study):
  * - Creative Tests (SPLIT_TEST_V2): 2–5 cells, exactly one ad per cell.
  * - Classic SPLIT_TEST: max 150 cells / study; max 100 ad entities / cell; 100 concurrent studies.
@@ -18,7 +23,7 @@
  */
 
 import type { MetaGraphFetch } from './types'
-import { actPath, enrichMetaGraphWriteError, metaGraphUrl, normalizeMetaAdAccountId } from './graph'
+import { actPath, enrichMetaGraphWriteError, metaAdsStudiesGraphUrl, metaGraphUrl, normalizeMetaAdAccountId, resolveMetaAdsStudiesGraphVersion } from './graph'
 import { MetaAdsToolError } from './types'
 
 export type ExperimentServiceContext = {
@@ -440,7 +445,7 @@ export async function listExperiments(
 
   if (businessId) {
     try {
-      const businessRes = await ctx.graph(metaGraphUrl(ctx.apiVersion, `/${businessId}/ad_studies`), {
+      const businessRes = await ctx.graph(metaAdsStudiesGraphUrl(`/${businessId}/ad_studies`), {
         query: {
           fields,
           limit,
@@ -660,6 +665,11 @@ export function adStudiesCreatePath(parentId: string): string {
   return `/${id}/ad_studies`
 }
 
+export function formatAdStudiesWritePreview(path: string): string {
+  const clean = assertSupportedAdStudiesCreatePath(path)
+  return `POST ${resolveMetaAdsStudiesGraphVersion()} ${clean}`
+}
+
 export function assertSupportedAdStudiesCreatePath(path: string): string {
   const clean = String(path || '').split('?')[0]
   if (!clean || clean === '/me/ad_studies' || clean.endsWith('/me/ad_studies')) {
@@ -738,7 +748,7 @@ export async function createExperiment(
   }
 
   try {
-    const res = await ctx.graph(metaGraphUrl(ctx.apiVersion, path), {
+    const res = await ctx.graph(metaAdsStudiesGraphUrl(path), {
       method: 'POST',
       query: { access_token: ctx.accessToken },
       body,
@@ -864,7 +874,7 @@ export async function getExperiment(
   if (!id) {
     throw new MetaAdsToolError('EXPERIMENT_ID_REQUIRED', 'studyId é obrigatório.', 400)
   }
-  const studyRaw = await ctx.graph(metaGraphUrl(ctx.apiVersion, `/${id}`), {
+  const studyRaw = await ctx.graph(metaAdsStudiesGraphUrl(`/${id}`), {
     query: {
       fields: EXPERIMENT_STUDY_FIELDS,
       access_token: ctx.accessToken,
@@ -872,7 +882,7 @@ export async function getExperiment(
   })
   const study = studyRaw && typeof studyRaw === 'object' ? studyRaw as Record<string, unknown> : {}
 
-  const cellsRes = await ctx.graph(metaGraphUrl(ctx.apiVersion, `/${id}/cells`), {
+  const cellsRes = await ctx.graph(metaAdsStudiesGraphUrl(`/${id}/cells`), {
     query: {
       fields: EXPERIMENT_CELL_FIELDS,
       access_token: ctx.accessToken,
@@ -884,7 +894,7 @@ export async function getExperiment(
 
   let objectives: unknown = null
   try {
-    const objRes = await ctx.graph(metaGraphUrl(ctx.apiVersion, `/${id}/objectives`), {
+    const objRes = await ctx.graph(metaAdsStudiesGraphUrl(`/${id}/objectives`), {
       query: { access_token: ctx.accessToken },
     })
     objectives = objRes?.data ?? objRes ?? null
@@ -926,7 +936,7 @@ export async function stopExperiment(
     return { studyId: id, body, dryRun: true }
   }
   try {
-    await ctx.graph(metaGraphUrl(ctx.apiVersion, `/${id}`), {
+    await ctx.graph(metaAdsStudiesGraphUrl(`/${id}`), {
       method: 'POST',
       query: { access_token: ctx.accessToken },
       body,

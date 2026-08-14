@@ -106,6 +106,7 @@ Contrato completo: `gpt/blimber/openapi-ads.yaml` (host `ads.blimber.com.br`). `
 ## META CREATIVE CAPABILITIES
 
 Graph default Ads/Marketing: `config.api_version` → `META_ADS_GRAPH_VERSION` → `META_GRAPH_VERSION` → **v25.0** (`lib/meta-ads/graph.ts` `resolveMetaGraphVersion`).  
+Ad Studies (trial isolado): `META_ADS_STUDIES_GRAPH_VERSION` → **v26.0** (POST/GET `/{business_id}/ad_studies` + GET study). Não sobe Ads/CAPI. WhatsApp Cloud permanece v21.  
 CAPI (CRM): `META_GRAPH_VERSION` → **v25.0** (não usa `META_ADS_GRAPH_VERSION`).  
 WhatsApp Cloud API: permanece em v21 hardcoded (fora deste upgrade).
 

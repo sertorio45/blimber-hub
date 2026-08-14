@@ -68,6 +68,7 @@ import {
   createExperiment,
   deleteCopiedAdsForFailedStudy,
   evenTreatmentPercentages,
+  formatAdStudiesWritePreview,
   getExperiment,
   listExperiments,
   resolveAdStudyCreatePath,
@@ -4181,13 +4182,13 @@ export async function metaCreateExperiment(ctx: MetaToolContext, raw: unknown) {
           dryRun: true as const,
           wouldMutate: true as const,
           method: 'POST',
-          path: `/${input.baseAdId}/copies then ${parent.path}`,
+          path: formatAdStudiesWritePreview(parent.path),
           body: bodyPreview,
           notes: [
             `Creative Test: ${input.name}`,
             `baseAdId ${input.baseAdId} + ${variations.length} variação(ões) = ${1 + variations.length} células (limite Meta 2–5).`,
             'Duplicará ads via POST /{adId}/copies (status PAUSED).',
-            `Ad Study: POST ${parent.path} (Business Ad Studies; type=SPLIT_TEST_V2).`,
+            `Ad Study: ${formatAdStudiesWritePreview(parent.path)} (Business Ad Studies; type=SPLIT_TEST_V2).`,
             parent.source === 'config'
               ? `business_id da integração Meta: ${parent.parentId}.`
               : `business_id via GET act_{id}?fields=business: ${parent.parentId}.`,
@@ -4268,12 +4269,12 @@ export async function metaCreateExperiment(ctx: MetaToolContext, raw: unknown) {
     dryRun,
     {
       method: 'POST',
-      path: parent.path,
+      path: formatAdStudiesWritePreview(parent.path),
       body: bodyPreview,
       notes: [
         `Experiment ${input.type}: ${input.name}`,
         `cells: ${cells.length}`,
-        `POST ${parent.path} (Business Ad Studies).`,
+        `${formatAdStudiesWritePreview(parent.path)} (Business Ad Studies).`,
         `type=${input.type}`,
         dryRun ? 'dryRun=true: nenhuma mutação.' : 'Criará Ad Study oficial Meta.',
       ],
@@ -4916,11 +4917,11 @@ export const META_TOOL_DESCRIPTIONS: Record<MetaToolName, string> = {
   meta_update_ad_tracking:
     'Atualiza tracking_specs do Ad (website Pixel / offline Dataset / crm). Merge default; replaceTrackingSpecs=true substitui. dryRun true. confirm+confirmTenantId.',
   meta_list_experiments:
-    'Lista Ad Studies: GET /{business_id}/ad_studies + GET act_{id}/impacting_ad_studies (dedupe; isolamento por ad account). Sem studyId.',
+    'Lista Ad Studies: GET v26 /{business_id}/ad_studies (META_ADS_STUDIES_GRAPH_VERSION) + GET act_{id}/impacting_ad_studies na versão Ads. Dedupe; isolamento por ad account. Sem studyId.',
   meta_check_experiment_eligibility:
     'Checa conflitos com testes ativos/agendados (ad/adset/campaign vs studies).',
   meta_create_experiment:
-    'Cria Ad Study. POST /{business_id}/ad_studies (SPLIT_TEST_V2). cells[] OU baseAdId+variations (/copies). Falha após cópias remove só as cópias. dryRun default true.',
+    'Cria Ad Study. POST v26 /{business_id}/ad_studies (SPLIT_TEST_V2; META_ADS_STUDIES_GRAPH_VERSION). cells[] OU baseAdId+variations (/copies na versão Ads). Falha após cópias remove só as cópias. dryRun default true.',
   meta_get_experiment:
     'Lê study + cells + ads + winner (results_first_available_date; Graph não documenta winner_cell_id).',
   meta_stop_experiment:

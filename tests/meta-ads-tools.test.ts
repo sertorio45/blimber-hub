@@ -102,6 +102,22 @@ describe('meta-ads MCP tools', () => {
     expect(init?.query?.access_token).toBe(token)
   })
 
+  it('lists campaigns on Ads Graph v25 while Ad Studies stay isolated', async () => {
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret('tok'),
+      ad_account_id: '123456789',
+      api_version: 'v25.0',
+    })
+    const graphFetch = vi.fn(async () => ({ data: [] }))
+    await metaListCampaigns(
+      { client, graphFetch },
+      { tenantId: 'tenant-1', limit: 10 },
+    )
+    const [url] = graphFetch.mock.calls[0]!
+    expect(String(url)).toContain('https://graph.facebook.com/v25.0/act_123456789/campaigns')
+    expect(String(url)).not.toContain('/v26.0/')
+  })
+
   it('searches interests via Graph adinterest (never returns token)', async () => {
     const token = 'meta-interest-token'
     const client = createIntegrationClient({
@@ -2613,8 +2629,9 @@ describe('meta-ads MCP tools', () => {
     expect((result as any).sources.impactingAdStudies).toBe(true)
     expect((result as any).sources.businessAdStudies).toBe(true)
     const urls = graphFetch.mock.calls.map(([url]) => String(url))
-    expect(urls.some(u => u.includes('/act_555/impacting_ad_studies'))).toBe(true)
-    expect(urls.some(u => u.includes('/9988776655/ad_studies'))).toBe(true)
+    expect(urls.some(u => u.includes('/v25.0/act_555/impacting_ad_studies'))).toBe(true)
+    expect(urls.some(u => u.includes('/v26.0/9988776655/ad_studies'))).toBe(true)
+    expect(urls.some(u => u.includes('/v25.0/9988776655/ad_studies'))).toBe(false)
   })
 
   it('eligibility fails when the ad is already in an active study', async () => {
@@ -2706,9 +2723,9 @@ describe('meta-ads MCP tools', () => {
     expect((result as any).dryRun).toBe(true)
     expect((result as any).cells).toHaveLength(2)
     expect((result as any).plannedCopies).toHaveLength(1)
+    expect(String((result as any).preview.path)).toBe('POST v26.0 /9988776655/ad_studies')
     expect(String((result as any).preview.path)).not.toContain('/me/ad_studies')
     expect(String((result as any).preview.path)).not.toContain('/111222333/ad_studies')
-    expect(String((result as any).preview.path)).toContain('/9988776655/ad_studies')
     expect((result as any).preview.body.type).toBe('SPLIT_TEST_V2')
     expect(graphFetch.mock.calls.every(([, init]) => init?.method !== 'POST')).toBe(true)
   })
@@ -2771,10 +2788,11 @@ describe('meta-ads MCP tools', () => {
     expect((result as any).studyId).toBe('study_new')
     expect((result as any).copiedAds[0].adId).toBe('ad_copy_1')
     const posts = graphFetch.mock.calls.filter(([, init]) => init?.method === 'POST')
-    expect(posts.some(([url]) => String(url).includes('/ad_base/copies'))).toBe(true)
+    expect(posts.some(([url]) => String(url).includes('/v25.0/ad_base/copies'))).toBe(true)
     expect(posts.some(([url]) => String(url).includes('/me/ad_studies'))).toBe(false)
     expect(posts.some(([url]) => String(url).includes('/111222333/ad_studies'))).toBe(false)
-    expect(posts.some(([url]) => String(url).includes('/9988776655/ad_studies'))).toBe(true)
+    expect(posts.some(([url]) => String(url).includes('/v26.0/9988776655/ad_studies'))).toBe(true)
+    expect(posts.some(([url]) => String(url).includes('/v25.0/9988776655/ad_studies'))).toBe(false)
     const studyPost = posts.find(([url]) => String(url).includes('/9988776655/ad_studies'))
     expect(studyPost?.[1]?.body?.type).toBe('SPLIT_TEST_V2')
   })
@@ -3025,6 +3043,9 @@ describe('meta-ads MCP tools', () => {
     expect((result as any).winner.documentedWinnerField).toBe(false)
     expect((result as any).winner.resultsFirstAvailableDate).toBe('2026-08-01')
     expect((result as any).study.id).toBe('study_1')
+    const urls = graphFetch.mock.calls.map(([url]) => String(url))
+    expect(urls.some(u => u.includes('/v26.0/study_1'))).toBe(true)
+    expect(urls.some(u => /\/v25\.0\/ad_1(\?|$)/.test(u) || u.includes('/v25.0/ad_1'))).toBe(true)
   })
 
   it('invokeMetaTool routes unknown tool as error only via registry keys', async () => {

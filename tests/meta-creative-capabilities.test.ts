@@ -16,6 +16,7 @@ describe('meta capabilities + media SSRF + experiments builders', () => {
   it('reports Flexible Ad Format unsupported on v20 while pac_relaxation is supported', () => {
     const caps = getMetaCapabilities('v20.0')
     expect(caps.graphVersion).toBe('v20.0')
+    expect(caps.studiesGraphVersion).toBe('v26.0')
     expect(caps.creativeTypes.FLEXIBLE_AD_FORMAT.supported).toBe(false)
     expect(caps.creativeTypes.FLEXIBLE_MEDIA_PAC_RELAXATION.supported).toBe(true)
     expect(caps.creativeTypes.COLLECTION.supported).toBe(false)
