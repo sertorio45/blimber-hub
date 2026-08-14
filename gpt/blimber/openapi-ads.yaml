@@ -1326,9 +1326,9 @@ components:
           description: Otimização. CTWA tipicamente CONVERSATIONS.
         destinationType:
           type: string
-          enum: [WEBSITE, WHATSAPP]
+          enum: [WEBSITE, WHATSAPP, MESSENGER, INSTAGRAM_DIRECT]
           default: WEBSITE
-          description: Destino do adset. WHATSAPP ≠ objective de campanha.
+          description: Destino do adset. Destinos de mensagem ≠ objective de campanha.
         isDynamicCreative:
           type: boolean
           description: >
@@ -1420,9 +1420,9 @@ components:
             Flexible Ad Format (creative_asset_groups_spec) não suportado — capability=false.
         destinationType:
           type: string
-          enum: [WEBSITE, WHATSAPP]
+          enum: [WEBSITE, WHATSAPP, MESSENGER, INSTAGRAM_DIRECT]
           default: WEBSITE
-          description: WEBSITE exige linkUrl; WHATSAPP = CTWA (IMAGE|VIDEO).
+          description: WEBSITE exige linkUrl; WHATSAPP|MESSENGER|INSTAGRAM_DIRECT = Click-to-Message (IMAGE|VIDEO|CAROUSEL).
         linkUrl:
           type: string
           format: uri
@@ -1453,11 +1453,13 @@ components:
             - APPLY_NOW
             - GET_QUOTE
             - WHATSAPP_MESSAGE
-          description: WEBSITE default LEARN_MORE; WHATSAPP força WHATSAPP_MESSAGE.
+            - MESSAGE_PAGE
+            - INSTAGRAM_MESSAGE
+          description: WEBSITE default LEARN_MORE; destinos de mensagem forçam CTA oficial.
         welcomeMessage:
           type: string
           maxLength: 1000
-          description: Só WHATSAPP+IMAGE — saudação/autofill (page_welcome_message).
+          description: Destinos de mensagem (IMAGE|VIDEO|CAROUSEL) — saudação/autofill (page_welcome_message).
         imageUrl:
           type: string
           format: uri
@@ -1476,14 +1478,14 @@ components:
           type: array
           minItems: 2
           maxItems: 10
-          description: Obrigatório em CAROUSEL — cards com link + imageHash|imageUrl|videoId.
+          description: Obrigatório em CAROUSEL — cards com imageHash|imageUrl|videoId (link só WEBSITE).
           items:
             type: object
-            required: [link]
             properties:
               link:
                 type: string
                 format: uri
+                description: Só WEBSITE. Omita em destinos de mensagem.
               name:
                 type: string
                 maxLength: 255

@@ -70,14 +70,20 @@ export {
 } from './tools'
 export {
   META_AD_DESTINATION_TYPES,
+  META_MESSAGING_DESTINATION_TYPES,
   META_CTWA_CAMPAIGN_OBJECTIVES,
   META_CTWA_OPTIMIZATION_GOALS_BY_OBJECTIVE,
   META_WHATSAPP_MESSAGING_LINK,
+  META_MESSENGER_MESSAGING_LINK,
+  assertCreativeDestinationCompatibility,
+  assertMessagingAdsetCompatibility,
   assertWhatsAppAdsetCompatibility,
   buildMetaCreateAdCreativeBody,
   buildMetaCreateAdsetGraphBody,
   buildWebsiteLinkData,
   buildWhatsAppLinkData,
+  forcedCallToActionForDestination,
+  isMessagingDestination,
   isMetaMessagingProtocolUrl,
   type MetaAdDestinationType,
 } from './ad-destination'

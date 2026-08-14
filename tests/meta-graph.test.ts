@@ -191,6 +191,99 @@ describe('meta CTWA / destination payloads', () => {
     })
   })
 
+  it('builds CAROUSEL WHATSAPP with protocol link and WHATSAPP_MESSAGE on parent and cards', () => {
+    const body = buildMetaCreateAdCreativeBodyByType({
+      creativeName: 'CarWA',
+      pageId: 'page_1',
+      creativeType: 'CAROUSEL',
+      destinationType: 'WHATSAPP',
+      whatsapp: {
+        message: 'Fale conosco',
+        headline: 'Instituto',
+        welcomeMessage: 'Olá!',
+      },
+      childAttachments: [
+        { name: 'Aula 1', imageHash: 'h1' },
+        { name: 'Aula 2', imageHash: 'h2' },
+      ],
+    })
+    expect(body.object_story_spec).toMatchObject({
+      page_id: 'page_1',
+      link_data: {
+        message: 'Fale conosco',
+        name: 'Instituto',
+        link: META_WHATSAPP_MESSAGING_LINK,
+        multi_share_optimized: true,
+        call_to_action: {
+          type: 'WHATSAPP_MESSAGE',
+          value: { app_destination: 'WHATSAPP' },
+        },
+        child_attachments: [
+          {
+            name: 'Aula 1',
+            image_hash: 'h1',
+            link: META_WHATSAPP_MESSAGING_LINK,
+            call_to_action: {
+              type: 'WHATSAPP_MESSAGE',
+              value: { app_destination: 'WHATSAPP' },
+            },
+          },
+          {
+            name: 'Aula 2',
+            image_hash: 'h2',
+            link: META_WHATSAPP_MESSAGING_LINK,
+            call_to_action: {
+              type: 'WHATSAPP_MESSAGE',
+              value: { app_destination: 'WHATSAPP' },
+            },
+          },
+        ],
+      },
+    })
+    expect((body.object_story_spec as any).link_data.page_welcome_message).toBeTruthy()
+  })
+
+  it('builds INSTAGRAM_DIRECT IMAGE with instagram_actor_id and INSTAGRAM_MESSAGE', () => {
+    const body = buildMetaCreateAdCreativeBodyByType({
+      creativeName: 'IG',
+      pageId: 'page_1',
+      creativeType: 'IMAGE',
+      destinationType: 'INSTAGRAM_DIRECT',
+      instagramActorId: 'ig_99',
+      whatsapp: { message: 'DM no Instagram', imageHash: 'h1' },
+    })
+    expect(body.object_story_spec).toMatchObject({
+      page_id: 'page_1',
+      instagram_actor_id: 'ig_99',
+      link_data: {
+        message: 'DM no Instagram',
+        image_hash: 'h1',
+        call_to_action: {
+          type: 'INSTAGRAM_MESSAGE',
+          value: { app_destination: 'INSTAGRAM_DIRECT' },
+        },
+      },
+    })
+    expect((body.object_story_spec as any).link_data.link).toBeUndefined()
+  })
+
+  it('rejects DYNAMIC_CREATIVE_LEGACY with WHATSAPP', () => {
+    expect(() => buildMetaCreateAdCreativeBodyByType({
+      creativeName: 'Dyn',
+      pageId: 'page_1',
+      creativeType: 'DYNAMIC_CREATIVE_LEGACY',
+      destinationType: 'WHATSAPP',
+      assetFeed: {
+        bodies: [{ text: 'A' }],
+        titles: [{ text: 'T' }],
+        images: [{ hash: 'h1' }],
+        linkUrls: [{ websiteUrl: 'https://example.com' }],
+        callToActionTypes: ['LEARN_MORE'],
+        adFormats: ['SINGLE_IMAGE'],
+      },
+    })).toThrow(/DYNAMIC/)
+  })
+
   it('builds CAROUSEL creative with child_attachments', () => {
     const body = buildMetaCreateAdCreativeBodyByType({
       creativeName: 'Car',

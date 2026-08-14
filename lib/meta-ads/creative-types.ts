@@ -17,8 +17,12 @@
 import { MetaAdsToolError } from './types'
 import type { MetaAdDestinationType } from './ad-destination'
 import {
+  assertCreativeDestinationCompatibility,
+  buildMessagingCallToAction,
+  buildMessagingLinkData,
   buildWebsiteLinkData,
-  buildWhatsAppLinkData,
+  isMessagingDestination,
+  META_MESSAGING_CTA_BY_DESTINATION,
   type BuildWebsiteLinkDataInput,
   type BuildWhatsAppLinkDataInput,
 } from './ad-destination'
@@ -95,7 +99,8 @@ export const META_ADVANTAGE_ENROLL_STATUS = ['OPT_IN', 'OPT_OUT'] as const
 export type MetaAdvantageEnrollStatus = (typeof META_ADVANTAGE_ENROLL_STATUS)[number]
 
 export type CarouselCardInput = {
-  link: string
+  /** Required for WEBSITE; omitted/injected for messaging destinations. */
+  link?: string
   name?: string
   description?: string
   imageHash?: string
@@ -161,7 +166,8 @@ export function buildVideoData(input: {
   description?: string
   imageHash?: string
   imageUrl?: string
-  /** WHATSAPP destination uses messaging CTA without site link. */
+  welcomeMessage?: string
+  /** Messaging destinations use official CTA without site link. */
   destinationType: MetaAdDestinationType
 }): Record<string, unknown> {
   const videoData: Record<string, unknown> = {
@@ -176,12 +182,24 @@ export function buildVideoData(input: {
     videoData.image_hash = input.imageHash
   if (input.imageUrl)
     videoData.image_url = input.imageUrl
-
-  if (input.destinationType === 'WHATSAPP') {
-    videoData.call_to_action = {
-      type: 'WHATSAPP_MESSAGE',
-      value: { app_destination: 'WHATSAPP' },
+  if (input.welcomeMessage && isMessagingDestination(input.destinationType)) {
+    videoData.page_welcome_message = {
+      type: 'VISUAL_EDITOR',
+      version: 2,
+      landing_screen_type: 'welcome_message',
+      media_type: 'text',
+      text_format: {
+        customer_action_type: 'autofill_message',
+        message: {
+          text: input.welcomeMessage,
+          autofill_message: { content: input.welcomeMessage },
+        },
+      },
     }
+  }
+
+  if (isMessagingDestination(input.destinationType)) {
+    videoData.call_to_action = buildMessagingCallToAction(input.destinationType)
   }
   else {
     if (!input.linkUrl) {
@@ -201,10 +219,12 @@ export function buildVideoData(input: {
 
 export function buildCarouselLinkData(input: {
   message: string
-  linkUrl: string
+  destinationType: MetaAdDestinationType
+  linkUrl?: string
   callToAction: string
   headline?: string
   description?: string
+  welcomeMessage?: string
   childAttachments: CarouselCardInput[]
 }): Record<string, unknown> {
   if (input.childAttachments.length < 2 || input.childAttachments.length > 10) {
@@ -215,6 +235,14 @@ export function buildCarouselLinkData(input: {
       { count: input.childAttachments.length },
     )
   }
+
+  const messaging = isMessagingDestination(input.destinationType)
+  const messagingSpec = messaging
+    ? META_MESSAGING_CTA_BY_DESTINATION[input.destinationType]
+    : null
+  const messagingCta = messaging
+    ? buildMessagingCallToAction(input.destinationType)
+    : null
 
   const child_attachments = input.childAttachments.map((card, index) => {
     const hasImage = Boolean(card.imageHash || card.imageUrl)
@@ -235,8 +263,23 @@ export function buildCarouselLinkData(input: {
         { index },
       )
     }
-    const attachment: Record<string, unknown> = {
-      link: card.link,
+    if (!messaging && !card.link) {
+      throw new MetaAdsToolError(
+        'CAROUSEL_CARD_LINK_REQUIRED',
+        `Card ${index}: CAROUSEL WEBSITE exige link https em cada card.`,
+        400,
+        { index },
+      )
+    }
+    const attachment: Record<string, unknown> = {}
+    if (messaging) {
+      if (messagingSpec?.link)
+        attachment.link = messagingSpec.link
+      if (messagingCta)
+        attachment.call_to_action = messagingCta
+    }
+    else {
+      attachment.link = card.link
     }
     if (card.name)
       attachment.name = card.name
@@ -253,18 +296,49 @@ export function buildCarouselLinkData(input: {
 
   const linkData: Record<string, unknown> = {
     message: input.message,
-    link: input.linkUrl,
     child_attachments,
     multi_share_optimized: true,
-    call_to_action: {
+  }
+
+  if (messaging && messagingCta) {
+    if (messagingSpec?.link)
+      linkData.link = messagingSpec.link
+    linkData.call_to_action = messagingCta
+  }
+  else {
+    if (!input.linkUrl) {
+      throw new MetaAdsToolError(
+        'WEBSITE_CREATIVE_INPUT_REQUIRED',
+        'CAROUSEL WEBSITE exige linkUrl + message + childAttachments.',
+        400,
+      )
+    }
+    linkData.link = input.linkUrl
+    linkData.call_to_action = {
       type: input.callToAction,
       value: { link: input.linkUrl },
-    },
+    }
   }
+
   if (input.headline)
     linkData.name = input.headline
   if (input.description)
     linkData.description = input.description
+  if (input.welcomeMessage && messaging) {
+    linkData.page_welcome_message = {
+      type: 'VISUAL_EDITOR',
+      version: 2,
+      landing_screen_type: 'welcome_message',
+      media_type: 'text',
+      text_format: {
+        customer_action_type: 'autofill_message',
+        message: {
+          text: input.welcomeMessage,
+          autofill_message: { content: input.welcomeMessage },
+        },
+      },
+    }
+  }
   return linkData
 }
 
@@ -395,6 +469,8 @@ export type BuildCreativeGraphBodyInput = {
   degreesOfFreedom?: DegreesOfFreedomSpecInput
   /** CATALOG only */
   productSetId?: string
+  /** INSTAGRAM_DIRECT — instagram_actor_id (Page-connected IG). */
+  instagramActorId?: string
 }
 
 /**
@@ -405,17 +481,23 @@ export function buildMetaCreateAdCreativeBodyByType(
   params: BuildCreativeGraphBodyInput,
 ): Record<string, unknown> {
   const { creativeType, destinationType, pageId, creativeName } = params
+  assertCreativeDestinationCompatibility({ creativeType, destinationType })
+
+  const objectStoryBase: Record<string, unknown> = { page_id: pageId }
+  if (destinationType === 'INSTAGRAM_DIRECT') {
+    if (!params.instagramActorId) {
+      throw new MetaAdsToolError(
+        'META_INSTAGRAM_ACTOR_REQUIRED',
+        'destinationType=INSTAGRAM_DIRECT exige instagram_business_account_id na integração (instagram_actor_id).',
+        400,
+      )
+    }
+    objectStoryBase.instagram_actor_id = params.instagramActorId
+  }
 
   let body: Record<string, unknown>
 
   if (creativeType === 'DYNAMIC_CREATIVE_LEGACY') {
-    if (destinationType === 'WHATSAPP') {
-      throw new MetaAdsToolError(
-        'DYNAMIC_WHATSAPP_UNSUPPORTED',
-        'DYNAMIC_CREATIVE_LEGACY não combina com destinationType=WHATSAPP. Use WEBSITE.',
-        400,
-      )
-    }
     if (!params.assetFeed) {
       throw new MetaAdsToolError(
         'DYNAMIC_ASSET_FEED_REQUIRED',
@@ -430,13 +512,6 @@ export function buildMetaCreateAdCreativeBodyByType(
     }
   }
   else if (creativeType === 'CATALOG') {
-    if (destinationType === 'WHATSAPP') {
-      throw new MetaAdsToolError(
-        'CATALOG_WHATSAPP_UNSUPPORTED',
-        'CATALOG não combina com destinationType=WHATSAPP neste fluxo.',
-        400,
-      )
-    }
     if (!params.productSetId) {
       throw new MetaAdsToolError(
         'CATALOG_PRODUCT_SET_REQUIRED',
@@ -474,20 +549,6 @@ export function buildMetaCreateAdCreativeBodyByType(
     }
   }
   else if (creativeType === 'CAROUSEL') {
-    if (destinationType === 'WHATSAPP') {
-      throw new MetaAdsToolError(
-        'CAROUSEL_WHATSAPP_UNSUPPORTED',
-        'CAROUSEL não combina com destinationType=WHATSAPP neste fluxo. Use WEBSITE.',
-        400,
-      )
-    }
-    if (!params.website) {
-      throw new MetaAdsToolError(
-        'WEBSITE_CREATIVE_INPUT_REQUIRED',
-        'CAROUSEL WEBSITE exige linkUrl + message + childAttachments.',
-        400,
-      )
-    }
     if (!params.childAttachments?.length) {
       throw new MetaAdsToolError(
         'CAROUSEL_ATTACHMENTS_REQUIRED',
@@ -495,16 +556,32 @@ export function buildMetaCreateAdCreativeBodyByType(
         400,
       )
     }
+    const message = isMessagingDestination(destinationType)
+      ? params.whatsapp?.message
+      : params.website?.message
+    if (!message) {
+      throw new MetaAdsToolError(
+        'CAROUSEL_MESSAGE_REQUIRED',
+        'Criativo CAROUSEL exige message.',
+        400,
+      )
+    }
     body = {
       name: creativeName,
       object_story_spec: {
-        page_id: pageId,
+        ...objectStoryBase,
         link_data: buildCarouselLinkData({
-          message: params.website.message,
-          linkUrl: params.website.linkUrl,
-          callToAction: params.website.callToAction,
-          headline: params.website.headline,
-          description: params.website.description,
+          message,
+          destinationType,
+          linkUrl: params.website?.linkUrl,
+          callToAction: params.website?.callToAction ?? 'LEARN_MORE',
+          headline: isMessagingDestination(destinationType)
+            ? params.whatsapp?.headline
+            : params.website?.headline,
+          description: isMessagingDestination(destinationType)
+            ? params.whatsapp?.description
+            : params.website?.description,
+          welcomeMessage: params.whatsapp?.welcomeMessage,
           childAttachments: params.childAttachments,
         }),
       },
@@ -518,7 +595,7 @@ export function buildMetaCreateAdCreativeBodyByType(
         400,
       )
     }
-    const message = destinationType === 'WHATSAPP'
+    const message = isMessagingDestination(destinationType)
       ? params.whatsapp?.message
       : params.website?.message
     if (!message) {
@@ -528,49 +605,50 @@ export function buildMetaCreateAdCreativeBodyByType(
         400,
       )
     }
-    const callToAction = destinationType === 'WHATSAPP'
-      ? 'WHATSAPP_MESSAGE'
+    const callToAction = isMessagingDestination(destinationType)
+      ? META_MESSAGING_CTA_BY_DESTINATION[destinationType].type
       : (params.website?.callToAction ?? 'LEARN_MORE')
     body = {
       name: creativeName,
       object_story_spec: {
-        page_id: pageId,
+        ...objectStoryBase,
         video_data: buildVideoData({
           videoId: params.videoId,
           message,
           callToAction,
           linkUrl: params.website?.linkUrl,
-          headline: destinationType === 'WHATSAPP'
+          headline: isMessagingDestination(destinationType)
             ? params.whatsapp?.headline
             : params.website?.headline,
-          description: destinationType === 'WHATSAPP'
+          description: isMessagingDestination(destinationType)
             ? params.whatsapp?.description
             : params.website?.description,
-          imageHash: destinationType === 'WHATSAPP'
+          imageHash: isMessagingDestination(destinationType)
             ? params.whatsapp?.imageHash
             : params.website?.imageHash,
-          imageUrl: destinationType === 'WHATSAPP'
+          imageUrl: isMessagingDestination(destinationType)
             ? params.whatsapp?.imageUrl
             : params.website?.imageUrl,
+          welcomeMessage: params.whatsapp?.welcomeMessage,
           destinationType,
         }),
       },
     }
   }
-  else if (destinationType === 'WHATSAPP') {
+  else if (isMessagingDestination(destinationType)) {
     // IMAGE default
     if (!params.whatsapp) {
       throw new MetaAdsToolError(
-        'WHATSAPP_CREATIVE_INPUT_REQUIRED',
-        'Criativo WHATSAPP exige campos de messaging (message, etc.).',
+        'MESSAGING_CREATIVE_INPUT_REQUIRED',
+        `Criativo ${destinationType} exige campos de messaging (message, etc.).`,
         400,
       )
     }
     body = {
       name: creativeName,
       object_story_spec: {
-        page_id: pageId,
-        link_data: buildWhatsAppLinkData(params.whatsapp),
+        ...objectStoryBase,
+        link_data: buildMessagingLinkData(destinationType, params.whatsapp),
       },
     }
   }
@@ -585,7 +663,7 @@ export function buildMetaCreateAdCreativeBodyByType(
     body = {
       name: creativeName,
       object_story_spec: {
-        page_id: pageId,
+        ...objectStoryBase,
         link_data: buildWebsiteLinkData(params.website),
       },
     }

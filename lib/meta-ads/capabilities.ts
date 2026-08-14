@@ -16,6 +16,8 @@ export type MetaCapabilitiesReport = {
   destinations: {
     WEBSITE: MetaCapabilityFlag
     WHATSAPP_CTWA: MetaCapabilityFlag
+    MESSENGER: MetaCapabilityFlag
+    INSTAGRAM_DIRECT: MetaCapabilityFlag
   }
   creativeTypes: {
     IMAGE: MetaCapabilityFlag
@@ -67,12 +69,24 @@ export function getMetaCapabilities(explicitVersion?: string | null): MetaCapabi
     graphVersion,
     destinations: {
       WEBSITE: ok('link_data / video_data com linkUrl https'),
-      WHATSAPP_CTWA: ok('destination_type=WHATSAPP + CTA WHATSAPP_MESSAGE; IMAGE|VIDEO'),
+      WHATSAPP_CTWA: ok(
+        'destination_type=WHATSAPP + CTA WHATSAPP_MESSAGE; IMAGE|VIDEO|CAROUSEL (docs Meta CTWA). '
+        + 'DYNAMIC_CREATIVE_LEGACY e CATALOG não suportados.',
+      ),
+      MESSENGER: ok(
+        'destination_type=MESSENGER + CTA MESSAGE_PAGE; IMAGE|VIDEO|CAROUSEL. Exige page_id.',
+      ),
+      INSTAGRAM_DIRECT: ok(
+        'destination_type=INSTAGRAM_DIRECT + CTA INSTAGRAM_MESSAGE; IMAGE|VIDEO|CAROUSEL. '
+        + 'Exige page_id + instagram_business_account_id (instagram_actor_id).',
+      ),
     },
     creativeTypes: {
-      IMAGE: ok('object_story_spec.link_data'),
-      VIDEO: ok('object_story_spec.video_data'),
-      CAROUSEL: ok('link_data.child_attachments mistos image/video; WEBSITE only'),
+      IMAGE: ok('object_story_spec.link_data — WEBSITE e destinos de mensagem'),
+      VIDEO: ok('object_story_spec.video_data — WEBSITE e destinos de mensagem'),
+      CAROUSEL: ok(
+        'link_data.child_attachments mistos image/video; WEBSITE + WHATSAPP + MESSENGER + INSTAGRAM_DIRECT',
+      ),
       DYNAMIC_CREATIVE_LEGACY: ok(
         'asset_feed_spec + adset is_dynamic_creative=true; WEBSITE only; legado Ads Manager',
       ),

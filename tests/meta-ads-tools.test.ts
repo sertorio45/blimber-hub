@@ -1303,7 +1303,41 @@ describe('meta-ads MCP tools', () => {
     ])
   })
 
-  it('create ad rejects CAROUSEL with WHATSAPP destination', async () => {
+  it('create ad CAROUSEL WHATSAPP dryRun uses protocol links not website URLs', async () => {
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret('tok'),
+      page_access_token_enc: encryptSecret('page-tok'),
+      ad_account_id: '555',
+      page_id: 'page_1',
+    })
+    const result = await metaCreateAd(
+      { client, graphFetch: vi.fn() },
+      {
+        tenantId: 'tenant-1',
+        adsetId: 'adset_1',
+        name: 'Carrossel WA',
+        creativeType: 'CAROUSEL',
+        destinationType: 'WHATSAPP',
+        message: 'Oi',
+        childAttachments: [
+          { imageHash: 'h1', name: 'Card 1' },
+          { imageHash: 'h2', name: 'Card 2' },
+        ],
+        confirmTenantId: 'tenant-1',
+        confirm: true,
+      },
+    )
+    expect(result.success).toBe(true)
+    expect((result as any).dryRun).toBe(true)
+    const linkData = (result as any).preview?.body?.creative?.object_story_spec?.link_data
+    expect(linkData.link).toBe('https://api.whatsapp.com/send')
+    expect(linkData.call_to_action.type).toBe('WHATSAPP_MESSAGE')
+    expect(linkData.child_attachments).toHaveLength(2)
+    expect(linkData.child_attachments[0].link).toBe('https://api.whatsapp.com/send')
+    expect(linkData.child_attachments[0].call_to_action.type).toBe('WHATSAPP_MESSAGE')
+  })
+
+  it('create ad rejects CAROUSEL WHATSAPP with website card links', async () => {
     const client = createIntegrationClient({
       access_token_enc: encryptSecret('tok'),
       page_access_token_enc: encryptSecret('page-tok'),

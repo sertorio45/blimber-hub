@@ -18,10 +18,15 @@ import {
 } from './integration'
 import { MetaAdsToolError } from './types'
 import {
-  assertWhatsAppAdsetCompatibility,
+  assertCreativeDestinationCompatibility,
+  assertMessagingAdsetCompatibility,
   buildMetaCreateAdsetGraphBody,
+  forcedCallToActionForDestination,
+  isMessagingDestination,
   isMetaMessagingProtocolUrl,
   META_AD_DESTINATION_TYPES,
+  META_MESSAGING_CTA_BY_DESTINATION,
+  normalizeAdsetDestinationType,
   normalizeWhatsappPhoneNumber,
   type MetaAdDestinationType,
 } from './ad-destination'
@@ -307,7 +312,8 @@ export const metaCreateCampaignSchema = tenantContextSchema
  * Create adset — dryRun defaults to true.
  * Targeting via BR_* preset XOR custom `targeting` object (validated subset of Graph).
  * Status defaults to PAUSED; ACTIVE requires confirmActive: true.
- * destinationType=WHATSAPP → Click-to-WhatsApp (promoted_object.page_id + destination_type).
+ * destinationType=WHATSAPP|MESSENGER|INSTAGRAM_DIRECT → Click-to-Message
+ * (promoted_object.page_id + destination_type).
  */
 export const metaCreateAdsetSchema = tenantContextSchema
   .extend({
@@ -337,7 +343,7 @@ export const metaCreateAdsetSchema = tenantContextSchema
       .enum(META_AD_DESTINATION_TYPES)
       .optional()
       .default('WEBSITE')
-      .describe('WEBSITE (default) ou WHATSAPP (Click-to-WhatsApp). Não é objective de campanha.'),
+      .describe('WEBSITE (default) ou destino de mensagem: WHATSAPP | MESSENGER | INSTAGRAM_DIRECT. Não é objective.'),
     isDynamicCreative: z
       .boolean()
       .optional()
@@ -410,17 +416,17 @@ export const metaCreateAdsetSchema = tenantContextSchema
         path: ['endTime'],
       })
     }
-    if (data.isDynamicCreative === true && data.destinationType === 'WHATSAPP') {
+    if (data.isDynamicCreative === true && isMessagingDestination(data.destinationType ?? 'WEBSITE')) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'isDynamicCreative=true exige destinationType=WEBSITE (não combina com WHATSAPP).',
+        message: 'isDynamicCreative=true exige destinationType=WEBSITE (não combina com destinos de mensagem).',
         path: ['isDynamicCreative'],
       })
     }
-    if (data.destinationType === 'WHATSAPP' && data.billingEvent !== 'IMPRESSIONS') {
+    if (isMessagingDestination(data.destinationType ?? 'WEBSITE') && data.billingEvent !== 'IMPRESSIONS') {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'destinationType=WHATSAPP exige billingEvent=IMPRESSIONS.',
+        message: `destinationType=${data.destinationType} exige billingEvent=IMPRESSIONS.`,
         path: ['billingEvent'],
       })
     }
@@ -436,10 +442,10 @@ export const metaCreateAdsetSchema = tenantContextSchema
         })
       }
     }
-    if (data.destinationType === 'WHATSAPP' && data.campaignObjective) {
+    if (isMessagingDestination(data.destinationType ?? 'WEBSITE') && data.campaignObjective) {
       try {
-        assertWhatsAppAdsetCompatibility({
-          destinationType: 'WHATSAPP',
+        assertMessagingAdsetCompatibility({
+          destinationType: data.destinationType ?? 'WEBSITE',
           optimizationGoal: data.optimizationGoal,
           billingEvent: data.billingEvent,
           campaignObjective: data.campaignObjective,
@@ -448,7 +454,7 @@ export const metaCreateAdsetSchema = tenantContextSchema
       catch (err) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: err instanceof Error ? err.message : 'Combinação CTWA inválida.',
+          message: err instanceof Error ? err.message : 'Combinação de destino inválida.',
           path: ['optimizationGoal'],
         })
       }
@@ -469,12 +475,14 @@ export const META_AD_CALL_TO_ACTIONS = [
   'APPLY_NOW',
   'GET_QUOTE',
   'WHATSAPP_MESSAGE',
+  'MESSAGE_PAGE',
+  'INSTAGRAM_MESSAGE',
 ] as const
 
 export type MetaAdCallToAction = (typeof META_AD_CALL_TO_ACTIONS)[number]
 
 const metaCarouselCardSchema = z.object({
-  link: z.string().url().describe('URL https do card do carrossel.'),
+  link: z.string().url().optional().describe('URL https do card (WEBSITE). Omita em destinos de mensagem — protocolo Meta é injetado.'),
   name: z.string().max(255).optional().describe('Título do card.'),
   description: z.string().max(500).optional().describe('Descrição do card.'),
   imageHash: z.string().min(1).max(128).optional().describe('image_hash do card (XOR imageUrl).'),
@@ -530,7 +538,7 @@ export const metaCreateAdSchema = tenantContextSchema
       .enum(META_AD_DESTINATION_TYPES)
       .optional()
       .default('WEBSITE')
-      .describe('WEBSITE (default) ou WHATSAPP (CTWA; IMAGE|VIDEO).'),
+      .describe('WEBSITE (default) ou WHATSAPP|MESSENGER|INSTAGRAM_DIRECT (Click-to-Message; IMAGE|VIDEO|CAROUSEL).'),
     linkUrl: z
       .string()
       .url()
@@ -547,13 +555,13 @@ export const metaCreateAdSchema = tenantContextSchema
     callToAction: z
       .enum(META_AD_CALL_TO_ACTIONS)
       .optional()
-      .describe('CTA whitelist. WEBSITE default LEARN_MORE; WHATSAPP força WHATSAPP_MESSAGE.'),
+      .describe('CTA whitelist. WEBSITE default LEARN_MORE; destinos de mensagem forçam CTA oficial.'),
     welcomeMessage: z
       .string()
       .min(1)
       .max(1000)
       .optional()
-      .describe('Só WHATSAPP+IMAGE: page_welcome_message.'),
+      .describe('Destinos de mensagem (IMAGE|VIDEO|CAROUSEL): page_welcome_message.'),
     imageUrl: z.string().url().optional().describe('URL HTTPS imagem (upload ou picture). XOR imageHash.'),
     imageHash: z.string().min(1).max(128).optional().describe('image_hash existente. XOR imageUrl.'),
     videoId: z.string().min(1).optional().describe('video_id existente (VIDEO). XOR videoUrl.'),
@@ -563,7 +571,7 @@ export const metaCreateAdSchema = tenantContextSchema
       .min(2)
       .max(10)
       .optional()
-      .describe('CAROUSEL: 2–10 cards (link + imageHash|imageUrl|videoId).'),
+      .describe('CAROUSEL: 2–10 cards (imageHash|imageUrl|videoId; link só WEBSITE).'),
     assetFeed: metaAssetFeedSchema.optional().describe('Obrigatório em DYNAMIC_CREATIVE_LEGACY.'),
     degreesOfFreedomSpec: metaDegreesOfFreedomSchema
       .optional()
@@ -623,7 +631,7 @@ export const metaCreateAdSchema = tenantContextSchema
       if (needsLink && creativeType !== 'DYNAMIC_CREATIVE_LEGACY' && !data.linkUrl) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: 'destinationType=WEBSITE exige linkUrl https de site. Para WhatsApp use destinationType=WHATSAPP.',
+          message: 'destinationType=WEBSITE exige linkUrl https de site. Para WhatsApp/Messenger/IG use destinationType correspondente.',
           path: ['linkUrl'],
         })
       }
@@ -641,41 +649,45 @@ export const metaCreateAdSchema = tenantContextSchema
           path: ['linkUrl'],
         })
       }
-      if (data.callToAction === 'WHATSAPP_MESSAGE') {
+      if (data.callToAction && (data.callToAction === 'WHATSAPP_MESSAGE' || data.callToAction === 'MESSAGE_PAGE' || data.callToAction === 'INSTAGRAM_MESSAGE')) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: 'CTA WHATSAPP_MESSAGE exige destinationType=WHATSAPP.',
+          message: `CTA ${data.callToAction} exige destinationType de mensagem correspondente.`,
           path: ['callToAction'],
         })
       }
       if (data.welcomeMessage) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: 'welcomeMessage só é válido com destinationType=WHATSAPP.',
+          message: 'welcomeMessage só é válido com destinos de mensagem (WHATSAPP|MESSENGER|INSTAGRAM_DIRECT).',
           path: ['welcomeMessage'],
         })
       }
     }
 
-    if (destinationType === 'WHATSAPP') {
+    if (isMessagingDestination(destinationType)) {
       if (data.linkUrl) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: 'destinationType=WHATSAPP não aceita linkUrl de site. Omita linkUrl.',
+          message: `destinationType=${destinationType} não aceita linkUrl de site. Omita linkUrl.`,
           path: ['linkUrl'],
         })
       }
-      if (data.callToAction && data.callToAction !== 'WHATSAPP_MESSAGE') {
+      const forcedCta = META_MESSAGING_CTA_BY_DESTINATION[destinationType].type
+      if (data.callToAction && data.callToAction !== forcedCta) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: 'destinationType=WHATSAPP usa CTA WHATSAPP_MESSAGE.',
+          message: `destinationType=${destinationType} usa CTA ${forcedCta}.`,
           path: ['callToAction'],
         })
       }
-      if (creativeType === 'CAROUSEL' || creativeType === 'DYNAMIC_CREATIVE_LEGACY' || creativeType === 'CATALOG') {
+      try {
+        assertCreativeDestinationCompatibility({ creativeType, destinationType })
+      }
+      catch (err) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: `destinationType=WHATSAPP só combina com IMAGE ou VIDEO (recebido: ${creativeType}).`,
+          message: err instanceof Error ? err.message : 'Combinação creativeType × destinationType inválida.',
           path: ['creativeType'],
         })
       }
@@ -730,6 +742,20 @@ export const metaCreateAdSchema = tenantContextSchema
               code: z.ZodIssueCode.custom,
               message: `Card ${index}: imageHash OU imageUrl, não ambos.`,
               path: ['childAttachments', index, 'imageUrl'],
+            })
+          }
+          if (destinationType === 'WEBSITE' && !card.link) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: `Card ${index}: CAROUSEL WEBSITE exige link https.`,
+              path: ['childAttachments', index, 'link'],
+            })
+          }
+          if (isMessagingDestination(destinationType) && card.link) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: `Card ${index}: destinos de mensagem não usam URL de site no card. Omita link (protocolo Meta é injetado).`,
+              path: ['childAttachments', index, 'link'],
             })
           }
         })
@@ -2051,10 +2077,11 @@ export async function metaCreateAdset(
 
   let pageId: string | null = null
   let whatsappPhone: string | undefined
-  if (destinationType === 'WHATSAPP') {
+  if (isMessagingDestination(destinationType)) {
     const tokenCtx = await resolveMetaAccessToken(ctx.client, input.tenantId)
     pageId = assertMetaPageId(tokenCtx.publicConfig.page_id)
-    whatsappPhone = normalizeWhatsappPhoneNumber(input.whatsappPhoneNumber)
+    if (destinationType === 'WHATSAPP')
+      whatsappPhone = normalizeWhatsappPhoneNumber(input.whatsappPhoneNumber)
   }
 
   // Ownership + currency + objective only on execute (GET). Dry-run stays Graph-free except credentials from DB.
@@ -2094,8 +2121,8 @@ export async function metaCreateAdset(
     }
   }
 
-  if (destinationType === 'WHATSAPP') {
-    assertWhatsAppAdsetCompatibility({
+  if (isMessagingDestination(destinationType)) {
+    assertMessagingAdsetCompatibility({
       destinationType,
       optimizationGoal: input.optimizationGoal,
       billingEvent: input.billingEvent,
@@ -2141,14 +2168,14 @@ export async function metaCreateAdset(
     budgetNotes.push('Moeda da conta não consultada no dry-run (sem Graph). Use listAdAccounts se precisar.')
     budgetNotes.push('Ownership da campanha será validado na execução (dryRun: false).')
   }
-  if (destinationType === 'WHATSAPP') {
-    budgetNotes.push(`destination_type=WHATSAPP · promoted_object.page_id=${pageId}`)
+  if (isMessagingDestination(destinationType)) {
+    budgetNotes.push(`destination_type=${destinationType} · promoted_object.page_id=${pageId}`)
     if (whatsappPhone)
       budgetNotes.push(`whatsapp_phone_number=${whatsappPhone}`)
     if (campaignObjective)
       budgetNotes.push(`campaign.objective=${campaignObjective}`)
     else if (dryRun)
-      budgetNotes.push('Informe campaignObjective no dry-run para validar matriz CTWA; na execução a Graph confirma.')
+      budgetNotes.push('Informe campaignObjective no dry-run para validar matriz de destino; na execução a Graph confirma.')
   }
 
   const targetingNote = resolved.source === 'template'
@@ -2352,11 +2379,24 @@ export async function metaCreateAd(
     })
   }
 
-  const callToAction = destinationType === 'WHATSAPP'
-    ? 'WHATSAPP_MESSAGE'
-    : (input.callToAction ?? 'LEARN_MORE')
+  const callToAction = forcedCallToActionForDestination(
+    destinationType,
+    input.callToAction ?? 'LEARN_MORE',
+  )
   const creativeName = input.creativeName || `${input.name} Creative`
   const message = input.message ?? ''
+  const instagramActorId = destinationType === 'INSTAGRAM_DIRECT'
+    ? (tokenCtx.publicConfig.instagram_business_account_id
+      ? String(tokenCtx.publicConfig.instagram_business_account_id).trim()
+      : '')
+    : undefined
+  if (destinationType === 'INSTAGRAM_DIRECT' && !reuseCreativeId && !instagramActorId) {
+    throw new MetaAdsToolError(
+      'META_INSTAGRAM_ACTOR_REQUIRED',
+      'destinationType=INSTAGRAM_DIRECT exige instagram_business_account_id na integração Meta.',
+      400,
+    )
+  }
 
   // Resolve media uploads only on execute (dryRun never hits Graph upload).
   let resolvedImageHash = input.imageHash ?? null
@@ -2410,14 +2450,16 @@ export async function metaCreateAd(
             imageHash: resolvedImageHash ?? undefined,
           }
         : undefined,
-      whatsapp: destinationType === 'WHATSAPP'
+      whatsapp: isMessagingDestination(destinationType)
         ? {
             message,
             headline: input.headline,
             description: input.description,
             imageUrl: resolvedImageUrl ?? undefined,
             imageHash: resolvedImageHash ?? undefined,
-            welcomeMessage: creativeType === 'IMAGE' ? input.welcomeMessage : undefined,
+            welcomeMessage: (creativeType === 'IMAGE' || creativeType === 'VIDEO' || creativeType === 'CAROUSEL')
+              ? input.welcomeMessage
+              : undefined,
           }
         : undefined,
       videoId: resolvedVideoId
@@ -2426,6 +2468,7 @@ export async function metaCreateAd(
       assetFeed,
       degreesOfFreedom,
       productSetId: input.productSetId,
+      instagramActorId,
     })
   }
 
@@ -2451,13 +2494,16 @@ export async function metaCreateAd(
       ? String(adset.destination_type)
       : null
 
-    if (destinationType === 'WHATSAPP' && adsetDestinationType && adsetDestinationType !== 'WHATSAPP') {
-      throw new MetaAdsToolError(
-        'ADSET_DESTINATION_MISMATCH',
-        `Criativo WHATSAPP exige adset com destination_type=WHATSAPP (adset atual: ${adsetDestinationType}).`,
-        400,
-        { adsetId: input.adsetId, adsetDestinationType, destinationType },
-      )
+    if (adsetDestinationType) {
+      const normalizedAdset = normalizeAdsetDestinationType(adsetDestinationType)
+      if (normalizedAdset !== destinationType) {
+        throw new MetaAdsToolError(
+          'ADSET_DESTINATION_MISMATCH',
+          `Criativo ${destinationType} exige adset com destination_type=${destinationType} (adset atual: ${adsetDestinationType}).`,
+          400,
+          { adsetId: input.adsetId, adsetDestinationType, destinationType },
+        )
+      }
     }
 
     if (creativeType === 'DYNAMIC_CREATIVE_LEGACY' && adset?.is_dynamic_creative !== true) {
@@ -2529,8 +2575,9 @@ export async function metaCreateAd(
     mediaNotes.push('ATENÇÃO: criando ACTIVE — gasto potencial imediato.')
   if (dryRun)
     mediaNotes.push('Ownership / uploads serão validados na execução (dryRun: false).')
-  if (destinationType === 'WHATSAPP') {
-    mediaNotes.push('CTWA: estrutura oficial (CTA WHATSAPP_MESSAGE + app_destination=WHATSAPP).')
+  if (isMessagingDestination(destinationType)) {
+    const cta = META_MESSAGING_CTA_BY_DESTINATION[destinationType]
+    mediaNotes.push(`Click-to-Message: CTA ${cta.type} + app_destination=${cta.appDestination}.`)
   }
 
   const linkNote = destinationType === 'WEBSITE'
@@ -4201,9 +4248,9 @@ export const META_TOOL_DESCRIPTIONS: Record<MetaToolName, string> = {
   meta_create_campaign:
     'Cria campanha (Outcome_*). Default PAUSED + dryRun=true. Exige confirm+confirmTenantId. ACTIVE exige confirmActive. Budget opcional com teto env.',
   meta_create_adset:
-    'Cria adset (BR_* ou targeting custom). PAUSED+dryRun. destinationType WEBSITE|WHATSAPP. isDynamicCreative opcional (DYNAMIC_CREATIVE_LEGACY). Exige confirm+budget+campaignId.',
+    'Cria adset (BR_* ou targeting custom). PAUSED+dryRun. destinationType WEBSITE|WHATSAPP|MESSENGER|INSTAGRAM_DIRECT. isDynamicCreative opcional (DYNAMIC_CREATIVE_LEGACY, só WEBSITE). Exige confirm+budget+campaignId.',
   meta_create_ad:
-    'Cria Ad+Creative. creativeId XOR creativeType IMAGE|VIDEO|CAROUSEL|DYNAMIC_CREATIVE_LEGACY|CATALOG. Advantage+ degreesOfFreedomSpec. WEBSITE/WHATSAPP. Upload imageUrl/videoUrl (SSRF). PAUSED+dryRun.',
+    'Cria Ad+Creative. creativeId XOR creativeType IMAGE|VIDEO|CAROUSEL|DYNAMIC_CREATIVE_LEGACY|CATALOG. Destinos WEBSITE|WHATSAPP|MESSENGER|INSTAGRAM_DIRECT (IMAGE/VIDEO/CAROUSEL). Advantage+ degreesOfFreedomSpec. Upload imageUrl/videoUrl (SSRF). PAUSED+dryRun.',
   meta_update_adset_budget:
     'Atualiza budget do adset (daily|lifetime). dryRun default true. Teto META_GPT_BUDGET_* + confirmBudgetIncrease se aumento % alto.',
   meta_update_adset_targeting:
