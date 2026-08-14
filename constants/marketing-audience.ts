@@ -2,7 +2,7 @@
  * Marketing links allowed on the end-customer portal (MVP / ETAPA 3).
  * "Publicações" for clients = `/marketing/content` (see menus clientTitle).
  * The agency send queue `/marketing/publishing` stays agency-only.
- * Contas sociais: `/settings/integrations` (also via Marketing → Configurações).
+ * OAuth / contas sociais: `/settings/integrations` (Settings globais, not Marketing menu).
  */
 export const CLIENT_PORTAL_MARKETING_LINKS = [
   '/marketing',

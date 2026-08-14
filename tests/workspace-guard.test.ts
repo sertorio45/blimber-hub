@@ -131,6 +131,7 @@ describe('guarda de rotas por tipo de organização', () => {
     const settings = marketing.children.find(child => child.title === 'Configurações')
     const socialAccounts = leaves.find(child => child.link === '/settings/integrations')
     const adAccounts = leaves.find(child => child.link === '/marketing/settings/ad-accounts')
+    const marketingIntegrations = leaves.find(child => child.link === '/marketing/settings/integrations')
     const topTitles = marketing.children.map(child => child.title)
 
     expect(packages).toBeUndefined()
@@ -148,14 +149,10 @@ describe('guarda de rotas por tipo de organização', () => {
     expect(settings?.keepGroup).toBe(true)
     expect(settings?.defaultExpanded).toBe(false)
     expect(settings?.link).toBe('/marketing/settings')
-    expect(settings?.children?.map(child => child.title)).toEqual([
-      'Marca',
-      'Contas sociais',
-      'Contas de anúncios',
-      'Integrações',
-    ])
-    expect(socialAccounts?.link).toBe('/settings/integrations')
-    expect(adAccounts?.link).toBe('/marketing/settings/ad-accounts')
+    expect(settings?.children?.map(child => child.title)).toEqual(['Marca'])
+    expect(socialAccounts).toBeUndefined()
+    expect(adAccounts).toBeUndefined()
+    expect(marketingIntegrations).toBeUndefined()
     expect(topTitles).toEqual([
       'Visão Geral',
       'Planejamento',

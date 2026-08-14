@@ -35,7 +35,6 @@ describe('flattenModuleNavItems', () => {
         keepGroup: true,
         children: [
           { title: 'Marca', link: '/marketing/brand' },
-          { title: 'Contas sociais', link: '/settings/integrations' },
         ],
       },
     ]
@@ -76,8 +75,6 @@ describe('resolveNavGroupOpen', () => {
     defaultExpanded: false,
     children: [
       { title: 'Marca', link: '/marketing/brand' },
-      { title: 'Contas sociais', link: '/settings/integrations' },
-      { title: 'Contas de anúncios', link: '/marketing/settings/ad-accounts' },
     ],
   }
 
@@ -94,11 +91,11 @@ describe('resolveNavGroupOpen', () => {
     expect(isNavGroupActive(settings, '/marketing/ads')).toBe(false)
   })
 
-  it('expands Configurações on settings children, including Marca', () => {
+  it('expands Configurações on Brand Center, not on global Integrações', () => {
     expect(resolveNavGroupOpen(settings, '/marketing/settings')).toBe(true)
-    expect(resolveNavGroupOpen(settings, '/marketing/settings/ad-accounts')).toBe(true)
     expect(resolveNavGroupOpen(settings, '/marketing/brand')).toBe(true)
-    expect(resolveNavGroupOpen(settings, '/settings/integrations')).toBe(true)
+    expect(resolveNavGroupOpen(settings, '/settings/integrations')).toBe(false)
+    expect(resolveNavGroupOpen(settings, '/marketing/settings/ad-accounts')).toBe(true)
   })
 
   it('does not change CRM/WhatsApp small-group heuristic', () => {

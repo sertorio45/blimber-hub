@@ -1,11 +1,11 @@
 import process from 'node:process'
 
 // https://nuxt.com/docs/api/configuration/nuxt-config
-import { ADS_LEGACY_REDIRECTS } from './constants/ads-domain'
+import { ADS_LEGACY_REDIRECTS, MARKETING_SETTINGS_REDIRECTS } from './constants/ads-domain'
 import { APP_DESCRIPTION, APP_FULL_NAME, APP_NAME } from './constants/app'
 
-const adsLegacyRouteRules = Object.fromEntries(
-  Object.entries(ADS_LEGACY_REDIRECTS).map(([from, to]) => [
+const redirectRouteRules = Object.fromEntries(
+  Object.entries({ ...ADS_LEGACY_REDIRECTS, ...MARKETING_SETTINGS_REDIRECTS }).map(([from, to]) => [
     from,
     { redirect: { to, statusCode: 301 as const } },
   ]),
@@ -120,7 +120,7 @@ export default defineNuxtConfig({
     },
     '/marketing': { ssr: true, headers: { 'Cache-Control': 'private, no-store' } },
     '/marketing/**': { ssr: true, headers: { 'Cache-Control': 'private, no-store' } },
-    ...adsLegacyRouteRules,
+    ...redirectRouteRules,
     '/whatsapp': { ssr: true, headers: { 'Cache-Control': 'private, no-store' } },
     '/whatsapp/**': { ssr: true, headers: { 'Cache-Control': 'private, no-store' } },
     // Inbox usa realtime e componentes client-only; evita erro de vnode no SSR.

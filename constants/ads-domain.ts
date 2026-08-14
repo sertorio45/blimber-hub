@@ -35,11 +35,15 @@ export const ADS_BRAND_CENTER_ROUTE = '/marketing/brand' as const
 export const MARKETING_ADS_CREATIVES_ROUTE = '/marketing/ads/creatives' as const
 export const ADS_CREATIVES_ROUTE = '/ads/creatives' as const
 
-/** Marketing settings hub — Ads has no dedicated `/ads/settings` page. */
+/** Marketing settings hub — Brand Center. Ads has no dedicated `/ads/settings` page. */
 export const MARKETING_SETTINGS_ROUTE = '/marketing/settings' as const
-export const MARKETING_AD_ACCOUNTS_ROUTE = '/marketing/settings/ad-accounts' as const
-export const MARKETING_SETTINGS_INTEGRATIONS_ROUTE = '/marketing/settings/integrations' as const
 export const SETTINGS_INTEGRATIONS_ROUTE = '/settings/integrations' as const
+
+/** Dummy Etapa 5 URLs — OAuth lives only at `/settings/integrations`. */
+export const MARKETING_SETTINGS_REDIRECTS = {
+  '/marketing/settings/ad-accounts': SETTINGS_INTEGRATIONS_ROUTE,
+  '/marketing/settings/integrations': SETTINGS_INTEGRATIONS_ROUTE,
+} as const
 
 /**
  * Bookmarks on the old Ads product shell (ETAPA 7).

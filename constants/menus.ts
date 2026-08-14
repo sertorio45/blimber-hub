@@ -165,9 +165,8 @@ export const navMenu: NavMenu[] = [
           },
           {
             /**
-             * ETAPA 5 — settings live under Marketing, not a separate Ads
-             * settings tree. OAuth stays unique at /settings/integrations.
-             * Marca moved here from the Marketing top-level leaf.
+             * Brand Center only. OAuth stays at /settings/integrations —
+             * do not duplicate Contas sociais / Integrações here.
              */
             title: 'Configurações',
             icon: 'i-lucide-settings',
@@ -181,24 +180,6 @@ export const navMenu: NavMenu[] = [
                 link: '/marketing/brand',
                 capability: 'marketing.social.brand_guide.read',
                 audience: 'agency',
-              },
-              {
-                title: 'Contas sociais',
-                icon: 'i-lucide-share-2',
-                link: '/settings/integrations',
-                capability: 'marketing.social.integrations',
-              },
-              {
-                title: 'Contas de anúncios',
-                icon: 'i-lucide-circle-dollar-sign',
-                link: '/marketing/settings/ad-accounts',
-                capability: 'marketing.social.integrations',
-              },
-              {
-                title: 'Integrações',
-                icon: 'i-lucide-plug',
-                link: '/marketing/settings/integrations',
-                capability: 'marketing.social.integrations',
               },
             ],
           },

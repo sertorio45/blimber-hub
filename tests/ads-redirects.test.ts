@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { ADS_LEGACY_REDIRECTS } from '~/constants/ads-domain'
+import { ADS_LEGACY_REDIRECTS, MARKETING_SETTINGS_REDIRECTS } from '~/constants/ads-domain'
 
 describe('ads legacy redirects', () => {
   it('sends the Ads product bookmarks into Marketing without loops', () => {
@@ -18,5 +18,10 @@ describe('ads legacy redirects', () => {
       expect(to).not.toBe(from)
       expect(to.startsWith('/ads')).toBe(false)
     }
+  })
+
+  it('sends Etapa 5 dummy settings URLs to the canonical OAuth panel', () => {
+    expect(MARKETING_SETTINGS_REDIRECTS['/marketing/settings/ad-accounts']).toBe('/settings/integrations')
+    expect(MARKETING_SETTINGS_REDIRECTS['/marketing/settings/integrations']).toBe('/settings/integrations')
   })
 })

@@ -92,3 +92,5 @@ pnpm exec vitest run tests/workspace-guard.test.ts tests/nav-flatten.test.ts tes
 ## 7. PRÓXIMA ETAPA
 
 **ETAPA 6 — Retirar Ads como produto principal** (seletor, menu top-level, hub tiles). Manter domínio técnico, APIs e capabilities.
+
+**Nota posterior:** Configurações no menu Marketing ficou só **Marca**. OAuth continua em `/settings/integrations` (sem duplicar no sidebar).

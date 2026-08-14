@@ -91,16 +91,15 @@ describe('ads-brand helpers', () => {
       ADS_BRAND_CENTER_ROUTE,
       MARKETING_ADS_CREATIVES_ROUTE,
       MARKETING_SETTINGS_ROUTE,
-      MARKETING_AD_ACCOUNTS_ROUTE,
-      MARKETING_SETTINGS_INTEGRATIONS_ROUTE,
+      MARKETING_SETTINGS_REDIRECTS,
       SETTINGS_INTEGRATIONS_ROUTE,
     } = await import('~/constants/ads-domain')
     const { canOpenBrandCenterFromAds, resolveAdsCreativesPath } = await import('~/utils/ads-brand')
 
     expect(ADS_BRAND_CENTER_ROUTE).toBe('/marketing/brand')
     expect(MARKETING_SETTINGS_ROUTE).toBe('/marketing/settings')
-    expect(MARKETING_AD_ACCOUNTS_ROUTE).toBe('/marketing/settings/ad-accounts')
-    expect(MARKETING_SETTINGS_INTEGRATIONS_ROUTE).toBe('/marketing/settings/integrations')
+    expect(MARKETING_SETTINGS_REDIRECTS['/marketing/settings/ad-accounts']).toBe('/settings/integrations')
+    expect(MARKETING_SETTINGS_REDIRECTS['/marketing/settings/integrations']).toBe('/settings/integrations')
     expect(SETTINGS_INTEGRATIONS_ROUTE).toBe('/settings/integrations')
     expect(resolveAdsCreativesPath('/marketing/ads')).toBe(MARKETING_ADS_CREATIVES_ROUTE)
     expect(resolveAdsCreativesPath('/marketing/ads/campaigns')).toBe(MARKETING_ADS_CREATIVES_ROUTE)
