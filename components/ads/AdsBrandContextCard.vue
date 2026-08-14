@@ -4,8 +4,10 @@
  * Always reflects the selected client tenant — link opens Brand Center.
  */
 import { useAdsBrandContext } from '~/composables/ads/useAdsBrandContext'
+import { useAdsShellBase } from '~/composables/ads/useAdsShellBase'
 import { ADS_BRAND_CENTER_PATH } from '~/utils/ads-brand'
 
+const { adsBasePath } = useAdsShellBase()
 const { currentTenant } = useTenant()
 const {
   summary,
@@ -122,7 +124,7 @@ const clientName = computed(() => currentTenant.value?.name?.trim() || 'Cliente 
         </Button>
         <Button
           variant="ghost"
-          @click="navigateTo('/ads/creatives')"
+          @click="navigateTo(`${adsBasePath}/creatives`)"
         >
           Criativos
         </Button>
