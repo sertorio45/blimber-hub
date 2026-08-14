@@ -105,11 +105,14 @@ Prefira as rotas REST `/api/gpt/meta/*` documentadas no OpenAPI.
 | `meta_update_ad_status` | write | ACTIVE/PAUSED (confirmação) |
 | `meta_create_campaign` | write | Criar campanha (PAUSED / dryRun default true) |
 | `meta_create_adset` | write | Criar adset com `BR_*` ou `targeting` custom |
-| `meta_create_ad` | write | Criar AdCreative link/page + Ad (dryRun default true) |
+| `meta_create_ad` | write | Criar AdCreative + Ad; `trackingSpecs` opcional (Pixel/Dataset) |
 | `meta_update_adset_budget` | write | Budget adset (dryRun default true) |
 | `meta_update_adset_targeting` | write | Targeting BR_* |
 | `meta_update_ad_creative_copy` | write | Copy via novo creative |
 | `meta_update_ad_media` | write | imageUrl\|imageHash via novo creative |
+| `meta_update_ad_tracking` | write | Substitui tracking_specs (invoke) |
+| `meta_list_pixels` | read | Pixels da ad account |
+| `meta_list_datasets` | read | Datasets offline da ad account |
 | `meta_preview_bulk_delete` | write preview | Preview exclusão + previewToken |
 | `meta_execute_bulk_delete` | write | Execute exclusão (confirmações + dryRun false) |
 

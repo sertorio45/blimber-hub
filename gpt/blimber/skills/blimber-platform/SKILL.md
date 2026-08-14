@@ -42,7 +42,7 @@ description: >-
 | `getBrandContext` | Brand Center |
 | `listMediaAssets` / `listSocialAccounts` | biblioteca / contas |
 
-## Tools — Ação Ads (24, host ads.*)
+## Tools — Ação Ads (26, host ads.*)
 
 | Tool / operationId | Uso |
 |--------------------|-----|
@@ -50,7 +50,7 @@ description: >-
 | `searchInterests` / `searchGeolocations` / `listCustomAudiences` | IDs de interesse/cidade/audiences para targeting |
 | `listCampaigns` / `getCampaign` / `createCampaign` / `updateCampaignStatus` | campanhas Meta |
 | `listAdsets` / `createAdset` / `updateAdsetStatus` / `updateAdsetBudget` / `updateAdsetTargeting` | adsets |
-| `listAds` / `createAd` / `updateAdStatus` / `updateAdCreativeCopy` / `updateAdMedia` | anúncios (`createAd.creativeType`: IMAGE\|VIDEO\|CAROUSEL) |
+| `listAds` / `createAd` / `updateAdStatus` / `updateAdCreativeCopy` / `updateAdMedia` / `updateAdTracking` | anúncios (`createAd.creativeType`: IMAGE\|VIDEO\|CAROUSEL; tracking Pixel/Dataset) |
 | `getInsights` / `previewBulkDelete` / `executeBulkDelete` / `invokeMetaTool` | insights / bulk / invoke |
 
 Keep vs drop: `gpt/blimber/README.md`.

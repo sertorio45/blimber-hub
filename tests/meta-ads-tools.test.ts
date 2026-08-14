@@ -17,6 +17,7 @@ import {
   metaSearchInterests,
   metaUpdateAdCreativeCopy,
   metaUpdateAdMedia,
+  metaUpdateAdTracking,
   metaUpdateAdsetBudget,
   metaUpdateAdsetStatus,
   metaUpdateAdsetTargeting,
@@ -1654,6 +1655,162 @@ describe('meta-ads MCP tools', () => {
     expect(linkData.page_welcome_message).toBeTruthy()
     expect((result as any).preview?.notes?.some((n: string) => n.includes('destinationType: WHATSAPP'))).toBe(true)
     expect(graphFetch).not.toHaveBeenCalled()
+  })
+
+  it('create ad dryRun previews tracking_specs for pixel + offline dataset without Graph', async () => {
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret('tok'),
+      page_access_token_enc: encryptSecret('page-tok'),
+      ad_account_id: '555',
+      page_id: 'page_99',
+    })
+    const graphFetch = vi.fn()
+    const result = await metaCreateAd(
+      { client, graphFetch },
+      {
+        tenantId: 'tenant-1',
+        adsetId: 'adset_1',
+        name: 'Ad com tracking',
+        linkUrl: 'https://example.com/oferta',
+        message: 'Oferta',
+        pixelId: 'px_1',
+        offlineDatasetId: 'ds_1',
+        conversionDomain: 'example.com',
+        confirmTenantId: 'tenant-1',
+        confirm: true,
+      },
+    )
+    expect((result as any).dryRun).toBe(true)
+    expect((result as any).preview?.body?.ad?.tracking_specs).toEqual([
+      { 'action.type': 'offsite_conversion', fb_pixel: 'px_1' },
+      { 'action.type': 'offline_conversion', dataset: 'ds_1' },
+    ])
+    expect((result as any).preview?.body?.ad?.conversion_domain).toBe('example.com')
+    expect((result as any).preview?.notes?.some((n: string) => n.includes('fb_pixel=px_1'))).toBe(true)
+    expect((result as any).preview?.notes?.some((n: string) => n.includes('dataset=ds_1'))).toBe(true)
+    expect(graphFetch).not.toHaveBeenCalled()
+  })
+
+  it('create ad execute sends tracking_specs after ownership checks', async () => {
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret('tok'),
+      page_access_token_enc: encryptSecret('page-tok'),
+      ad_account_id: '555',
+      page_id: 'page_99',
+    })
+    const graphFetch = vi.fn(async (url: string, init?: any) => {
+      if (String(url).includes('/adspixels'))
+        return { data: [{ id: 'px_1', name: 'Pixel' }] }
+      if (String(url).includes('/offline_conversion_data_sets'))
+        return { data: [{ id: 'ds_1', name: 'Offline' }] }
+      if (init?.method === 'POST') {
+        if (String(url).includes('/adcreatives'))
+          return { id: 'creative_new_1' }
+        if (String(url).includes('/ads'))
+          return { id: 'ad_new_1' }
+      }
+      if (String(url).includes('/adset_owned')) {
+        return { id: 'adset_owned', name: 'Adset', account_id: '555', campaign_id: 'cmp_1' }
+      }
+      return {}
+    })
+
+    const result = await metaCreateAd(
+      { client, graphFetch },
+      {
+        tenantId: 'tenant-1',
+        adsetId: 'adset_owned',
+        name: 'Ad Real Tracking',
+        linkUrl: 'https://example.com/lp',
+        message: 'Texto',
+        imageHash: 'hash_abc',
+        pixelId: 'px_1',
+        offlineDatasetId: 'ds_1',
+        confirmTenantId: 'tenant-1',
+        confirm: true,
+        dryRun: false,
+      },
+    )
+    expect((result as any).adId).toBe('ad_new_1')
+    const adPost = graphFetch.mock.calls.find(([, init]) => init?.method === 'POST' && String(init ? arguments : '').length >= 0
+      && String(graphFetch.mock.calls.find(c => String(c[0]).includes('/ads') && c[1]?.method === 'POST')?.[0] || '').includes('/ads'))
+    const adsCall = graphFetch.mock.calls.find(([url, init]) => init?.method === 'POST' && String(url).includes('/act_555/ads'))
+    expect(adsCall?.[1]?.body).toMatchObject({
+      tracking_specs: [
+        { 'action.type': 'offsite_conversion', fb_pixel: 'px_1' },
+        { 'action.type': 'offline_conversion', dataset: 'ds_1' },
+      ],
+    })
+    expect(JSON.stringify(result)).not.toContain('tok')
+  })
+
+  it('create ad execute rejects pixel from another account', async () => {
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret('tok'),
+      page_access_token_enc: encryptSecret('page-tok'),
+      ad_account_id: '555',
+      page_id: 'page_99',
+    })
+    const graphFetch = vi.fn(async (url: string, init?: any) => {
+      if (String(url).includes('/adspixels'))
+        return { data: [{ id: 'px_owned', name: 'Pixel' }] }
+      if (String(url).includes('/adset_owned'))
+        return { id: 'adset_owned', account_id: '555' }
+      return {}
+    })
+    await expect(metaCreateAd(
+      { client, graphFetch },
+      {
+        tenantId: 'tenant-1',
+        adsetId: 'adset_owned',
+        name: 'Hijack pixel',
+        linkUrl: 'https://example.com',
+        message: 'Nope',
+        pixelId: 'px_foreign',
+        confirmTenantId: 'tenant-1',
+        confirm: true,
+        dryRun: false,
+      },
+    )).rejects.toMatchObject({ code: 'PIXEL_TENANT_MISMATCH' })
+  })
+
+  it('update ad tracking dryRun merges dataset onto existing specs', async () => {
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret('tok'),
+      ad_account_id: '555',
+    })
+    const graphFetch = vi.fn(async (url: string) => {
+      if (String(url).includes('/adspixels'))
+        return { data: [{ id: 'px_1' }] }
+      if (String(url).includes('/offline_conversion_data_sets'))
+        return { data: [{ id: 'ds_1' }] }
+      if (String(url).includes('/ad_1')) {
+        return {
+          id: 'ad_1',
+          name: 'Ad',
+          account_id: '555',
+          tracking_specs: [{ 'action.type': ['offsite_conversion'], fb_pixel: ['px_1'] }],
+        }
+      }
+      return {}
+    })
+    const result = await metaUpdateAdTracking(
+      { client, graphFetch },
+      {
+        tenantId: 'tenant-1',
+        adId: 'ad_1',
+        offlineDatasetId: 'ds_1',
+        confirmTenantId: 'tenant-1',
+        confirm: true,
+      },
+    )
+    expect((result as any).dryRun).toBe(true)
+    expect((result as any).preview?.body?.tracking_specs).toEqual([
+      { 'action.type': ['offsite_conversion'], fb_pixel: ['px_1'] },
+      { 'action.type': 'offline_conversion', dataset: 'ds_1' },
+    ])
+    const posts = graphFetch.mock.calls.filter(([, init]) => init?.method === 'POST')
+    expect(posts).toHaveLength(0)
   })
 
   it('create ad WHATSAPP rejects fabricated linkUrl input', async () => {

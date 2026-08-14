@@ -47,6 +47,14 @@ export type MetaCapabilitiesReport = {
     listProductSets: MetaCapabilityFlag
     catalogTemplateCreative: MetaCapabilityFlag
   }
+  tracking: {
+    adTrackingSpecs: MetaCapabilityFlag
+    listPixels: MetaCapabilityFlag
+    listDatasets: MetaCapabilityFlag
+    websitePixel: MetaCapabilityFlag
+    offlineDataset: MetaCapabilityFlag
+    crmLeadgenQuality: MetaCapabilityFlag
+  }
 }
 
 function ok(notes?: string): MetaCapabilityFlag {
@@ -131,6 +139,24 @@ export function getMetaCapabilities(explicitVersion?: string | null): MetaCapabi
       ),
       catalogTemplateCreative: ok(
         'AdCreative template_data + product_set_id; product set deve pertencer a catalogo listado',
+      ),
+    },
+    tracking: {
+      adTrackingSpecs: ok(
+        'Campo tracking_specs no Ad (não AdSet/Campaign). createAd + meta_update_ad_tracking.',
+      ),
+      listPixels: ok('GET act_{adAccountId}/adspixels (meta_list_pixels)'),
+      listDatasets: ok(
+        'GET act_{adAccountId}/offline_conversion_data_sets (meta_list_datasets)',
+      ),
+      websitePixel: ok(
+        'action.type=offsite_conversion + fb_pixel. Pixel da ad account do tenant.',
+      ),
+      offlineDataset: ok(
+        'action.type=offline_conversion + dataset. Dataset da ad account do tenant.',
+      ),
+      crmLeadgenQuality: ok(
+        'action.type=leadgen_quality_conversion + fb_pixel ou dataset (docs Tracking Specs).',
       ),
     },
   }

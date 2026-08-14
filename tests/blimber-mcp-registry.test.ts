@@ -240,6 +240,9 @@ const EXPECTED_ROUTE_FILES: Record<string, string[]> = {
   '/api/gpt/meta/ads/{adId}/media': [
     'server/api/gpt/meta/ads/[adId]/media.post.ts',
   ],
+  '/api/gpt/meta/ads/{adId}/tracking': [
+    'server/api/gpt/meta/ads/[adId]/tracking.post.ts',
+  ],
   '/api/gpt/meta/bulk-delete/preview': [
     'server/api/gpt/meta/bulk-delete/preview.post.ts',
   ],
@@ -372,6 +375,7 @@ describe('blimber unified MCP registry + openapi', () => {
       'updateAdStatus',
       'updateAdCreativeCopy',
       'updateAdMedia',
+      'updateAdTracking',
       'previewBulkDelete',
       'executeBulkDelete',
       'getInsights',

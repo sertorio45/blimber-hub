@@ -56,6 +56,9 @@ export {
   metaGetVideoStatusTool,
   metaListCatalogs,
   metaListProductSets,
+  metaListPixels,
+  metaListDatasets,
+  metaUpdateAdTracking,
   metaCreateExperiment,
   metaGetExperiment,
   metaStopExperiment,
@@ -121,6 +124,21 @@ export {
   listProductCatalogs,
   listProductSets,
 } from './catalog-service'
+export {
+  META_AD_TRACKING_TYPES,
+  META_TRACKING_ACTION_TYPES,
+  assertTrackingSpecsOwned,
+  buildGraphTrackingSpecs,
+  compileAdTracking,
+  listAdAccountDatasets,
+  listAdAccountPixels,
+  metaAdTrackingFieldsSchema,
+  metaTrackingSpecInputSchema,
+  metaTrackingSpecsArraySchema,
+  type MetaAdTrackingType,
+  type MetaGraphTrackingSpec,
+  type MetaTrackingSpecInput,
+} from './tracking-specs'
 export {
   buildCreateExperimentGraphBody,
   createExperiment,

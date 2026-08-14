@@ -30,6 +30,7 @@ const OPENAPI_TO_META: Record<string, string> = {
   updateAdsetTargeting: 'meta_update_adset_targeting',
   updateAdCreativeCopy: 'meta_update_ad_creative_copy',
   updateAdMedia: 'meta_update_ad_media',
+  updateAdTracking: 'meta_update_ad_tracking',
   previewBulkDelete: 'meta_preview_bulk_delete',
   executeBulkDelete: 'meta_execute_bulk_delete',
 }

@@ -69,6 +69,9 @@ const EXPECTED_ROUTE_FILES: Record<string, string[]> = {
   '/api/gpt/meta/ads/{adId}/media': [
     'server/api/gpt/meta/ads/[adId]/media.post.ts',
   ],
+  '/api/gpt/meta/ads/{adId}/tracking': [
+    'server/api/gpt/meta/ads/[adId]/tracking.post.ts',
+  ],
   '/api/gpt/meta/bulk-delete/preview': [
     'server/api/gpt/meta/bulk-delete/preview.post.ts',
   ],
@@ -184,6 +187,7 @@ describe('gpt/blimber Ads OpenAPI (openapi-ads.yaml)', () => {
     expect(yaml).toContain('operationId: updateAdsetTargeting')
     expect(yaml).toContain('operationId: updateAdCreativeCopy')
     expect(yaml).toContain('operationId: updateAdMedia')
+    expect(yaml).toContain('operationId: updateAdTracking')
     expect(yaml).toContain('operationId: previewBulkDelete')
     expect(yaml).toContain('operationId: executeBulkDelete')
     expect(yaml).toContain('operationId: updateAdsetStatus')
@@ -239,9 +243,16 @@ describe('gpt/blimber Ads OpenAPI (openapi-ads.yaml)', () => {
     expect(yaml).toContain('degreesOfFreedomSpec')
     expect(yaml).toContain('isDynamicCreative')
     expect(yaml).toContain('advantageAudience')
-    expect(yaml).toContain('meta_list_product_sets')
+    expect(yaml).toContain('trackingSpecs')
+    expect(yaml).toContain('offsite_conversion')
+    expect(yaml).toContain('offline_conversion')
+    expect(yaml).toContain('conversionDomain')
     expect(yaml).toContain('meta_get_capabilities')
     expect(yaml).toContain('meta_list_catalogs')
+    expect(yaml).toContain('trackingSpecs')
+    expect(yaml).toContain('meta_list_pixels')
+    expect(yaml).toContain('meta_list_datasets')
+    expect(yaml).toContain('meta_update_ad_tracking')
     const operationIds = [...yaml.matchAll(/^\s+operationId:\s*(\S+)\s*$/gm)].map(m => m[1]!)
     expect(operationIds.length).toBeLessThanOrEqual(30)
   })

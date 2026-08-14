@@ -7,7 +7,7 @@ O ChatGPT aceita **no máximo 30 operations por Ação** e **recusa o mesmo host
 | Artefato | Arquivo |
 |----------|---------|
 | OpenAPI Marketing (**importe**) | `openapi-marketing.yaml` → `https://app.blimber.com.br` (13 ops) |
-| OpenAPI Ads (**importe**) | `openapi-ads.yaml` → `https://ads.blimber.com.br` (24 ops) |
+| OpenAPI Ads (**importe**) | `openapi-ads.yaml` → `https://ads.blimber.com.br` (26 ops) |
 | Índice (**não importe**) | `openapi.yaml` |
 | Instruções | `instructions.md` |
 | Setup 2 Ações + DNS | `docs/gpt-blimber-ACTIONS.md` |
@@ -86,6 +86,7 @@ Sem `searchTenants` (canônico na Ação Marketing).
 | `updateAdStatus` | `POST /api/gpt/meta/ads/{adId}/status` |
 | `updateAdCreativeCopy` | `POST /api/gpt/meta/ads/{adId}/creative-copy` |
 | `updateAdMedia` | `POST /api/gpt/meta/ads/{adId}/media` |
+| `updateAdTracking` | `POST /api/gpt/meta/ads/{adId}/tracking` |
 | `previewBulkDelete` | `POST /api/gpt/meta/bulk-delete/preview` |
 | `executeBulkDelete` | `POST /api/gpt/meta/bulk-delete/execute` |
 | `getInsights` | `POST /api/gpt/meta/insights` |

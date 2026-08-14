@@ -37,6 +37,17 @@ import {
   listProductSets,
 } from './catalog-service'
 import {
+  applyTrackingToAdGraphBody,
+  assertTrackingSpecsOwned,
+  compileAdTracking,
+  hasAdTrackingInput,
+  listAdAccountDatasets,
+  listAdAccountPixels,
+  mergeTrackingSpecs,
+  metaAdTrackingFieldsSchema,
+  summarizeTrackingForPreview,
+} from './tracking-specs'
+import {
   META_ADVANTAGE_ENROLL_STATUS,
   META_ADVANTAGE_PLUS_FEATURES,
   META_DYNAMIC_AD_FORMATS,
@@ -578,6 +589,7 @@ export const metaCreateAdSchema = tenantContextSchema
       .describe('Advantage+ Creative (pac_relaxation = Mídia flexível). Não usar com DYNAMIC_CREATIVE_LEGACY.'),
     catalogId: z.string().min(1).optional().describe('CATALOG: id do product catalog (ownership).'),
     productSetId: z.string().min(1).optional().describe('CATALOG: product_set_id.'),
+    ...metaAdTrackingFieldsSchema.shape,
     creativeName: z.string().min(1).max(400).optional(),
     status: z.enum(['ACTIVE', 'PAUSED']).optional().default('PAUSED'),
     confirmActive: z.literal(true).optional(),
@@ -1064,6 +1076,42 @@ export const metaListCatalogsSchema = tenantContextSchema.extend({
   limit: z.number().int().min(1).max(200).optional().default(50),
 })
 
+/** GET act_{id}/adspixels — Pixels da ad account do tenant. */
+export const metaListPixelsSchema = tenantContextSchema.extend({
+  limit: z.number().int().min(1).max(200).optional().default(50),
+})
+
+/** GET act_{id}/offline_conversion_data_sets — Datasets da ad account do tenant. */
+export const metaListDatasetsSchema = tenantContextSchema.extend({
+  limit: z.number().int().min(1).max(200).optional().default(50),
+})
+
+/**
+ * Update Ad tracking_specs (Pixel / offline Dataset) + conversion_domain.
+ * Meta POST overwrite — default merge with GET snapshot. dryRun default true.
+ */
+export const metaUpdateAdTrackingSchema = tenantContextSchema
+  .extend({
+    adId: z.string().min(1).describe('ID do anúncio (mesma ad account do tenant).'),
+    replaceTrackingSpecs: z
+      .boolean()
+      .optional()
+      .default(false)
+      .describe('Se true, substitui tracking_specs (não faz merge com o GET). Default false = append.'),
+    ...metaAdTrackingFieldsSchema.shape,
+    ...metaWriteConfirmationFields,
+    ...metaWriteDryRunField,
+  })
+  .superRefine((data, ctx) => {
+    if (!hasAdTrackingInput(data)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Informe trackingSpecs, pixelId, offlineDatasetId ou conversionDomain.',
+        path: ['trackingSpecs'],
+      })
+    }
+  })
+
 export const metaListProductSetsSchema = tenantContextSchema.extend({
   catalogId: z.string().min(1).describe('ID do product catalog (via meta_list_catalogs).'),
   limit: z.number().int().min(1).max(200).optional().default(50),
@@ -1176,6 +1224,9 @@ export type MetaToolName =
   | 'meta_get_video_status'
   | 'meta_list_catalogs'
   | 'meta_list_product_sets'
+  | 'meta_list_pixels'
+  | 'meta_list_datasets'
+  | 'meta_update_ad_tracking'
   | 'meta_create_experiment'
   | 'meta_get_experiment'
   | 'meta_stop_experiment'
@@ -2538,16 +2589,29 @@ export async function metaCreateAd(
     }
   }
 
+  const compiledTracking = compileAdTracking(input)
+  if (compiledTracking.trackingSpecs.length) {
+    await assertTrackingSpecsOwned({
+      apiVersion: creds.apiVersion,
+      accessToken: creds.accessToken,
+      adAccountId: creds.adAccountId,
+      graph,
+      publicConfig: creds.publicConfig,
+    }, compiledTracking.trackingSpecs)
+  }
+
   const creativePath = `/${actPath(creds.adAccountId)}/adcreatives`
   const adPath = `/${actPath(creds.adAccountId)}/ads`
+  const previewAdBody: Record<string, unknown> = {
+    name: input.name,
+    adset_id: input.adsetId,
+    creative: { creative_id: reuseCreativeId || '(após create creative)' },
+    status,
+  }
+  applyTrackingToAdGraphBody(previewAdBody, compiledTracking)
   const previewBody = {
     creative: reuseCreativeId ? { creative_id: reuseCreativeId } : creativeBody,
-    ad: {
-      name: input.name,
-      adset_id: input.adsetId,
-      creative: { creative_id: reuseCreativeId || '(após create creative)' },
-      status,
-    },
+    ad: previewAdBody,
   }
 
   const mediaNotes: string[] = []
@@ -2579,6 +2643,7 @@ export async function metaCreateAd(
     const cta = META_MESSAGING_CTA_BY_DESTINATION[destinationType]
     mediaNotes.push(`Click-to-Message: CTA ${cta.type} + app_destination=${cta.appDestination}.`)
   }
+  mediaNotes.push(...summarizeTrackingForPreview(compiledTracking))
 
   const linkNote = destinationType === 'WEBSITE'
     ? `link: ${input.linkUrl ?? '(assetFeed.linkUrls / creativeId)'}`
@@ -2640,6 +2705,7 @@ export async function metaCreateAd(
         creative: { creative_id: creativeId },
         status,
       }
+      applyTrackingToAdGraphBody(adBody, compiledTracking)
 
       let createdAd: any
       try {
@@ -2699,6 +2765,8 @@ export async function metaCreateAd(
         catalogId: input.catalogId ?? null,
         reusedCreative: Boolean(reuseCreativeId),
         advantagePlus: Boolean(degreesOfFreedom),
+        trackingSpecs: compiledTracking.trackingSpecs.length ? compiledTracking.trackingSpecs : null,
+        conversionDomain: compiledTracking.conversionDomain,
         success: true as const,
         dryRun: false as const,
         warning: 'Anúncio criado na Meta Graph API. Verifique thumbnail/políticas no Ads Manager.',
@@ -2722,6 +2790,8 @@ export async function metaCreateAd(
         creativeId: reuseCreativeId,
         destinationType,
         linkUrl: destinationType === 'WEBSITE' ? (input.linkUrl ?? null) : null,
+        trackingSpecs: compiledTracking.trackingSpecs.length ? compiledTracking.trackingSpecs : null,
+        conversionDomain: compiledTracking.conversionDomain,
         adAccountId: creds.adAccountId,
       },
     })
@@ -2753,6 +2823,8 @@ export async function metaCreateAd(
       catalogId: input.catalogId ?? null,
       reusedCreative: Boolean(reuseCreativeId),
       advantagePlus: Boolean(degreesOfFreedom),
+      trackingSpecs: compiledTracking.trackingSpecs.length ? compiledTracking.trackingSpecs : null,
+      conversionDomain: compiledTracking.conversionDomain,
       success: true as const,
       dryRun: true as const,
       preview: run.preview,
@@ -2788,6 +2860,7 @@ export async function metaCreateAd(
         imageHash: result.imageHash,
         videoId: result.videoId,
         adAccountId: creds.adAccountId,
+        trackingSpecs: result.trackingSpecs,
       },
     },
     ctx.client,
@@ -3666,6 +3739,181 @@ export async function metaListProductSets(ctx: MetaToolContext, raw: unknown) {
   }
 }
 
+export async function metaListPixels(ctx: MetaToolContext, raw: unknown) {
+  const input = metaListPixelsSchema.parse(raw)
+  const creds = await withCreds(ctx, input.tenantId, input.adAccountId)
+  const graph = fetchGraph(ctx)
+  const pixels = await listAdAccountPixels(
+    { apiVersion: creds.apiVersion, accessToken: creds.accessToken, adAccountId: creds.adAccountId, graph },
+    { limit: input.limit },
+  )
+  const configuredPixelId = creds.publicConfig.pixel_id
+    ? String(creds.publicConfig.pixel_id).trim() || null
+    : null
+  return {
+    tenantId: input.tenantId,
+    adAccountId: creds.adAccountId,
+    configuredPixelId,
+    pixels,
+  }
+}
+
+export async function metaListDatasets(ctx: MetaToolContext, raw: unknown) {
+  const input = metaListDatasetsSchema.parse(raw)
+  const creds = await withCreds(ctx, input.tenantId, input.adAccountId)
+  const graph = fetchGraph(ctx)
+  const datasets = await listAdAccountDatasets(
+    { apiVersion: creds.apiVersion, accessToken: creds.accessToken, adAccountId: creds.adAccountId, graph },
+    { limit: input.limit },
+  )
+  return {
+    tenantId: input.tenantId,
+    adAccountId: creds.adAccountId,
+    datasets,
+  }
+}
+
+/**
+ * Update tracking_specs on an existing Ad (Pixel site + offline Dataset).
+ * GET ad for ownership; Meta overwrites tracking_specs — default merge with snapshot.
+ * dryRun default true.
+ */
+export async function metaUpdateAdTracking(ctx: MetaToolContext, raw: unknown) {
+  const input = metaUpdateAdTrackingSchema.parse(raw)
+  assertWriteConfirmation(input)
+  const dryRun = resolveDryRun(input.dryRun, true)
+  const compiled = compileAdTracking(input)
+  const creds = await withCreds(ctx, input.tenantId, input.adAccountId)
+  const graph = fetchGraph(ctx)
+  const trackingCtx = {
+    apiVersion: creds.apiVersion,
+    accessToken: creds.accessToken,
+    adAccountId: creds.adAccountId,
+    graph,
+    publicConfig: creds.publicConfig,
+  }
+
+  const ad = await graph(metaGraphUrl(creds.apiVersion, `/${input.adId}`), {
+    query: {
+      fields: 'id,name,account_id,tracking_specs,conversion_domain',
+      access_token: creds.accessToken,
+    },
+  })
+  assertAdAccountOwnership({
+    objectAccountId: ad?.account_id,
+    tenantAdAccountId: creds.adAccountId,
+    code: 'AD_TENANT_MISMATCH',
+    message: 'Anúncio não pertence à ad account do tenant.',
+  })
+
+  if (compiled.trackingSpecs.length)
+    await assertTrackingSpecsOwned(trackingCtx, compiled.trackingSpecs)
+
+  const mergedSpecs = compiled.trackingSpecs.length
+    ? mergeTrackingSpecs({
+        existing: ad?.tracking_specs,
+        incoming: compiled.trackingSpecs,
+        replace: Boolean(input.replaceTrackingSpecs),
+      })
+    : undefined
+
+  const adPath = `/${input.adId}`
+  const body: Record<string, unknown> = {}
+  applyTrackingToAdGraphBody(
+    body,
+    { trackingSpecs: compiled.trackingSpecs, conversionDomain: compiled.conversionDomain },
+    mergedSpecs,
+  )
+  if (!Object.keys(body).length) {
+    throw new MetaAdsToolError(
+      'TRACKING_SPEC_INVALID',
+      'Nenhum campo Graph de tracking para enviar.',
+      400,
+    )
+  }
+
+  const mergeNote = input.replaceTrackingSpecs
+    ? 'replaceTrackingSpecs=true: POST substitui tracking_specs (docs Meta: overwrite).'
+    : 'Merge com tracking_specs atual (GET + append). Meta POST overwrite — enviamos o conjunto final.'
+
+  const run = await withDryRun(
+    dryRun,
+    {
+      method: 'POST',
+      path: adPath,
+      body,
+      notes: [
+        `Ad ${input.adId}${ad?.name ? ` (${ad.name})` : ''}: tracking_specs`,
+        ...summarizeTrackingForPreview(compiled, mergedSpecs ?? compiled.trackingSpecs),
+        mergeNote,
+        dryRun ? 'dryRun=true: nenhuma mutação.' : 'POST tracking_specs no Ad.',
+      ],
+    },
+    async () => {
+      await graphWrite(graph, metaGraphUrl(creds.apiVersion, adPath), {
+        method: 'POST',
+        query: { access_token: creds.accessToken },
+        body,
+      }, body)
+      return { success: true as const }
+    },
+  )
+
+  const trackingOut = {
+    trackingSpecs: (mergedSpecs ?? compiled.trackingSpecs) as unknown,
+    conversionDomain: compiled.conversionDomain,
+  }
+
+  if (run.dryRun) {
+    await logMetaWriteAudit({
+      tenantId: input.tenantId,
+      action: 'meta.gpt.ad.tracking.preview',
+      entityType: 'meta_ad',
+      entityId: input.adId,
+      dryRun: true,
+      before: { tracking_specs: ad?.tracking_specs ?? null, conversion_domain: ad?.conversion_domain ?? null },
+      after: { preview: run.preview, ...trackingOut, adAccountId: creds.adAccountId },
+    })
+    return {
+      tenantId: input.tenantId,
+      adAccountId: creds.adAccountId,
+      adId: input.adId,
+      name: ad?.name ? String(ad.name) : null,
+      ...trackingOut,
+      previousTrackingSpecs: ad?.tracking_specs ?? null,
+      previousConversionDomain: ad?.conversion_domain ?? null,
+      success: true as const,
+      dryRun: true as const,
+      preview: run.preview,
+      warning: 'Dry-run: tracking não alterado. Reenvie dryRun: false para aplicar.',
+    }
+  }
+
+  await logMetaWriteAudit(
+    {
+      tenantId: input.tenantId,
+      action: 'meta.gpt.ad.tracking',
+      entityType: 'meta_ad',
+      entityId: input.adId,
+      dryRun: false,
+      before: { tracking_specs: ad?.tracking_specs ?? null, conversion_domain: ad?.conversion_domain ?? null },
+      after: { ...trackingOut, adAccountId: creds.adAccountId },
+    },
+    ctx.client,
+  )
+
+  return {
+    tenantId: input.tenantId,
+    adAccountId: creds.adAccountId,
+    adId: input.adId,
+    name: ad?.name ? String(ad.name) : null,
+    ...trackingOut,
+    success: true as const,
+    dryRun: false as const,
+    warning: 'tracking_specs atualizado no anúncio. Confira Pixel/Dataset no Ads Manager.',
+  }
+}
+
 export async function metaCreateExperiment(ctx: MetaToolContext, raw: unknown) {
   const input = metaCreateExperimentSchema.parse(raw)
   assertWriteConfirmation(input)
@@ -4164,6 +4412,9 @@ export const META_TOOL_HANDLERS: Record<MetaToolName, ToolHandler> = {
   meta_get_video_status: metaGetVideoStatusTool,
   meta_list_catalogs: metaListCatalogs,
   meta_list_product_sets: metaListProductSets,
+  meta_list_pixels: metaListPixels,
+  meta_list_datasets: metaListDatasets,
+  meta_update_ad_tracking: metaUpdateAdTracking,
   meta_create_experiment: metaCreateExperiment,
   meta_get_experiment: metaGetExperiment,
   meta_stop_experiment: metaStopExperiment,
@@ -4203,6 +4454,9 @@ export const META_TOOL_SCHEMAS: Record<MetaToolName, z.ZodTypeAny> = {
   meta_get_video_status: metaGetVideoStatusSchema,
   meta_list_catalogs: metaListCatalogsSchema,
   meta_list_product_sets: metaListProductSetsSchema,
+  meta_list_pixels: metaListPixelsSchema,
+  meta_list_datasets: metaListDatasetsSchema,
+  meta_update_ad_tracking: metaUpdateAdTrackingSchema,
   meta_create_experiment: metaCreateExperimentSchema,
   meta_get_experiment: metaGetExperimentSchema,
   meta_stop_experiment: metaStopExperimentSchema,
@@ -4250,7 +4504,7 @@ export const META_TOOL_DESCRIPTIONS: Record<MetaToolName, string> = {
   meta_create_adset:
     'Cria adset (BR_* ou targeting custom). PAUSED+dryRun. destinationType WEBSITE|WHATSAPP|MESSENGER|INSTAGRAM_DIRECT. isDynamicCreative opcional (DYNAMIC_CREATIVE_LEGACY, só WEBSITE). Exige confirm+budget+campaignId.',
   meta_create_ad:
-    'Cria Ad+Creative. creativeId XOR creativeType IMAGE|VIDEO|CAROUSEL|DYNAMIC_CREATIVE_LEGACY|CATALOG. Destinos WEBSITE|WHATSAPP|MESSENGER|INSTAGRAM_DIRECT (IMAGE/VIDEO/CAROUSEL). Advantage+ degreesOfFreedomSpec. Upload imageUrl/videoUrl (SSRF). PAUSED+dryRun.',
+    'Cria Ad+Creative. creativeId XOR creativeType IMAGE|VIDEO|CAROUSEL|DYNAMIC_CREATIVE_LEGACY|CATALOG. Destinos WEBSITE|WHATSAPP|MESSENGER|INSTAGRAM_DIRECT. trackingSpecs/pixelId/offlineDatasetId/conversionDomain opcionais (Graph tracking_specs). Advantage+ degreesOfFreedomSpec. Upload imageUrl/videoUrl (SSRF). PAUSED+dryRun.',
   meta_update_adset_budget:
     'Atualiza budget do adset (daily|lifetime). dryRun default true. Teto META_GPT_BUDGET_* + confirmBudgetIncrease se aumento % alto.',
   meta_update_adset_targeting:
@@ -4275,6 +4529,12 @@ export const META_TOOL_DESCRIPTIONS: Record<MetaToolName, string> = {
     'Lista product catalogs da ad account do tenant (ownership).',
   meta_list_product_sets:
     'Lista product sets de um catalogId (ownership via ad account). Use productSetId em createAd CATALOG.',
+  meta_list_pixels:
+    'Lista Pixels da ad account (GET act_{id}/adspixels). Use type=website + pixelId (ou actionType=offsite_conversion).',
+  meta_list_datasets:
+    'Lista Datasets da ad account (GET act_{id}/offline_conversion_data_sets). Use type=offline + datasetId (ou actionType=offline_conversion).',
+  meta_update_ad_tracking:
+    'Atualiza tracking_specs do Ad (website Pixel / offline Dataset / crm). Merge default; replaceTrackingSpecs=true substitui. dryRun true. confirm+confirmTenantId.',
   meta_create_experiment:
     'Cria Ad Study oficial (SPLIT_TEST_V2 creative cells com ads[] ou SPLIT_TEST com adsets[]). dryRun default true.',
   meta_get_experiment:

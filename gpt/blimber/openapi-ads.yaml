@@ -632,8 +632,8 @@ paths:
       summary: Criar anúncio + criativo
       description: >
         Cria AdCreative+Ad. creativeType IMAGE|VIDEO|CAROUSEL|DYNAMIC_CREATIVE_LEGACY|CATALOG
-        ou creativeId (XOR). WEBSITE/WHATSAPP(CTWA). Mídia hash/videoId ou upload HTTPS.
-        Advantage+ via degreesOfFreedomSpec. PAUSED+dryRun. Detalhes: meta_get_capabilities / docs.
+        ou creativeId (XOR). trackingSpecs/pixelId/offlineDatasetId opcionais.
+        Advantage+ via degreesOfFreedomSpec. PAUSED+dryRun. Pixels: invoke meta_list_pixels.
       x-openai-isConsequential: true
       requestBody:
         required: true
@@ -752,6 +752,40 @@ paths:
         "400":
           description: Requisição inválida — erro de validação ou da ferramenta
 
+  /api/gpt/meta/ads/{adId}/tracking:
+    post:
+      operationId: updateAdTracking
+      summary: Atualizar tracking do anúncio
+      description: >
+        POST Graph tracking_specs (Pixel/Dataset) e/ou conversion_domain.
+        Merge com GET (default). replaceTrackingSpecs=true sobrescreve.
+        dryRun default true. confirm + confirmTenantId. Ownership da ad account.
+      x-openai-isConsequential: true
+      parameters:
+        - name: adId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: ID do anúncio na Meta.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateAdTrackingBody"
+      responses:
+        "200":
+          description: Tracking atualizado ou preview dry-run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkToolResponse"
+        "401":
+          description: Não autorizado — API key ausente ou inválida
+        "400":
+          description: Requisição inválida — erro de validação ou da ferramenta
+
   /api/gpt/meta/bulk-delete/preview:
     post:
       operationId: previewBulkDelete
@@ -836,10 +870,8 @@ paths:
       operationId: invokeMetaTool
       summary: Invocação genérica (alternativa)
       description: >
-        Invoca uma tool pelo nome (alternativa tipada). Prefira as rotas REST acima
-        no Custom GPT. Tools sem rota dedicada (capabilities, upload, catalogs,
-        product sets, experiments) usam este endpoint — ver enum `tool`.
-        Limite ChatGPT: ≤30 operations nesta Action; overflow fica no invoke.
+        Invoca tool pelo nome. Overflow (capabilities, upload, catalogs, pixels,
+        datasets, tracking, experiments) usa este endpoint. Limite ChatGPT: ≤30 ops.
       x-openai-isConsequential: true
       requestBody:
         required: true
@@ -1606,6 +1638,24 @@ components:
         productSetId:
           type: string
           description: CATALOG — product_set_id (via meta_list_product_sets / invoke).
+        trackingSpecs:
+          type: array
+          minItems: 1
+          maxItems: 20
+          description: >
+            Graph tracking_specs no Ad. Preferir type=website|offline|crm
+            (pixelId/datasetId) ou actionType Graph. IDs via meta_list_pixels / meta_list_datasets.
+          items:
+            $ref: "#/components/schemas/AdTrackingSpec"
+        pixelId:
+          type: string
+          description: Atalho Pixel → offsite_conversion + fb_pixel.
+        offlineDatasetId:
+          type: string
+          description: Atalho Dataset offline → offline_conversion + dataset.
+        conversionDomain:
+          type: string
+          description: Graph conversion_domain (ex. exemplo.com), sem https/path.
         creativeName:
           type: string
           maxLength: 400
@@ -1768,6 +1818,43 @@ components:
         dryRun:
           type: boolean
           description: Default true — preview sem POST.
+    UpdateAdTrackingBody:
+      type: object
+      required: [tenantId, confirmTenantId, confirm]
+      properties:
+        tenantId:
+          type: string
+          format: uuid
+        adAccountId:
+          type: string
+        trackingSpecs:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items:
+            $ref: "#/components/schemas/AdTrackingSpec"
+        pixelId:
+          type: string
+          description: Atalho Pixel (offsite_conversion + fb_pixel).
+        offlineDatasetId:
+          type: string
+          description: Atalho Dataset offline (offline_conversion + dataset).
+        conversionDomain:
+          type: string
+          description: Graph conversion_domain (ex. exemplo.com).
+        replaceTrackingSpecs:
+          type: boolean
+          default: false
+          description: true = substitui tracking_specs. false (default) = merge com GET.
+        confirmTenantId:
+          type: string
+          format: uuid
+        confirm:
+          type: boolean
+          enum: [true]
+        dryRun:
+          type: boolean
+          description: Default true — preview sem POST.
     PreviewBulkDeleteBody:
       type: object
       required: [tenantId, level, ids]
@@ -1890,6 +1977,26 @@ components:
         dryRun:
           type: boolean
           description: Default true. Criação real exige false.
+    AdTrackingSpec:
+      type: object
+      description: >
+        type website|offline|crm (pixelId/datasetId) ou actionType Graph + fbPixel/dataset.
+        website=Pixel; offline=Dataset; crm=leadgen_quality_conversion (Pixel XOR Dataset).
+      properties:
+        type:
+          type: string
+          enum: [website, offline, crm]
+        pixelId:
+          type: string
+        datasetId:
+          type: string
+        actionType:
+          type: string
+          enum: [offsite_conversion, offline_conversion, leadgen_quality_conversion]
+        fbPixel:
+          type: string
+        dataset:
+          type: string
     InvokeBody:
       type: object
       required: [tool, arguments]
@@ -1898,7 +2005,7 @@ components:
           type: string
           description: >
             Nome canônico da tool MCP/HTTP. Tools sem rota REST dedicada
-            (capabilities, upload, catalogs, experiments, audience update/delete)
+            (capabilities, upload, catalogs, pixels, datasets, tracking, experiments)
             só via invoke.
           enum:
             - meta_list_integrations
@@ -1934,6 +2041,9 @@ components:
             - meta_get_video_status
             - meta_list_catalogs
             - meta_list_product_sets
+            - meta_list_pixels
+            - meta_list_datasets
+            - meta_update_ad_tracking
             - meta_create_experiment
             - meta_get_experiment
             - meta_stop_experiment

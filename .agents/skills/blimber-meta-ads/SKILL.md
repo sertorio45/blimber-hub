@@ -62,12 +62,14 @@ description: >-
 | `meta_create_custom_audiences_batch` | Vários públicos em sequência (`succeeded`/`failed`) |
 | `meta_update_custom_audience` / `meta_delete_custom_audience` | Update/delete (confirmDelete; recusa se em uso) |
 | `meta_get_custom_audience_usage` | Ads/lookalikes que usam o público |
-| `meta_create_ad` | Criar criativo IMAGE\|VIDEO\|CAROUSEL\|DYNAMIC_CREATIVE_LEGACY\|CATALOG (+ Advantage+) ou ad via `creativeId`; WEBSITE / WhatsApp CTWA / Messenger / IG Direct; default PAUSED + dryRun true |
+| `meta_create_ad` | Criar criativo IMAGE\|VIDEO\|CAROUSEL\|DYNAMIC_CREATIVE_LEGACY\|CATALOG (+ Advantage+) ou ad via `creativeId`; tracking opcional (`trackingSpecs` / `pixelId` / `offlineDatasetId` / `conversionDomain`); WEBSITE / WhatsApp CTWA / Messenger / IG Direct; default PAUSED + dryRun true |
 | `meta_update_ad_creative_copy` | Copy via novo creative |
 | `meta_update_ad_media` | IMAGE\|VIDEO\|CAROUSEL via novo creative |
+| `meta_update_ad_tracking` | Atualiza `tracking_specs` do Ad (merge default; `replaceTrackingSpecs` sobrescreve). dryRun true |
 | `meta_get_capabilities` | Matriz de capacidades vs Graph version |
 | `meta_upload_image` / `meta_upload_video` / `meta_get_video_status` | Upload/reuse mídia (SSRF) |
 | `meta_list_catalogs` / `meta_list_product_sets` | Catalogs + product sets (ownership) |
+| `meta_list_pixels` / `meta_list_datasets` | Pixels (`adspixels`) e Datasets (`offline_conversion_data_sets`) da ad account |
 | `meta_create_experiment` / `meta_get_experiment` / `meta_stop_experiment` | Ad Studies oficiais (SPLIT_TEST_V2 / SPLIT_TEST) |
 | `meta_preview_bulk_delete` | Preview exclusão (IDs + previewToken) |
 | `meta_execute_bulk_delete` | Execute exclusão (confirmações + dryRun false) |
@@ -76,11 +78,12 @@ description: >-
 | `meta_update_adset_status` | ACTIVE / PAUSED |
 | `meta_update_ad_status` | ACTIVE / PAUSED |
 
-OpenAPI: `gpt/blimber/openapi-ads.yaml` (`createCampaign`, `createAdset`, `createAd`, `searchInterests`, `searchGeolocations`, `listCustomAudiences`, `createCustomAudience`, `updateAdsetStatus`, `updateAdsetBudget`, `updateAdCreativeCopy`, `previewBulkDelete`, `executeBulkDelete`, …; overflow via `invokeMetaTool`: capabilities, upload, catalogs, audience update/delete/usage/batch, experiments)  
+OpenAPI: `gpt/blimber/openapi-ads.yaml` (`createCampaign`, `createAdset`, `createAd`, `updateAdTracking`, `searchInterests`, `searchGeolocations`, `listCustomAudiences`, `createCustomAudience`, `updateAdsetStatus`, `updateAdsetBudget`, `updateAdCreativeCopy`, `previewBulkDelete`, `executeBulkDelete`, …; overflow via `invokeMetaTool`: capabilities, upload, catalogs, pixels, datasets, audience update/delete/usage/batch, experiments)  
 Catálogo: `GET /api/gpt/meta/tools`
 
 `createAd.creativeType`: IMAGE (default) | VIDEO | CAROUSEL | DYNAMIC_CREATIVE_LEGACY | CATALOG — ou `creativeId` XOR. Upload HTTPS opcional (`imageUrl`/`videoUrl`) com SSRF; dryRun não faz upload.  
 `createAd.destinationType`: WEBSITE | WHATSAPP | MESSENGER | INSTAGRAM_DIRECT. IMAGE/VIDEO/CAROUSEL em todos; DYNAMIC_CREATIVE_LEGACY e CATALOG só WEBSITE. Carousel WhatsApp usa CTA `WHATSAPP_MESSAGE` + `https://api.whatsapp.com/send` (nunca wa.me).  
+`createAd.trackingSpecs`: opcional. Graph `action.type`: `offsite_conversion` + `fbPixel` (Pixel de site); `offline_conversion` + `dataset` (Dataset offline); `leadgen_quality_conversion` + pixel ou dataset. Atalhos: `pixelId`, `offlineDatasetId`. Campo extra oficial: `conversionDomain`. Listar IDs: `meta_list_pixels` / `meta_list_datasets` (invoke). Ad existente: `updateAdTracking` / `meta_update_ad_tracking` (merge; `replaceTrackingSpecs` para overwrite). IDs só da ad account do tenant.  
 `createAdset.isDynamicCreative`: opcional → `is_dynamic_creative=true` (só WEBSITE; ads com DYNAMIC_CREATIVE_LEGACY).  
 `createAdset` / `updateAdsetTargeting.advantageAudience`: opcional `0|1` (default `0`) → `targeting_automation.advantage_audience`.
 
