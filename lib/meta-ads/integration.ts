@@ -219,6 +219,25 @@ export async function resolveMetaAccessToken(
 }
 
 /**
+ * Ads writes (custom audiences, campaigns, …) use the integration
+ * user/system-user `access_token` (`access_token_enc`). Never `page_access_token`.
+ * Page tokens lack ads_management and must not be sent to Graph Ads endpoints.
+ */
+export function selectAdsManagementAccessToken(
+  creds: Pick<ResolvedMetaCredentials, 'accessToken'>,
+): string {
+  const accessToken = creds.accessToken
+  if (!accessToken) {
+    throw new MetaAdsToolError(
+      'META_TOKEN_MISSING',
+      'Token Meta ausente ou inválido. Reconecte a conta OAuth.',
+      401,
+    )
+  }
+  return accessToken
+}
+
+/**
  * Resolve Meta credentials for a tenant from marketing_integrations.
  * Tokens stay in memory only — never returned to callers of tools.
  */

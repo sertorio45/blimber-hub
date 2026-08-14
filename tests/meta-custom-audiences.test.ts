@@ -4,8 +4,8 @@ import { encryptSecret } from '~/lib/marketing-secrets'
 import {
   buildEngagementRule,
   hashCustomerListUsers,
-  MetaAdsToolError,
   META_GRAPH_FORM_CONTENT_TYPE,
+  MetaAdsToolError,
   metaCreateCustomAudience,
   metaCreateCustomAudiencesBatch,
   metaDeleteCustomAudience,
@@ -13,6 +13,8 @@ import {
   metaUpdateAdsetTargeting,
   resolveAdsetTargeting,
   retentionDaysToSeconds,
+  selectAdsManagementAccessToken,
+  serializeCustomAudienceForm,
   serializeCustomAudienceGraphJsonFields,
   setMetaWriteAuditSink,
   suggestCustomAudienceName,
@@ -75,6 +77,7 @@ const confirm = {
 describe('meta custom audiences', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
+    vi.unstubAllGlobals()
     setMetaWriteAuditSink(() => {})
   })
 
@@ -308,16 +311,18 @@ describe('meta custom audiences', () => {
       { ...confirm, sourceType: 'INSTAGRAM', event: 'ALL', dryRun: true },
     )
     expect((result as any).dryRun).toBe(true)
-    expect(JSON.stringify(result)).not.toContain('tok')
+    expect(JSON.stringify(result)).not.toMatch(/"tok"/)
+    expect(JSON.stringify(result)).not.toContain('Bearer tok')
     expect(graphFetch.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(0)
   })
 
   it('15. Criação real POST customaudiences', async () => {
-    const graphFetch = vi.fn(async (url: string, init?: { method?: string }) => {
-      if (init?.method === 'POST' && String(url).includes('/customaudiences'))
-        return { id: 'aud_created' }
-      return { data: [] }
-    })
+    const graphFetch = vi.fn(async () => ({ data: [] }))
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ id: 'aud_created' }),
+    }))
+    vi.stubGlobal('fetch', fetchMock)
     const result = await metaCreateCustomAudience(
       { client: createIntegrationClient(baseConfig), graphFetch },
       {
@@ -331,30 +336,30 @@ describe('meta custom audiences', () => {
     expect((result as any).dryRun).toBe(false)
     expect((result as any).id).toBe('aud_created')
     expect((result as any).status).toBe('processing')
-    const post = graphFetch.mock.calls.find(([url, init]) =>
-      init?.method === 'POST' && String(url).includes('/act_555/customaudiences'),
-    )
-    expect(post).toBeTruthy()
-    const graphRule = (post![1] as { body?: Record<string, unknown> })?.body?.rule
+    expect(fetchMock).toHaveBeenCalledOnce()
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toContain('/act_555/customaudiences')
+    expect(url).not.toMatch(/access_token=/)
+    expect((init.headers as Record<string, string>)['Content-Type']).toBe(META_GRAPH_FORM_CONTENT_TYPE)
+    const form = new URLSearchParams(String(init.body))
     const expectedRule = buildEngagementRule({
       eventSourceType: 'ig_business',
       sourceId: 'ig_1',
       metaEvent: 'ig_business_profile_all',
       retentionSeconds: 31536000,
     })
-    expect(typeof graphRule).toBe('string')
-    expect(JSON.parse(graphRule as string)).toEqual(expectedRule)
-    expect((post![1] as { bodyEncoding?: string }).bodyEncoding).toBe('form')
-    expect((post![1] as { contentType?: string }).contentType).toBe(META_GRAPH_FORM_CONTENT_TYPE)
-    expect((post![1] as { body?: Record<string, unknown> }).body?.prefill).toBe('1')
+    expect(form.get('prefill')).toBe('1')
+    expect(form.get('subtype')).toBeNull()
+    expect(JSON.parse(form.get('rule')!)).toEqual(expectedRule)
   })
 
   it('15b. Instagram ENGAGED 30d posts rule as JSON string', async () => {
-    const graphFetch = vi.fn(async (url: string, init?: { method?: string, body?: Record<string, unknown> }) => {
-      if (init?.method === 'POST' && String(url).includes('/customaudiences'))
-        return { id: 'aud_ig_30d' }
-      return { data: [] }
-    })
+    const graphFetch = vi.fn(async () => ({ data: [] }))
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ id: 'aud_ig_30d' }),
+    }))
+    vi.stubGlobal('fetch', fetchMock)
     const expectedRule = buildEngagementRule({
       eventSourceType: 'ig_business',
       sourceId: 'ig_1',
@@ -391,17 +396,16 @@ describe('meta custom audiences', () => {
       },
     )
     expect((result as any).id).toBe('aud_ig_30d')
-    const post = graphFetch.mock.calls.find(([url, init]) =>
-      init?.method === 'POST' && String(url).includes('/customaudiences'),
-    )
-    const graphRule = (post![1] as { body?: Record<string, unknown> })?.body?.rule
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    const form = new URLSearchParams(String(init.body))
+    const graphRule = form.get('rule')
     expect(typeof graphRule).toBe('string')
     expect((graphRule as string)[0]).toBe('{')
     expect(JSON.parse(graphRule as string)).toEqual(expectedRule)
     expect(graphRule).not.toBe(JSON.stringify(JSON.stringify(expectedRule)))
-    expect((post![1] as { bodyEncoding?: string }).bodyEncoding).toBe('form')
-    expect((post![1] as { contentType?: string }).contentType).toBe(META_GRAPH_FORM_CONTENT_TYPE)
-    expect((post![1] as { body?: Record<string, unknown> }).body?.prefill).toBe('1')
+    expect((init.headers as Record<string, string>)['Content-Type']).toBe(META_GRAPH_FORM_CONTENT_TYPE)
+    expect(form.get('prefill')).toBe('1')
+    expect(form.get('subtype')).toBeNull()
   })
 
   it('does not double-stringify rule or lookalike_spec', () => {
@@ -420,16 +424,19 @@ describe('meta custom audiences', () => {
   })
 
   it('16. Erro Graph mapeado', async () => {
-    const graphFetch = vi.fn(async (_url: string, init?: { method?: string }) => {
-      if (init?.method === 'POST') {
-        throw new MetaAdsToolError('META_GRAPH_ERROR', 'Invalid parameter', 400, {
+    const graphFetch = vi.fn(async () => ({ data: [] }))
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: false,
+      status: 400,
+      json: async () => ({
+        error: {
+          message: 'Invalid parameter',
           code: 100,
           error_subcode: 33,
           fbtrace_id: 'trace1',
-        })
-      }
-      return { data: [] }
-    })
+        },
+      }),
+    })))
     await expect(metaCreateCustomAudience(
       { client: createIntegrationClient(baseConfig), graphFetch },
       { ...confirm, sourceType: 'INSTAGRAM', event: 'ALL', dryRun: false },
@@ -552,7 +559,8 @@ describe('meta custom audiences', () => {
     expect(typeof (result as any).preview.body.rule).toBe('string')
     const filters = JSON.parse((result as any).preview.body.rule).inclusions.rules[0].filter.filters
     expect(filters).toEqual([{ field: 'url', operator: 'i_contains', value: '' }])
-    expect((result as any).preview.body.subtype).toBe('WEBSITE')
+    expect((result as any).subtype).toBe('WEBSITE')
+    expect((result as any).preview.body.subtype).toBeUndefined()
   })
 
   it('hashes customer list PII with SHA-256 and never returns raw emails', () => {
@@ -588,5 +596,217 @@ describe('meta custom audiences', () => {
       { client, graphFetch: vi.fn() },
       { ...confirm, sourceType: 'INSTAGRAM', event: 'ALL' },
     )).rejects.toMatchObject({ code: 'META_PERMISSION_MISSING' })
+  })
+})
+
+describe('meta custom audience fetch contract (Etapa 7)', () => {
+  const dualTokenConfig = {
+    ...baseConfig,
+    page_access_token_enc: encryptSecret('page-tok'),
+  }
+
+  beforeEach(() => {
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+    setMetaWriteAuditSink(() => {})
+  })
+
+  function stubOkFetch(id = 'aud_1') {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ id }),
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+    return fetchMock
+  }
+
+  it('1. Instagram ENGAGED maps to ig_business_profile_engaged', async () => {
+    const fetchMock = stubOkFetch()
+    await metaCreateCustomAudience(
+      { client: createIntegrationClient(dualTokenConfig), graphFetch: vi.fn(async () => ({ data: [] })) },
+      { ...confirm, sourceType: 'INSTAGRAM', event: 'ENGAGED', retentionDays: 30, dryRun: false },
+    )
+    const form = new URLSearchParams(String((fetchMock.mock.calls[0] as [string, RequestInit])[1].body))
+    expect(JSON.parse(form.get('rule')!).inclusions.rules[0].filter.filters[0].value).toBe('ig_business_profile_engaged')
+  })
+
+  it('2. Instagram PROFILE_VISIT maps to ig_business_profile_visit', async () => {
+    const fetchMock = stubOkFetch()
+    await metaCreateCustomAudience(
+      { client: createIntegrationClient(dualTokenConfig), graphFetch: vi.fn(async () => ({ data: [] })) },
+      { ...confirm, sourceType: 'INSTAGRAM', event: 'PROFILE_VISIT', retentionDays: 30, dryRun: false },
+    )
+    const form = new URLSearchParams(String((fetchMock.mock.calls[0] as [string, RequestInit])[1].body))
+    expect(JSON.parse(form.get('rule')!).inclusions.rules[0].filter.filters[0].value).toBe('ig_business_profile_visit')
+  })
+
+  it('3. Facebook ENGAGED maps to page_engaged', async () => {
+    const fetchMock = stubOkFetch()
+    await metaCreateCustomAudience(
+      { client: createIntegrationClient(dualTokenConfig), graphFetch: vi.fn(async () => ({ data: [] })) },
+      { ...confirm, sourceType: 'FACEBOOK_PAGE', event: 'ENGAGED', retentionDays: 30, dryRun: false },
+    )
+    const form = new URLSearchParams(String((fetchMock.mock.calls[0] as [string, RequestInit])[1].body))
+    expect(JSON.parse(form.get('rule')!).inclusions.rules[0].filter.filters[0].value).toBe('page_engaged')
+  })
+
+  it('4. rule is serialized exactly once', async () => {
+    const fetchMock = stubOkFetch()
+    const expectedRule = buildEngagementRule({
+      eventSourceType: 'ig_business',
+      sourceId: 'ig_1',
+      metaEvent: 'ig_business_profile_engaged',
+      retentionSeconds: 2592000,
+    })
+    await metaCreateCustomAudience(
+      { client: createIntegrationClient(dualTokenConfig), graphFetch: vi.fn(async () => ({ data: [] })) },
+      { ...confirm, sourceType: 'INSTAGRAM', event: 'ENGAGED', retentionDays: 30, dryRun: false },
+    )
+    const form = new URLSearchParams(String((fetchMock.mock.calls[0] as [string, RequestInit])[1].body))
+    const rule = form.get('rule')!
+    expect(rule).toBe(JSON.stringify(expectedRule))
+    expect(rule).not.toBe(JSON.stringify(JSON.stringify(expectedRule)))
+    expect(JSON.parse(rule)).toEqual(expectedRule)
+  })
+
+  it('5. rule remains valid after URLSearchParams.get()', async () => {
+    const fetchMock = stubOkFetch()
+    await metaCreateCustomAudience(
+      { client: createIntegrationClient(dualTokenConfig), graphFetch: vi.fn(async () => ({ data: [] })) },
+      { ...confirm, sourceType: 'INSTAGRAM', event: 'ENGAGED', retentionDays: 30, dryRun: false },
+    )
+    const form = new URLSearchParams(String((fetchMock.mock.calls[0] as [string, RequestInit])[1].body))
+    const serializedRule = form.get('rule')!
+    expect(serializedRule.startsWith('{')).toBe(true)
+    expect(serializedRule.endsWith('}')).toBe(true)
+    expect(serializedRule.startsWith('"{')).toBe(false)
+    const parsed = JSON.parse(serializedRule)
+    expect(typeof parsed).toBe('object')
+    expect(parsed.inclusions.rules[0].filter.filters[0].value).toBe('ig_business_profile_engaged')
+  })
+
+  it('6. Content-Type is application/x-www-form-urlencoded', async () => {
+    const fetchMock = stubOkFetch()
+    await metaCreateCustomAudience(
+      { client: createIntegrationClient(dualTokenConfig), graphFetch: vi.fn(async () => ({ data: [] })) },
+      { ...confirm, sourceType: 'INSTAGRAM', event: 'ENGAGED', retentionDays: 30, dryRun: false },
+    )
+    const init = (fetchMock.mock.calls[0] as [string, RequestInit])[1]
+    expect((init.headers as Record<string, string>)['Content-Type']).toBe(META_GRAPH_FORM_CONTENT_TYPE)
+  })
+
+  it('7. prefill is sent as "1"', async () => {
+    const fetchMock = stubOkFetch()
+    await metaCreateCustomAudience(
+      { client: createIntegrationClient(dualTokenConfig), graphFetch: vi.fn(async () => ({ data: [] })) },
+      { ...confirm, sourceType: 'INSTAGRAM', event: 'ENGAGED', retentionDays: 30, prefill: true, dryRun: false },
+    )
+    const form = new URLSearchParams(String((fetchMock.mock.calls[0] as [string, RequestInit])[1].body))
+    expect(form.get('prefill')).toBe('1')
+  })
+
+  it('8. uses access_token Bearer, never page_token', async () => {
+    const fetchMock = stubOkFetch()
+    const credsToken = selectAdsManagementAccessToken({ accessToken: 'tok' })
+    expect(credsToken).toBe('tok')
+    await metaCreateCustomAudience(
+      { client: createIntegrationClient(dualTokenConfig), graphFetch: vi.fn(async () => ({ data: [] })) },
+      { ...confirm, sourceType: 'INSTAGRAM', event: 'ENGAGED', retentionDays: 30, dryRun: false },
+    )
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    const headers = init.headers as Record<string, string>
+    expect(headers.Authorization).toBe('Bearer tok')
+    expect(headers.Authorization).not.toContain('page-tok')
+    expect(url).not.toMatch(/access_token=/)
+    expect(String(init.body)).not.toContain('page-tok')
+    expect(new URLSearchParams(String(init.body)).get('subtype')).toBeNull()
+  })
+
+  it('9. logs never include tokens', async () => {
+    stubOkFetch()
+    const info = vi.spyOn(console, 'info').mockImplementation(() => {})
+    await metaCreateCustomAudience(
+      { client: createIntegrationClient(dualTokenConfig), graphFetch: vi.fn(async () => ({ data: [] })) },
+      { ...confirm, sourceType: 'INSTAGRAM', event: 'ENGAGED', retentionDays: 30, dryRun: false },
+    )
+    const dumped = JSON.stringify(info.mock.calls)
+    expect(dumped).not.toContain('page-tok')
+    expect(dumped).not.toMatch(/Bearer /)
+    expect(dumped).not.toMatch(/"tok"/)
+    expect(dumped).toContain('"tokenSource":"access_token"')
+  })
+
+  it('10. sanitizes Graph error but keeps fbtrace_id, code and subcode', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: false,
+      status: 400,
+      json: async () => ({
+        error: {
+          message: 'Invalid Event Name',
+          code: 2654,
+          error_subcode: 1713151,
+          fbtrace_id: 'AxHS-i3s9dpL3HGVWmfJao1',
+        },
+      }),
+    })))
+    await expect(metaCreateCustomAudience(
+      { client: createIntegrationClient(dualTokenConfig), graphFetch: vi.fn(async () => ({ data: [] })) },
+      { ...confirm, sourceType: 'INSTAGRAM', event: 'ENGAGED', retentionDays: 30, dryRun: false },
+    )).rejects.toMatchObject({
+      code: 'META_AUDIENCE_GRAPH_ERROR',
+      details: {
+        code: 2654,
+        error_subcode: 1713151,
+        fbtrace_id: 'AxHS-i3s9dpL3HGVWmfJao1',
+      },
+    })
+  })
+
+  it('11. RETURN_EXISTING skips Graph POST', async () => {
+    const fetchMock = stubOkFetch('should-not-create')
+    const graphFetch = vi.fn(async () => ({
+      data: [{ id: 'aud_old', name: 'IG | Interações | 30d', subtype: 'ENGAGEMENT' }],
+    }))
+    const result = await metaCreateCustomAudience(
+      { client: createIntegrationClient(dualTokenConfig), graphFetch },
+      {
+        ...confirm,
+        sourceType: 'INSTAGRAM',
+        event: 'ENGAGED',
+        retentionDays: 30,
+        dryRun: false,
+        duplicateStrategy: 'RETURN_EXISTING',
+      },
+    )
+    expect((result as any).id).toBe('aud_old')
+    expect((result as any).reused).toBe(true)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('12. dry-run and execute use the same form serializer', async () => {
+    const fetchMock = stubOkFetch()
+    const input = {
+      ...confirm,
+      sourceType: 'INSTAGRAM' as const,
+      event: 'ENGAGED',
+      retentionDays: 30,
+    }
+    const preview = await metaCreateCustomAudience(
+      { client: createIntegrationClient(dualTokenConfig), graphFetch: vi.fn(async () => ({ data: [] })) },
+      { ...input, dryRun: true },
+    )
+    await metaCreateCustomAudience(
+      { client: createIntegrationClient(dualTokenConfig), graphFetch: vi.fn(async () => ({ data: [] })) },
+      { ...input, dryRun: false },
+    )
+    const form = new URLSearchParams(String((fetchMock.mock.calls[0] as [string, RequestInit])[1].body))
+    const executed = Object.fromEntries(form.entries())
+    expect((preview as any).preview.body).toEqual(executed)
+    expect((preview as any).preview.body).toEqual(
+      Object.fromEntries(serializeCustomAudienceForm((preview as any).preview.body).entries()),
+    )
+    expect((preview as any).preview.contentType).toBe(META_GRAPH_FORM_CONTENT_TYPE)
+    expect((preview as any).subtype).toBe('ENGAGEMENT')
+    expect(form.get('subtype')).toBeNull()
   })
 })

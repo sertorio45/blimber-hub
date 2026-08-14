@@ -3,11 +3,10 @@
  * Graph version follows resolveMetaGraphVersion (default v25.0). Do not bump here.
  */
 
+import type { SupabaseLike } from './integration'
+import type { MetaGraphFetch, ResolvedMetaCredentials } from './types'
 import { createHash } from 'node:crypto'
 import { z } from 'zod'
-import type { MetaGraphFetch } from './types'
-import type { ResolvedMetaCredentials } from './types'
-import type { SupabaseLike } from './integration'
 import {
   actPath,
   defaultMetaGraphFetch,
@@ -15,8 +14,11 @@ import {
   extractMetaGraphErrorFields,
   META_GRAPH_FORM_CONTENT_TYPE,
   metaGraphUrl,
+  normalizeMetaAdAccountId,
+  resolveMetaGraphVersion,
+  toMetaGraphFormParams,
 } from './graph'
-import { resolveMetaCredentials } from './integration'
+import { resolveMetaCredentials, selectAdsManagementAccessToken } from './integration'
 import { MetaAdsToolError } from './types'
 import { logMetaWriteAudit, sanitizeMetaWriteAuditPayload } from './write-audit'
 import {
@@ -480,6 +482,169 @@ export function serializeCustomAudienceGraphJsonFields(
   return next
 }
 
+/**
+ * Same serializer for dry-run preview and Graph execute.
+ * Nested JSON fields must already be strings (stringify once).
+ */
+export function serializeCustomAudienceForm(
+  body: Record<string, unknown>,
+): URLSearchParams {
+  return toMetaGraphFormParams(serializeCustomAudienceGraphJsonFields(body))
+}
+
+export function customAudienceFormFieldMap(
+  body: Record<string, unknown>,
+): Record<string, string> {
+  return Object.fromEntries(serializeCustomAudienceForm(body).entries())
+}
+
+// Meta Graph event names: A-Z a-z 0-9 underscore, max 49 (create-audience spec).
+// eslint-disable-next-line regexp/prefer-w, regexp/use-ignore-case
+const GRAPH_EVENT_NAME_RE = /^[A-Za-z0-9_]{1,49}$/
+
+export function assertSerializedCustomAudienceRule(
+  form: URLSearchParams,
+  options?: { required?: boolean, expectedEvent?: string | null },
+): { serializedRule: string | null, event: string | null } {
+  const serializedRule = form.get('rule')
+  if (!serializedRule) {
+    if (options?.required) {
+      throw new MetaAdsToolError(
+        'META_AUDIENCE_INVALID_RULE',
+        'CUSTOM_AUDIENCE_RULE_MISSING',
+        400,
+      )
+    }
+    return { serializedRule: null, event: null }
+  }
+
+  if (!serializedRule.startsWith('{') || !serializedRule.endsWith('}')) {
+    throw new MetaAdsToolError(
+      'META_AUDIENCE_INVALID_RULE',
+      'CUSTOM_AUDIENCE_RULE_INVALID_SERIALIZATION',
+      400,
+    )
+  }
+
+  let parsedRule: unknown
+  try {
+    parsedRule = JSON.parse(serializedRule)
+  }
+  catch {
+    throw new MetaAdsToolError(
+      'META_AUDIENCE_INVALID_RULE',
+      'CUSTOM_AUDIENCE_RULE_INVALID_JSON',
+      400,
+    )
+  }
+
+  if (typeof parsedRule !== 'object' || parsedRule == null || Array.isArray(parsedRule)) {
+    throw new MetaAdsToolError(
+      'META_AUDIENCE_INVALID_RULE',
+      'CUSTOM_AUDIENCE_RULE_NOT_OBJECT',
+      400,
+    )
+  }
+
+  const filter = (parsedRule as {
+    inclusions?: { rules?: Array<{ filter?: { filters?: Array<{ field?: string, value?: unknown }> } }> }
+  }).inclusions?.rules?.[0]?.filter?.filters?.[0]
+  const event = filter?.field === 'event' && typeof filter.value === 'string'
+    ? filter.value
+    : null
+
+  if (event && !GRAPH_EVENT_NAME_RE.test(event)) {
+    throw new MetaAdsToolError(
+      'META_AUDIENCE_INVALID_EVENT',
+      'CUSTOM_AUDIENCE_EVENT_INVALID_BEFORE_GRAPH',
+      400,
+      { eventLength: event.length },
+    )
+  }
+
+  if (options?.expectedEvent && event !== options.expectedEvent) {
+    throw new MetaAdsToolError(
+      'META_AUDIENCE_INVALID_EVENT',
+      'CUSTOM_AUDIENCE_EVENT_MISMATCH_BEFORE_GRAPH',
+      400,
+    )
+  }
+
+  return { serializedRule, event }
+}
+
+function sourceTypeRequiresRule(sourceType: MetaCustomAudienceSourceType): boolean {
+  return sourceType === 'INSTAGRAM'
+    || sourceType === 'FACEBOOK_PAGE'
+    || sourceType === 'WEBSITE'
+    || sourceType === 'LEAD_FORM'
+}
+
+/**
+ * Direct Graph POST for custom audiences (not defaultMetaGraphFetch).
+ * Bearer user/system-user token; form-urlencoded; rule JSON-stringified once.
+ */
+export async function postCustomAudienceForm(params: {
+  apiVersion: string
+  adAccountId: string
+  accessToken: string
+  graphBody: Record<string, unknown>
+  sourceType: MetaCustomAudienceSourceType
+  expectedEvent?: string | null
+}): Promise<Record<string, unknown>> {
+  const accessToken = selectAdsManagementAccessToken({ accessToken: params.accessToken })
+  const graphVersion = resolveMetaGraphVersion(params.apiVersion)
+  const adAccountId = normalizeMetaAdAccountId(params.adAccountId)
+  const form = serializeCustomAudienceForm(params.graphBody)
+  const { serializedRule, event } = assertSerializedCustomAudienceRule(form, {
+    required: sourceTypeRequiresRule(params.sourceType),
+    expectedEvent: params.expectedEvent,
+  })
+
+  // Allowed diagnostic fields only — never tokens, Authorization, or PII.
+  // eslint-disable-next-line no-console
+  console.info({
+    operation: 'create_custom_audience',
+    tokenSource: 'access_token',
+    graphVersion,
+    adAccountId,
+    sourceType: params.sourceType,
+    event,
+    eventLength: event ? event.length : 0,
+    contentType: META_GRAPH_FORM_CONTENT_TYPE,
+    ruleLength: serializedRule ? serializedRule.length : 0,
+  })
+
+  const url = `https://graph.facebook.com/${graphVersion}/${actPath(adAccountId)}/customaudiences`
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Accept': 'application/json',
+      'Authorization': `Bearer ${accessToken}`,
+      'Content-Type': META_GRAPH_FORM_CONTENT_TYPE,
+    },
+    body: form.toString(),
+  })
+
+  const payload = await response.json().catch(() => ({}))
+  if (!response.ok) {
+    const fields = extractMetaGraphErrorFields(payload, response.status)
+    const err = new MetaAdsToolError(
+      'META_GRAPH_ERROR',
+      fields.message,
+      response.status >= 500 ? 502 : response.status,
+      fields,
+    )
+    try {
+      enrichMetaGraphWriteError(err, sanitizeMetaWriteAuditPayload(params.graphBody) as Record<string, unknown>)
+    }
+    catch (enriched) {
+      mapAudienceGraphError(enriched)
+    }
+  }
+  return payload as Record<string, unknown>
+}
+
 export function buildLeadFormRule(params: {
   pageId: string
   instagramAccountId?: string | null
@@ -845,6 +1010,12 @@ export async function resolveAudienceSources(params: {
   }
 }
 
+/**
+ * MCP `subtype` is returned to callers. Graph POST body must not include
+ * `subtype` for website/engagement (non-video) audiences — Meta dropped it in
+ * Sep 2018; sending ENGAGEMENT yields #2654 / 1713151 "invalid event name".
+ * https://developers.facebook.com/docs/marketing-api/audiences/guides/engagement-custom-audiences
+ */
 function audienceGraphResult(
   subtype: string,
   metaEvent: string | null,
@@ -888,7 +1059,6 @@ export function buildCreateAudienceGraphBody(params: {
       audienceError('META_AUDIENCE_SOURCE_NOT_FOUND', 'instagramAccountId ausente após resolução.', 404)
     return audienceGraphResult('ENGAGEMENT', metaEvent, {
       ...base,
-      subtype: 'ENGAGEMENT',
       prefill,
       rule: buildEngagementRule({
         eventSourceType: 'ig_business',
@@ -909,7 +1079,6 @@ export function buildCreateAudienceGraphBody(params: {
       audienceError('META_AUDIENCE_SOURCE_NOT_FOUND', 'pageId ausente após resolução.', 404)
     return audienceGraphResult('ENGAGEMENT', metaEvent, {
       ...base,
-      subtype: 'ENGAGEMENT',
       prefill,
       rule: buildEngagementRule({
         eventSourceType: 'page',
@@ -929,7 +1098,6 @@ export function buildCreateAudienceGraphBody(params: {
       audienceError('META_AUDIENCE_SOURCE_NOT_FOUND', 'pixelId ausente após resolução.', 404)
     return audienceGraphResult('WEBSITE', params.event, {
       ...base,
-      subtype: 'WEBSITE',
       prefill,
       rule: buildWebsiteRule({
         pixelId,
@@ -951,7 +1119,6 @@ export function buildCreateAudienceGraphBody(params: {
     const metaEvent = LEAD_EVENT_TO_META[params.event]
     return audienceGraphResult('ENGAGEMENT', metaEvent, {
       ...base,
-      subtype: 'ENGAGEMENT',
       prefill,
       rule: buildLeadFormRule({
         pageId,
@@ -1167,18 +1334,40 @@ export async function prepareCreateCustomAudience(params: {
   }
 }
 
+function expectedGraphEvent(prepared: PreparedCreateAudience): string | null {
+  if (!prepared.metaEvent)
+    return null
+  if (prepared.sourceType === 'WEBSITE' && (prepared.event === 'ALL_VISITORS' || prepared.event === 'VISITORS_BY_URL'))
+    return null
+  return prepared.metaEvent
+}
+
+function previewFormFromPrepared(prepared: PreparedCreateAudience): Record<string, string> {
+  const form = serializeCustomAudienceForm(prepared.graphBody)
+  assertSerializedCustomAudienceRule(form, {
+    required: sourceTypeRequiresRule(prepared.sourceType),
+    expectedEvent: expectedGraphEvent(prepared),
+  })
+  return Object.fromEntries(form.entries())
+}
+
 function createPreviewNotes(prepared: PreparedCreateAudience): string[] {
+  const omitsSubtype = sourceTypeRequiresRule(prepared.sourceType)
   return [
     `sourceType=${prepared.sourceType}`,
     prepared.event ? `event=${prepared.event}` : null,
     prepared.metaEvent ? `metaEvent=${prepared.metaEvent}` : null,
     `subtype=${prepared.subtype}`,
+    omitsSubtype
+      ? 'Graph POST omite subtype (não suportado em engagement/website desde 2018)'
+      : `graphSubtype=${String(prepared.graphBody.subtype || '')}`,
     `retentionDays=${prepared.retentionDays}`,
     `retention_seconds=${prepared.retentionSeconds}`,
     prepared.sources.pageId ? `pageId=${prepared.sources.pageId}` : null,
     prepared.sources.instagramAccountId ? `instagramAccountId=${prepared.sources.instagramAccountId}` : null,
     prepared.sources.pixelId ? `pixelId=${prepared.sources.pixelId}` : null,
     `Content-Type=${META_GRAPH_FORM_CONTENT_TYPE}`,
+    `Authorization=Bearer (access_token, never page_token)`,
     typeof prepared.graphBody.rule === 'string' ? 'rule=JSON string (stringify once)' : null,
     typeof prepared.graphBody.lookalike_spec === 'string' ? 'lookalike_spec=JSON string (stringify once)' : null,
     ...prepared.notes,
@@ -1217,17 +1406,14 @@ async function executeCreateAudience(params: {
     }
   }
 
-  const path = `/${actPath(creds.adAccountId)}/customaudiences`
-  const created = await graphWrite(
-    graph,
-    metaGraphUrl(creds.apiVersion, path),
-    {
-      ...CUSTOM_AUDIENCE_FORM_POST,
-      query: { access_token: creds.accessToken },
-      body: prepared.graphBody,
-    },
-    sanitizeMetaWriteAuditPayload(prepared.graphBody) as Record<string, unknown>,
-  )
+  const created = await postCustomAudienceForm({
+    apiVersion: creds.apiVersion,
+    adAccountId: creds.adAccountId,
+    accessToken: selectAdsManagementAccessToken(creds),
+    graphBody: prepared.graphBody,
+    sourceType: prepared.sourceType,
+    expectedEvent: expectedGraphEvent(prepared),
+  })
 
   const id = created?.id ? String(created.id) : null
   if (!id)
@@ -1280,6 +1466,7 @@ export async function metaCreateCustomAudience(
   const path = `/${actPath(creds.adAccountId)}/customaudiences`
   const notes = createPreviewNotes(prepared)
   const duplicateStrategy = input.duplicateStrategy ?? 'ERROR'
+  const previewBody = previewFormFromPrepared(prepared)
 
   const run = await withDryRun(
     dryRun,
@@ -1287,7 +1474,7 @@ export async function metaCreateCustomAudience(
       method: 'POST',
       path,
       contentType: META_GRAPH_FORM_CONTENT_TYPE,
-      body: sanitizeMetaWriteAuditPayload(prepared.graphBody) as Record<string, unknown>,
+      body: sanitizeMetaWriteAuditPayload(previewBody) as Record<string, unknown>,
       notes,
     },
     async () => executeCreateAudience({

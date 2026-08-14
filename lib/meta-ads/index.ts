@@ -16,10 +16,11 @@ export {
   type MetaGraphErrorFields,
 } from './graph'
 export {
-  listMarketingIntegrations,
-  resolveMetaCredentials,
   buildMetaWriteReadiness,
   hasGrantedMetaScope,
+  listMarketingIntegrations,
+  resolveMetaCredentials,
+  selectAdsManagementAccessToken,
   type MetaWriteReadiness,
   type SupabaseLike,
 } from './integration'
@@ -209,16 +210,20 @@ export {
   META_CUSTOM_AUDIENCE_SOURCE_TYPES_FUTURE,
   META_IG_AUDIENCE_EVENTS,
   META_PAGE_AUDIENCE_EVENTS,
-  META_WEBSITE_AUDIENCE_EVENTS,
   META_LEAD_FORM_AUDIENCE_EVENTS,
+  META_WEBSITE_AUDIENCE_EVENTS,
+  assertSerializedCustomAudienceRule,
   buildEngagementRule,
   buildLeadFormRule,
   buildWebsiteRule,
-  serializeCustomAudienceGraphJsonFields,
+  customAudienceFormFieldMap,
   hashCustomerListUsers,
-  retentionDaysToSeconds,
-  suggestCustomAudienceName,
   metaCreateCustomAudienceSchema,
+  postCustomAudienceForm,
+  retentionDaysToSeconds,
+  serializeCustomAudienceForm,
+  serializeCustomAudienceGraphJsonFields,
+  suggestCustomAudienceName,
 } from './custom-audiences'
 export {
   assertAdAccountOwnership,
