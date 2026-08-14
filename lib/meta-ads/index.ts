@@ -153,6 +153,9 @@ export {
   evenTreatmentPercentages,
   flattenGraphIds,
   mergeVariationCreativeParameters,
+  resolveOwningBusinessId,
+  extractBusinessIdFromAdAccountNode,
+  deleteCopiedAdsForFailedStudy,
 } from './experiment-service'
 export {
   META_ADSET_BILLING_EVENTS,

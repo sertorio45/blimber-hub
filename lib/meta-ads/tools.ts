@@ -66,6 +66,7 @@ import {
   checkExperimentEligibility,
   copyAdForExperiment,
   createExperiment,
+  deleteCopiedAdsForFailedStudy,
   evenTreatmentPercentages,
   getExperiment,
   listExperiments,
@@ -3981,13 +3982,15 @@ export async function metaListExperiments(ctx: MetaToolContext, raw: unknown) {
   const listed = await listExperiments(
     { apiVersion: creds.apiVersion, accessToken: creds.accessToken, graph },
     creds.adAccountId,
-    { limit: input.limit },
+    { limit: input.limit, businessId: creds.publicConfig.business_id },
   )
   return {
     tenantId: input.tenantId,
     adAccountId: creds.adAccountId,
+    businessId: listed.businessId,
     studies: listed.studies,
     paging: listed.paging,
+    sources: listed.sources,
   }
 }
 
@@ -4048,6 +4051,7 @@ export async function metaCheckExperimentEligibility(ctx: MetaToolContext, raw: 
     { apiVersion: creds.apiVersion, accessToken: creds.accessToken, graph },
     {
       adAccountId: creds.adAccountId,
+      businessId: creds.publicConfig.business_id,
       adIds,
       adsetIds: [...adsetIds],
       campaignIds: [...campaignIds],
@@ -4075,8 +4079,35 @@ export async function metaCreateExperiment(ctx: MetaToolContext, raw: unknown) {
   let studyParent: Awaited<ReturnType<typeof resolveAdStudyCreatePath>> | undefined
 
   const resolveStudyParent = () => resolveAdStudyCreatePath(svc, {
+    adAccountId: creds.adAccountId,
     businessId: creds.publicConfig.business_id,
   })
+
+  const rollbackCopiedAds = async () => {
+    const copiedIds = copiedAds.map(row => row.adId)
+    if (!copiedIds.length)
+      return null
+    return deleteCopiedAdsForFailedStudy(svc, copiedIds, { protectAdIds: [baseAdId] })
+  }
+
+  const rethrowAfterCopyRollback = async (err: unknown): Promise<never> => {
+    const rollback = await rollbackCopiedAds()
+    if (err instanceof MetaAdsToolError) {
+      throw new MetaAdsToolError(
+        err.code,
+        rollback?.deleted.length
+          ? `${err.message} Cópias do teste foram removidas automaticamente (${rollback.deleted.join(', ')}); o anúncio base foi preservado.`
+          : err.message,
+        err.statusCode,
+        {
+          ...(err.details && typeof err.details === 'object' ? err.details : {}),
+          copiedAdsRolledBack: rollback,
+          baseAdIdPreserved: baseAdId,
+        },
+      )
+    }
+    throw err
+  }
 
   if (input.baseAdId) {
     const variations = (input.variations || []) as ExperimentVariationInput[]
@@ -4092,6 +4123,7 @@ export async function metaCreateExperiment(ctx: MetaToolContext, raw: unknown) {
 
     const eligibility = await checkExperimentEligibility(svc, {
       adAccountId: creds.adAccountId,
+      businessId: creds.publicConfig.business_id,
       adIds: [input.baseAdId],
       adsetIds: ad?.adset_id ? [String(ad.adset_id)] : [],
       campaignIds: ad?.campaign_id ? [String(ad.campaign_id)] : [],
@@ -4155,7 +4187,11 @@ export async function metaCreateExperiment(ctx: MetaToolContext, raw: unknown) {
             `Creative Test: ${input.name}`,
             `baseAdId ${input.baseAdId} + ${variations.length} variação(ões) = ${1 + variations.length} células (limite Meta 2–5).`,
             'Duplicará ads via POST /{adId}/copies (status PAUSED).',
-            `Ad Study: POST ${parent.path} (${parent.parentKind === 'user' ? 'User Ad Studies' : 'Business Ad Studies'}).`,
+            `Ad Study: POST ${parent.path} (Business Ad Studies; type=SPLIT_TEST_V2).`,
+            parent.source === 'config'
+              ? `business_id da integração Meta: ${parent.parentId}.`
+              : `business_id via GET act_{id}?fields=business: ${parent.parentId}.`,
+            'Se o POST do study falhar, as cópias PAUSED serão removidas; o anúncio base não.',
             'dryRun=true: nenhuma mutação.',
           ],
         },
@@ -4165,19 +4201,24 @@ export async function metaCreateExperiment(ctx: MetaToolContext, raw: unknown) {
 
     studyParent = await resolveStudyParent()
 
-    for (const [index, variation] of variations.entries()) {
-      const copyBody = plannedCopies[index]!.copyBody
-      const copiedAdId = await copyAdForExperiment(svc, input.baseAdId, copyBody)
-      const ownedCopy = await fetchOwnedAdWithCreative(ctx, {
-        tenantId: input.tenantId,
-        adAccountId: input.adAccountId,
-        adId: copiedAdId,
-      })
-      copiedAds.push({
-        variationName: variation.name ?? null,
-        adId: String(ownedCopy.ad?.id || copiedAdId),
-        copyBody,
-      })
+    try {
+      for (const [index, variation] of variations.entries()) {
+        const copyBody = plannedCopies[index]!.copyBody
+        const copiedAdId = await copyAdForExperiment(svc, input.baseAdId, copyBody)
+        const ownedCopy = await fetchOwnedAdWithCreative(ctx, {
+          tenantId: input.tenantId,
+          adAccountId: input.adAccountId,
+          adId: copiedAdId,
+        })
+        copiedAds.push({
+          variationName: variation.name ?? null,
+          adId: String(ownedCopy.ad?.id || copiedAdId),
+          copyBody,
+        })
+      }
+    }
+    catch (err) {
+      await rethrowAfterCopyRollback(err)
     }
 
     cells = [
@@ -4203,6 +4244,7 @@ export async function metaCreateExperiment(ctx: MetaToolContext, raw: unknown) {
     })
     const eligibility = await checkExperimentEligibility(svc, {
       adAccountId: creds.adAccountId,
+      businessId: creds.publicConfig.business_id,
       adIds: cellAdIds,
       adsetIds: owned.map(row => row.ad?.adset_id).filter(Boolean).map(String),
       campaignIds: owned.map(row => row.ad?.campaign_id).filter(Boolean).map(String),
@@ -4231,36 +4273,42 @@ export async function metaCreateExperiment(ctx: MetaToolContext, raw: unknown) {
       notes: [
         `Experiment ${input.type}: ${input.name}`,
         `cells: ${cells.length}`,
-        `POST ${parent.path} (${parent.parentKind === 'user' ? 'User Ad Studies' : 'Business Ad Studies'}).`,
+        `POST ${parent.path} (Business Ad Studies).`,
+        `type=${input.type}`,
         dryRun ? 'dryRun=true: nenhuma mutação.' : 'Criará Ad Study oficial Meta.',
       ],
     },
     async () => {
-      const created = await createExperiment(
-        svc,
-        {
-          name: input.name,
-          description: input.description,
+      try {
+        const created = await createExperiment(
+          svc,
+          {
+            name: input.name,
+            description: input.description,
+            type: input.type,
+            cells,
+            startTime: input.startTime,
+            endTime: input.endTime,
+            creativeTestDailyBudget: input.creativeTestDailyBudget,
+            creativeTestLifetimeBudgetPercentage: input.creativeTestLifetimeBudgetPercentage,
+          },
+          { dryRun: false, createPath: parent.path },
+        )
+        return {
+          tenantId: input.tenantId,
+          adAccountId: creds.adAccountId,
+          studyId: created.studyId,
           type: input.type,
+          name: input.name,
+          baseAdId,
+          copiedAds,
           cells,
-          startTime: input.startTime,
-          endTime: input.endTime,
-          creativeTestDailyBudget: input.creativeTestDailyBudget,
-          creativeTestLifetimeBudgetPercentage: input.creativeTestLifetimeBudgetPercentage,
-        },
-        { dryRun: false, createPath: parent.path },
-      )
-      return {
-        tenantId: input.tenantId,
-        adAccountId: creds.adAccountId,
-        studyId: created.studyId,
-        type: input.type,
-        name: input.name,
-        baseAdId,
-        copiedAds,
-        cells,
-        success: true as const,
-        dryRun: false as const,
+          success: true as const,
+          dryRun: false as const,
+        }
+      }
+      catch (err) {
+        await rethrowAfterCopyRollback(err)
       }
     },
   )
@@ -4868,11 +4916,11 @@ export const META_TOOL_DESCRIPTIONS: Record<MetaToolName, string> = {
   meta_update_ad_tracking:
     'Atualiza tracking_specs do Ad (website Pixel / offline Dataset / crm). Merge default; replaceTrackingSpecs=true substitui. dryRun true. confirm+confirmTenantId.',
   meta_list_experiments:
-    'Lista Ad Studies da ad account (GET act_{id}/impacting_ad_studies). Sem studyId.',
+    'Lista Ad Studies: GET /{business_id}/ad_studies + GET act_{id}/impacting_ad_studies (dedupe; isolamento por ad account). Sem studyId.',
   meta_check_experiment_eligibility:
     'Checa conflitos com testes ativos/agendados (ad/adset/campaign vs studies).',
   meta_create_experiment:
-    'Cria Ad Study. cells[] (SPLIT_TEST_V2: 2–5 ads; SPLIT_TEST: adsets) OU baseAdId+variations (duplica /copies). dryRun default true.',
+    'Cria Ad Study. POST /{business_id}/ad_studies (SPLIT_TEST_V2). cells[] OU baseAdId+variations (/copies). Falha após cópias remove só as cópias. dryRun default true.',
   meta_get_experiment:
     'Lê study + cells + ads + winner (results_first_available_date; Graph não documenta winner_cell_id).',
   meta_stop_experiment:

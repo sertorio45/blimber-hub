@@ -1,10 +1,12 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   assertSafeMediaUrl,
   buildCopyAdGraphBody,
   buildCreateExperimentGraphBody,
   buildDegreesOfFreedomSpec,
+  deleteCopiedAdsForFailedStudy,
   evenTreatmentPercentages,
+  extractBusinessIdFromAdAccountNode,
   getMetaCapabilities,
   MetaAdsToolError,
   mergeVariationCreativeParameters,
@@ -98,6 +100,29 @@ describe('meta capabilities + media SSRF + experiments builders', () => {
       endTime: 2,
       creativeTestDailyBudget: 1000,
     })).toThrow(/2–5/)
+  })
+
+  it('extracts business id from official Ad Account `business` field', () => {
+    expect(extractBusinessIdFromAdAccountNode({
+      id: 'act_555',
+      business: { id: '9988776655', name: 'BM' },
+    })).toBe('9988776655')
+    expect(extractBusinessIdFromAdAccountNode({ business: 'me' })).toBeNull()
+    expect(extractBusinessIdFromAdAccountNode({})).toBeNull()
+  })
+
+  it('deleteCopiedAdsForFailedStudy never deletes the base ad', async () => {
+    const graph = vi.fn(async () => ({ success: true }))
+    const result = await deleteCopiedAdsForFailedStudy(
+      { apiVersion: 'v25.0', accessToken: 'tok', graph },
+      ['copy_1', 'ad_base', 'copy_1'],
+      { protectAdIds: ['ad_base'] },
+    )
+    expect(result.deleted).toEqual(['copy_1'])
+    expect(result.skippedProtected).toEqual(['ad_base'])
+    expect(graph.mock.calls).toHaveLength(1)
+    expect(String(graph.mock.calls[0]![0])).toContain('/copy_1')
+    expect(graph.mock.calls[0]![1]?.body).toEqual({ status: 'DELETED' })
   })
 
   it('evenTreatmentPercentages always sums to 100', () => {

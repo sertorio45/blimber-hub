@@ -1,22 +1,24 @@
 /**
  * Official Meta Ad Studies / Experiments (Split Testing).
- * Creative A/B: SPLIT_TEST_V2 + creative_test_config on /{user_id|business_id}/ad_studies.
- * Classic: SPLIT_TEST with adsets[] per cell.
- * POST /me/ad_studies is unsupported (Graph: "Unsupported request - method type: post").
+ * Creative A/B: SPLIT_TEST_V2 + creative_test_config on POST /{business_id}/ad_studies
+ * (Business Ad Studies). Classic: SPLIT_TEST with adsets[] per cell.
+ *
+ * POST /me/ad_studies and POST /{user_id}/ad_studies are not used: Graph returns
+ * "Unsupported request - method type: post" for those parents in production.
  *
  * Documented limits (Marketing API Split Testing + Ad Study):
  * - Creative Tests (SPLIT_TEST_V2): 2–5 cells, exactly one ad per cell.
  * - Classic SPLIT_TEST: max 150 cells / study; max 100 ad entities / cell; 100 concurrent studies.
  * - treatment_percentage ≥ 10; creative tests require percentages summing to 100.
- * List: GET act_{adAccountId}/impacting_ad_studies (Ad Account edge).
+ * List: GET /{business_id}/ad_studies + GET act_{adAccountId}/impacting_ad_studies.
  * Cells: GET /{studyId}/cells (ads, adsets, campaigns).
- * Conflicts: GET /{adsetId}/ad_studies, GET /{campaignId}/ad_studies + impacting studies.
+ * Conflicts: GET /{adsetId}/ad_studies, GET /{campaignId}/ad_studies + listed studies.
  * Duplicate ads: POST /{adId}/copies (copied_ad_id; creative_parameters; status_option).
  * Winner: Graph documents results_first_available_date + confidence_level; no winner_cell_id field.
  */
 
 import type { MetaGraphFetch } from './types'
-import { actPath, enrichMetaGraphWriteError, metaGraphUrl } from './graph'
+import { actPath, enrichMetaGraphWriteError, metaGraphUrl, normalizeMetaAdAccountId } from './graph'
 import { MetaAdsToolError } from './types'
 
 export type ExperimentServiceContext = {
@@ -385,20 +387,87 @@ export function buildCopyAdGraphBody(params: {
   return body
 }
 
+function studyTouchesAdAccount(study: Record<string, unknown>, adAccountId: string): boolean {
+  const act = normalizeMetaAdAccountId(adAccountId)
+  if (!act)
+    return false
+  const cells = extractStudyCells(study)
+  const accounts = cells.flatMap(cell => flattenGraphIds(cell.adaccounts))
+  return accounts.some(id => normalizeMetaAdAccountId(id) === act)
+}
+
 export async function listExperiments(
   ctx: ExperimentServiceContext,
   adAccountId: string,
-  options?: { limit?: number },
-): Promise<{ studies: Record<string, unknown>[], paging: unknown }> {
-  const res = await ctx.graph(metaGraphUrl(ctx.apiVersion, `/${actPath(adAccountId)}/impacting_ad_studies`), {
+  options?: { limit?: number, businessId?: string | null },
+): Promise<{
+  studies: Record<string, unknown>[]
+  paging: unknown
+  sources: { impactingAdStudies: boolean, businessAdStudies: boolean }
+  businessId: string | null
+}> {
+  const limit = options?.limit ?? 50
+  const fields = `${EXPERIMENT_STUDY_FIELDS},cells{${EXPERIMENT_CELL_FIELDS}}`
+  const impactingRes = await ctx.graph(metaGraphUrl(ctx.apiVersion, `/${actPath(adAccountId)}/impacting_ad_studies`), {
     query: {
-      fields: `${EXPERIMENT_STUDY_FIELDS},cells{${EXPERIMENT_CELL_FIELDS}}`,
-      limit: options?.limit ?? 50,
+      fields,
+      limit,
       access_token: ctx.accessToken,
     },
   })
-  const studies = Array.isArray(res?.data) ? res.data as Record<string, unknown>[] : []
-  return { studies, paging: res?.paging ?? null }
+  const impacting = Array.isArray(impactingRes?.data) ? impactingRes.data as Record<string, unknown>[] : []
+  const byId = new Map<string, Record<string, unknown>>()
+  for (const study of impacting) {
+    const id = String(study.id || '').trim()
+    if (id)
+      byId.set(id, study)
+  }
+
+  let businessId: string | null = normalizeAdStudyParentId(options?.businessId)
+  let listedFromBusiness = false
+  if (!businessId) {
+    try {
+      const resolved = await resolveOwningBusinessId(ctx, {
+        adAccountId,
+        configuredBusinessId: options?.businessId,
+      })
+      businessId = resolved.businessId
+    }
+    catch {
+      businessId = null
+    }
+  }
+
+  if (businessId) {
+    try {
+      const businessRes = await ctx.graph(metaGraphUrl(ctx.apiVersion, `/${businessId}/ad_studies`), {
+        query: {
+          fields,
+          limit,
+          access_token: ctx.accessToken,
+        },
+      })
+      listedFromBusiness = true
+      const businessStudies = Array.isArray(businessRes?.data) ? businessRes.data as Record<string, unknown>[] : []
+      for (const study of businessStudies) {
+        const id = String(study.id || '').trim()
+        if (!id || byId.has(id))
+          continue
+        if (studyTouchesAdAccount(study, adAccountId))
+          byId.set(id, study)
+      }
+    }
+    catch {
+      listedFromBusiness = false
+    }
+  }
+
+  return {
+    studies: [...byId.values()],
+    paging: impactingRes?.paging ?? null,
+    sources: { impactingAdStudies: true, businessAdStudies: listedFromBusiness },
+    businessId,
+  }
 }
 
 async function listEntityStudies(
@@ -445,6 +514,7 @@ export async function checkExperimentEligibility(
   ctx: ExperimentServiceContext,
   params: {
     adAccountId: string
+    businessId?: string | null
     adIds?: string[]
     adsetIds?: string[]
     campaignIds?: string[]
@@ -461,7 +531,10 @@ export async function checkExperimentEligibility(
   }
   const byId = new Map<string, StudyConflict>()
 
-  const { studies } = await listExperiments(ctx, params.adAccountId, { limit: 100 })
+  const { studies } = await listExperiments(ctx, params.adAccountId, {
+    limit: 100,
+    businessId: params.businessId,
+  })
   for (const study of studies) {
     const conflict = matchStudyAgainstTargets(study, targets)
     if (conflict?.studyId)
@@ -555,7 +628,7 @@ export async function assertStudyOnAdAccount(
   )
 }
 
-/** Graph User/Business ids used as Ad Studies POST parents are numeric strings. Never "me". */
+/** Graph Business ids used as Ad Studies POST parents are numeric strings. Never "me". */
 export function normalizeAdStudyParentId(raw: unknown): string | null {
   const id = String(raw ?? '').trim()
   if (!id || id.toLowerCase() === 'me')
@@ -563,12 +636,24 @@ export function normalizeAdStudyParentId(raw: unknown): string | null {
   return /^\d+$/.test(id) ? id : null
 }
 
+/** Official Ad Account field `business` (Business Manager that owns the account). */
+export function extractBusinessIdFromAdAccountNode(node: unknown): string | null {
+  if (!node || typeof node !== 'object')
+    return null
+  const rec = node as Record<string, unknown>
+  const business = rec.business
+  if (business && typeof business === 'object') {
+    return normalizeAdStudyParentId((business as Record<string, unknown>).id)
+  }
+  return normalizeAdStudyParentId(business)
+}
+
 export function adStudiesCreatePath(parentId: string): string {
   const id = normalizeAdStudyParentId(parentId)
   if (!id) {
     throw new MetaAdsToolError(
       'EXPERIMENT_PARENT_REQUIRED',
-      'Parent de Ad Study inválido. Use o user id numérico do token ou o business_id da BM — nunca /me.',
+      'Parent de Ad Study inválido. Use o business_id da BM que possui a ad account — nunca /me nem user id.',
       400,
     )
   }
@@ -580,14 +665,14 @@ export function assertSupportedAdStudiesCreatePath(path: string): string {
   if (!clean || clean === '/me/ad_studies' || clean.endsWith('/me/ad_studies')) {
     throw new MetaAdsToolError(
       'EXPERIMENT_PARENT_REQUIRED',
-      'POST /me/ad_studies não é suportado pela Graph. Use /{user_id}/ad_studies ou /{business_id}/ad_studies.',
+      'POST /me/ad_studies não é suportado pela Graph. Use POST /{business_id}/ad_studies (Business Ad Studies).',
       400,
     )
   }
   if (!/^\/\d+\/ad_studies$/.test(clean)) {
     throw new MetaAdsToolError(
       'EXPERIMENT_PARENT_REQUIRED',
-      'Path de criação de Ad Study inválido. Esperado /{numeric_id}/ad_studies.',
+      'Path de criação de Ad Study inválido. Esperado /{business_id}/ad_studies.',
       400,
       { path: clean },
     )
@@ -596,39 +681,49 @@ export function assertSupportedAdStudiesCreatePath(path: string): string {
 }
 
 /**
- * Resolve POST parent for Ad Studies (User Ad Studies or Business Ad Studies).
- * GET /me is only used to read the token user id; POST always goes to /{id}/ad_studies.
+ * business_id that owns the ad account: integration config, else GET act_{id}?fields=business.
+ * Official Ad Account field: `business` — "The Business Manager, if this ad account is owned by one".
  */
-export async function resolveAdStudyCreatePath(
+export async function resolveOwningBusinessId(
   ctx: ExperimentServiceContext,
-  options?: { businessId?: string | null },
-): Promise<{ path: string, parentId: string, parentKind: 'user' | 'business' }> {
-  let userId: string | null = null
-  try {
-    const me = await ctx.graph(metaGraphUrl(ctx.apiVersion, '/me'), {
-      query: { fields: 'id', access_token: ctx.accessToken },
-    })
-    userId = normalizeAdStudyParentId(me?.id)
-  }
-  catch (err) {
-    if (err instanceof MetaAdsToolError && err.code === 'EXPERIMENT_PARENT_REQUIRED')
-      throw err
-  }
+  options: { adAccountId: string, configuredBusinessId?: string | null },
+): Promise<{ businessId: string, source: 'config' | 'ad_account_business' }> {
+  const fromConfig = normalizeAdStudyParentId(options.configuredBusinessId)
+  if (fromConfig)
+    return { businessId: fromConfig, source: 'config' }
 
-  if (userId) {
-    return { path: adStudiesCreatePath(userId), parentId: userId, parentKind: 'user' }
-  }
-
-  const businessId = normalizeAdStudyParentId(options?.businessId)
-  if (businessId) {
-    return { path: adStudiesCreatePath(businessId), parentId: businessId, parentKind: 'business' }
-  }
+  const node = await ctx.graph(metaGraphUrl(ctx.apiVersion, `/${actPath(options.adAccountId)}`), {
+    query: { fields: 'business', access_token: ctx.accessToken },
+  })
+  const fromAccount = extractBusinessIdFromAdAccountNode(node)
+  if (fromAccount)
+    return { businessId: fromAccount, source: 'ad_account_business' }
 
   throw new MetaAdsToolError(
     'EXPERIMENT_PARENT_REQUIRED',
-    'A Graph não aceita POST /me/ad_studies. Não foi possível resolver o user id do token (GET /me?fields=id) nem business_id na integração Meta deste tenant. Reconecte o OAuth ou grave o business_id da BM na integração.',
+    'Não foi possível resolver o business_id da BM que possui a ad account. Grave business_id na integração Meta ou confirme GET act_{id}?fields=business (campo oficial `business`). Creative Tests exigem POST /{business_id}/ad_studies — não /me nem /{user_id}.',
     400,
+    { adAccountId: actPath(options.adAccountId) },
   )
+}
+
+/**
+ * Resolve POST parent for Ad Studies — Business Ad Studies only.
+ */
+export async function resolveAdStudyCreatePath(
+  ctx: ExperimentServiceContext,
+  options: { adAccountId: string, businessId?: string | null },
+): Promise<{ path: string, parentId: string, parentKind: 'business', source: 'config' | 'ad_account_business' }> {
+  const resolved = await resolveOwningBusinessId(ctx, {
+    adAccountId: options.adAccountId,
+    configuredBusinessId: options.businessId,
+  })
+  return {
+    path: adStudiesCreatePath(resolved.businessId),
+    parentId: resolved.businessId,
+    parentKind: 'business',
+    source: resolved.source,
+  }
 }
 
 export async function createExperiment(
@@ -658,6 +753,51 @@ export async function createExperiment(
   catch (err) {
     enrichMetaGraphWriteError(err, body)
   }
+}
+
+/**
+ * Marketing API delete for ads Blimber copied for a study (POST status=DELETED).
+ * Never deletes protectAdIds (the original baseAdId).
+ */
+export async function deleteCopiedAdsForFailedStudy(
+  ctx: ExperimentServiceContext,
+  copiedAdIds: string[],
+  options: { protectAdIds: Array<string | null | undefined> },
+): Promise<{ deleted: string[], failed: { adId: string, message: string }[], skippedProtected: string[] }> {
+  const protectedIds = new Set(
+    options.protectAdIds.map(id => String(id || '').trim()).filter(Boolean),
+  )
+  const deleted: string[] = []
+  const failed: { adId: string, message: string }[] = []
+  const skippedProtected: string[] = []
+  const seen = new Set<string>()
+
+  for (const raw of copiedAdIds) {
+    const adId = String(raw || '').trim()
+    if (!adId || seen.has(adId))
+      continue
+    seen.add(adId)
+    if (protectedIds.has(adId)) {
+      skippedProtected.push(adId)
+      continue
+    }
+    try {
+      await ctx.graph(metaGraphUrl(ctx.apiVersion, `/${adId}`), {
+        method: 'POST',
+        query: { access_token: ctx.accessToken },
+        body: { status: 'DELETED' },
+      })
+      deleted.push(adId)
+    }
+    catch (err) {
+      failed.push({
+        adId,
+        message: err instanceof Error ? err.message : 'Falha ao remover cópia do experimento.',
+      })
+    }
+  }
+
+  return { deleted, failed, skippedProtected }
 }
 
 export async function copyAdForExperiment(
