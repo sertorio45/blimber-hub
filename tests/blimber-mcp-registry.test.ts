@@ -357,6 +357,7 @@ describe('blimber unified MCP registry + openapi', () => {
       'searchInterests',
       'searchGeolocations',
       'listCustomAudiences',
+      'createCustomAudience',
       'listCampaigns',
       'createCampaign',
       'getCampaign',

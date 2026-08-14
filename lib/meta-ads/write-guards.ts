@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { MetaAdsToolError } from './types'
 import { normalizeMetaAdAccountId } from './graph'
+import { buildMetaWriteReadiness } from './integration'
 import {
   getMetaGptBulkMax,
   getMetaGptBudgetDailyMaxCents,
@@ -225,6 +226,29 @@ export function assertConfirmDelete(confirmDelete: unknown): void {
       'CONFIRM_DELETE_REQUIRED',
       'Exclusão em massa exige confirmDelete: true após preview e confirmação explícita do usuário (listar IDs).',
       400,
+    )
+  }
+}
+
+/**
+ * Enforce ads_management from stored granted_scopes (no new OAuth).
+ * Unknown/empty scopes: allow if a user token exists (same as write_readiness).
+ */
+export function assertMetaAdsManagementReady(params: {
+  grantedScopes: unknown
+  hasAccessToken: boolean
+}): void {
+  const readiness = buildMetaWriteReadiness({
+    hasAccessToken: params.hasAccessToken,
+    hasPageToken: true,
+    grantedScopes: params.grantedScopes,
+  })
+  if (!readiness.ads_management) {
+    throw new MetaAdsToolError(
+      'META_PERMISSION_MISSING',
+      'Escopo ads_management ausente na integração. Reconecte o OAuth Meta com gerenciamento de anúncios.',
+      403,
+      { missing: ['ads_management'], write_readiness: readiness },
     )
   }
 }

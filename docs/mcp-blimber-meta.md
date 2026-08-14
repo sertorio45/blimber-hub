@@ -95,6 +95,11 @@ Prefira as rotas REST `/api/gpt/meta/*` documentadas no OpenAPI.
 | `meta_search_interests` | read | Busca interesses (id) para targeting |
 | `meta_search_geolocations` | read | Busca cidades/regiões (key) |
 | `meta_list_custom_audiences` | read | Custom audiences da ad account |
+| `meta_create_custom_audience` | write | Cria público IG/Page/Website/Lead/Lista/LAL (dryRun default true) |
+| `meta_create_custom_audiences_batch` | write | Sequencial succeeded/failed (via invoke) |
+| `meta_update_custom_audience` | write | Nome/descrição/rule |
+| `meta_delete_custom_audience` | write | Exclui com confirmDelete; recusa se em uso |
+| `meta_get_custom_audience_usage` | read | Ads/lookalikes vinculados |
 | `meta_update_campaign_status` | write | ACTIVE/PAUSED (confirmação) |
 | `meta_update_adset_status` | write | ACTIVE/PAUSED (confirmação) |
 | `meta_update_ad_status` | write | ACTIVE/PAUSED (confirmação) |

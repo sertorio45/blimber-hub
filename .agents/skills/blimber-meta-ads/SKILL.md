@@ -58,6 +58,10 @@ description: >-
 | `meta_search_interests` | Busca interesses Meta (id) para targeting custom |
 | `meta_search_geolocations` | Busca cidades/regiões (key) para geo_locations |
 | `meta_list_custom_audiences` | Lista custom audiences da ad account |
+| `meta_create_custom_audience` | Cria público IG/Page/Website/Lead/Lista/LAL (dryRun true). Alias `ads_meta_create_custom_audience` |
+| `meta_create_custom_audiences_batch` | Vários públicos em sequência (`succeeded`/`failed`) |
+| `meta_update_custom_audience` / `meta_delete_custom_audience` | Update/delete (confirmDelete; recusa se em uso) |
+| `meta_get_custom_audience_usage` | Ads/lookalikes que usam o público |
 | `meta_create_ad` | Criar criativo IMAGE\|VIDEO\|CAROUSEL\|DYNAMIC_CREATIVE_LEGACY\|CATALOG (+ Advantage+) ou ad via `creativeId`; WEBSITE/WhatsApp CTWA; default PAUSED + dryRun true |
 | `meta_update_ad_creative_copy` | Copy via novo creative |
 | `meta_update_ad_media` | IMAGE\|VIDEO\|CAROUSEL via novo creative |
@@ -72,7 +76,7 @@ description: >-
 | `meta_update_adset_status` | ACTIVE / PAUSED |
 | `meta_update_ad_status` | ACTIVE / PAUSED |
 
-OpenAPI: `gpt/blimber/openapi-ads.yaml` (`createCampaign`, `createAdset`, `createAd`, `searchInterests`, `searchGeolocations`, `listCustomAudiences`, `updateAdsetStatus`, `updateAdsetBudget`, `updateAdCreativeCopy`, `previewBulkDelete`, `executeBulkDelete`, …; overflow via `invokeMetaTool`: capabilities, upload, catalogs, product sets, experiments)  
+OpenAPI: `gpt/blimber/openapi-ads.yaml` (`createCampaign`, `createAdset`, `createAd`, `searchInterests`, `searchGeolocations`, `listCustomAudiences`, `createCustomAudience`, `updateAdsetStatus`, `updateAdsetBudget`, `updateAdCreativeCopy`, `previewBulkDelete`, `executeBulkDelete`, …; overflow via `invokeMetaTool`: capabilities, upload, catalogs, audience update/delete/usage/batch, experiments)  
 Catálogo: `GET /api/gpt/meta/tools`
 
 `createAd.creativeType`: IMAGE (default) | VIDEO | CAROUSEL | DYNAMIC_CREATIVE_LEGACY | CATALOG — ou `creativeId` XOR. Upload HTTPS opcional (`imageUrl`/`videoUrl`) com SSRF; dryRun não faz upload.  
@@ -92,7 +96,7 @@ Catálogo: `GET /api/gpt/meta/tools`
 1. `searchTenants` (se não houver UUID) → confirmar cliente  
 2. `meta_list_integrations` → confirmar Meta pronto / write_readiness  
 3. `meta_list_campaigns` / adsets / ads ou `meta_get_insights`  
-4. Targeting custom: `meta_search_interests` / `meta_search_geolocations` (opcional `meta_list_custom_audiences`) → montar `targeting` com IDs/keys → `meta_create_adset` ou `meta_update_adset_targeting`  
+4. Targeting custom: `meta_search_interests` / `meta_search_geolocations` / `meta_list_custom_audiences` → IDs em `targeting`. Criar públicos: `meta_create_custom_audience` (dryRun → confirm). Depois `meta_create_adset` ou `meta_update_adset_targeting`  
 5. Pausar/ativar: listar ou detalhar → confirmação → tool de status (`dryRun` opcional)  
 6. Criar/editar: preview (`dryRun` default) → confirmar → `dryRun: false`  
 7. Bulk delete: `meta_preview_bulk_delete` → listar IDs ao usuário → `meta_execute_bulk_delete`

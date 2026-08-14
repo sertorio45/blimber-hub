@@ -19,6 +19,7 @@ const OPENAPI_TO_META: Record<string, string> = {
   searchInterests: 'meta_search_interests',
   searchGeolocations: 'meta_search_geolocations',
   listCustomAudiences: 'meta_list_custom_audiences',
+  createCustomAudience: 'meta_create_custom_audience',
   updateCampaignStatus: 'meta_update_campaign_status',
   updateAdsetStatus: 'meta_update_adset_status',
   updateAdStatus: 'meta_update_ad_status',

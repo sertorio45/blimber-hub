@@ -68,6 +68,27 @@ import {
 } from './bulk-delete-preview'
 import { logMetaWriteAudit } from './write-audit'
 import {
+  metaCreateCustomAudience,
+  metaCreateCustomAudiencesBatch,
+  metaCreateCustomAudienceSchema,
+  metaCreateCustomAudiencesBatchSchema,
+  metaDeleteCustomAudience,
+  metaDeleteCustomAudienceSchema,
+  metaGetCustomAudienceUsage,
+  metaGetCustomAudienceUsageSchema,
+  metaUpdateCustomAudience,
+  metaUpdateCustomAudienceSchema,
+} from './custom-audiences'
+
+export {
+  metaCreateCustomAudience,
+  metaCreateCustomAudiencesBatch,
+  metaDeleteCustomAudience,
+  metaGetCustomAudienceUsage,
+  metaUpdateCustomAudience,
+}
+
+import {
   assertAdAccountOwnership,
   assertBudgetIncreaseAllowed,
   assertBulkItemLimit,
@@ -1106,6 +1127,11 @@ export type MetaToolName =
   | 'meta_search_interests'
   | 'meta_search_geolocations'
   | 'meta_list_custom_audiences'
+  | 'meta_create_custom_audience'
+  | 'meta_create_custom_audiences_batch'
+  | 'meta_update_custom_audience'
+  | 'meta_delete_custom_audience'
+  | 'meta_get_custom_audience_usage'
   | 'meta_update_campaign_status'
   | 'meta_update_adset_status'
   | 'meta_update_ad_status'
@@ -1372,7 +1398,7 @@ export async function metaListCustomAudiences(
     metaGraphUrl(creds.apiVersion, `/${actPath(creds.adAccountId)}/customaudiences`),
     {
       query: {
-        fields: 'id,name,subtype,approximate_count,delivery_status,time_created,time_updated',
+        fields: 'id,name,subtype,description,approximate_count,approximate_count_lower_bound,approximate_count_upper_bound,delivery_status,operation_status,time_created,time_updated',
         limit: input.limit,
         access_token: creds.accessToken,
       },
@@ -1383,10 +1409,20 @@ export async function metaListCustomAudiences(
     id: String(row.id || ''),
     name: String(row.name || row.id || ''),
     subtype: row.subtype != null ? String(row.subtype) : null,
+    description: row.description != null ? String(row.description) : null,
     approximate_count: row.approximate_count != null && Number.isFinite(Number(row.approximate_count))
       ? Number(row.approximate_count)
       : null,
+    approximate_count_lower_bound: row.approximate_count_lower_bound != null
+      && Number.isFinite(Number(row.approximate_count_lower_bound))
+      ? Number(row.approximate_count_lower_bound)
+      : null,
+    approximate_count_upper_bound: row.approximate_count_upper_bound != null
+      && Number.isFinite(Number(row.approximate_count_upper_bound))
+      ? Number(row.approximate_count_upper_bound)
+      : null,
     delivery_status: row.delivery_status ?? null,
+    operation_status: row.operation_status ?? null,
     time_created: row.time_created != null ? String(row.time_created) : null,
     time_updated: row.time_updated != null ? String(row.time_updated) : null,
   })).filter((row: { id: string }) => Boolean(row.id))
@@ -4058,6 +4094,11 @@ export const META_TOOL_HANDLERS: Record<MetaToolName, ToolHandler> = {
   meta_search_interests: metaSearchInterests,
   meta_search_geolocations: metaSearchGeolocations,
   meta_list_custom_audiences: metaListCustomAudiences,
+  meta_create_custom_audience: metaCreateCustomAudience,
+  meta_create_custom_audiences_batch: metaCreateCustomAudiencesBatch,
+  meta_update_custom_audience: metaUpdateCustomAudience,
+  meta_delete_custom_audience: metaDeleteCustomAudience,
+  meta_get_custom_audience_usage: metaGetCustomAudienceUsage,
   meta_update_campaign_status: metaUpdateCampaignStatus,
   meta_update_adset_status: metaUpdateAdsetStatus,
   meta_update_ad_status: metaUpdateAdStatus,
@@ -4092,6 +4133,11 @@ export const META_TOOL_SCHEMAS: Record<MetaToolName, z.ZodTypeAny> = {
   meta_search_interests: metaSearchInterestsSchema,
   meta_search_geolocations: metaSearchGeolocationsSchema,
   meta_list_custom_audiences: metaListCustomAudiencesSchema,
+  meta_create_custom_audience: metaCreateCustomAudienceSchema,
+  meta_create_custom_audiences_batch: metaCreateCustomAudiencesBatchSchema,
+  meta_update_custom_audience: metaUpdateCustomAudienceSchema,
+  meta_delete_custom_audience: metaDeleteCustomAudienceSchema,
+  meta_get_custom_audience_usage: metaGetCustomAudienceUsageSchema,
   meta_update_campaign_status: metaUpdateCampaignStatusSchema,
   meta_update_adset_status: metaUpdateAdsetStatusSchema,
   meta_update_ad_status: metaUpdateAdStatusSchema,
@@ -4135,7 +4181,17 @@ export const META_TOOL_DESCRIPTIONS: Record<MetaToolName, string> = {
   meta_search_geolocations:
     'Busca cidades/regiões Meta (key+name+country_code) via Graph adgeolocation. Use key em targeting.geo_locations.cities|regions.',
   meta_list_custom_audiences:
-    'Lista custom audiences da ad account (id+name+subtype). Use ids em targeting.custom_audiences.',
+    'Lista custom audiences da ad account (id+name+subtype+contagem). Use ids em targeting.custom_audiences.',
+  meta_create_custom_audience:
+    'Cria público Meta (INSTAGRAM|FACEBOOK_PAGE|WEBSITE|LEAD_FORM|CUSTOMER_LIST|LOOKALIKE). event amigável; dryRun default true; confirm+confirmTenantId. Alias ads_meta_create_custom_audience.',
+  meta_create_custom_audiences_batch:
+    'Cria vários públicos em sequência (succeeded[]/failed[], sem transação). Mesmos campos por item. dryRun default true.',
+  meta_update_custom_audience:
+    'Atualiza nome/descrição/rule de um público (ownership da ad account). dryRun default true.',
+  meta_delete_custom_audience:
+    'Exclui público. Exige confirm+confirmTenantId+confirmDelete. Recusa se em uso (ads/lookalikes). dryRun default true.',
+  meta_get_custom_audience_usage:
+    'Lista ads e lookalikes que usam o público. Consulte antes de excluir.',
   meta_update_campaign_status:
     'PAUSA ou ATIVA campanha (ACTIVE|PAUSED). Exige confirm=true e confirmTenantId=tenantId. dryRun opcional (default false).',
   meta_update_adset_status:

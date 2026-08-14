@@ -6,7 +6,7 @@ info:
     via searchTenants da Ação Marketing. Nunca peça tokens. Mutações: confirm +
     confirmTenantId; create/edit/delete dryRun default true. Bulk: preview →
     IDs → execute. Este YAML é o contrato Ads canônico no ChatGPT.
-  version: 0.7.0
+  version: 0.8.0
   contact:
     name: Blimber Hub
 servers:
@@ -172,6 +172,31 @@ paths:
       responses:
         "200":
           description: Custom audiences (id, name, subtype, approximate_count)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkToolResponse"
+        "401":
+          description: Não autorizado — API key ausente ou inválida
+        "400":
+          description: Requisição inválida — erro de validação ou da ferramenta
+    post:
+      operationId: createCustomAudience
+      summary: Criar custom audience
+      description: >
+        Cria público INSTAGRAM, FACEBOOK_PAGE, WEBSITE, LEAD_FORM, CUSTOMER_LIST
+        ou LOOKALIKE. event amigável (ex. ALL, ENGAGED). dryRun default true.
+        Exige confirm e confirmTenantId. Update/delete/usage via invokeMetaTool.
+      x-openai-isConsequential: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCustomAudienceBody"
+      responses:
+        "200":
+          description: Público criado ou preview dry-run
           content:
             application/json:
               schema:
@@ -1802,6 +1827,67 @@ components:
         dryRun:
           type: boolean
           description: Default true. Execute real só com false após confirmação.
+    CreateCustomAudienceBody:
+      type: object
+      required: [tenantId, sourceType, confirmTenantId, confirm]
+      properties:
+        tenantId:
+          type: string
+          format: uuid
+        adAccountId:
+          type: string
+        name:
+          type: string
+          description: Opcional. Sem nome, gera padrão (ex. IG | Engajamento | 365d).
+        description:
+          type: string
+        sourceType:
+          type: string
+          enum: [INSTAGRAM, FACEBOOK_PAGE, WEBSITE, LEAD_FORM, CUSTOMER_LIST, LOOKALIKE]
+        event:
+          type: string
+          description: >
+            INSTAGRAM ALL|FOLLOWERS|PROFILE_VISIT|ENGAGED|MESSAGED|SAVED.
+            PAGE FOLLOWERS|ENGAGED|PAGE_VISIT|POST_ENGAGEMENT|CTA_CLICK|MESSAGED|SAVED.
+            WEBSITE ALL_VISITORS|VISITORS_BY_URL|ViewContent|Lead|AddToCart|InitiateCheckout|Purchase|CompleteRegistration.
+            LEAD_FORM OPENED|DROPOFF|SUBMITTED.
+        retentionDays:
+          type: integer
+          description: Dias (convertido a segundos). Seguidores = 0.
+        instagramAccountId:
+          type: string
+        pageId:
+          type: string
+        pixelId:
+          type: string
+        leadFormId:
+          type: string
+        urlContains:
+          type: string
+        originAudienceId:
+          type: string
+          description: Seed do lookalike (não pode ser outro LAL).
+        lookalikeRatio:
+          type: number
+          description: 0.01 a 0.20 (1% a 20%).
+        lookalikeCountry:
+          type: string
+          description: ISO-2 (default BR).
+        prefill:
+          type: boolean
+        duplicateStrategy:
+          type: string
+          enum: [ERROR, RETURN_EXISTING, CREATE_ANYWAY]
+          default: ERROR
+        confirmTenantId:
+          type: string
+          format: uuid
+        confirm:
+          type: boolean
+          enum: [true]
+        dryRun:
+          type: boolean
+          description: Default true. Criação real exige false.
     InvokeBody:
       type: object
       required: [tool, arguments]
@@ -1810,7 +1896,8 @@ components:
           type: string
           description: >
             Nome canônico da tool MCP/HTTP. Tools sem rota REST dedicada
-            (capabilities, upload, catalogs, product sets, experiments) só via invoke.
+            (capabilities, upload, catalogs, experiments, audience update/delete)
+            só via invoke.
           enum:
             - meta_list_integrations
             - meta_list_ad_accounts
@@ -1822,6 +1909,11 @@ components:
             - meta_search_interests
             - meta_search_geolocations
             - meta_list_custom_audiences
+            - meta_create_custom_audience
+            - meta_create_custom_audiences_batch
+            - meta_update_custom_audience
+            - meta_delete_custom_audience
+            - meta_get_custom_audience_usage
             - meta_update_campaign_status
             - meta_update_adset_status
             - meta_update_ad_status
