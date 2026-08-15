@@ -184,7 +184,7 @@ export function buildHubActions(input: {
       title: 'WhatsApp',
       description: 'Conversas e campanhas',
       to: '/whatsapp/conversations',
-      icon: 'lucide:message-circle',
+      icon: '/icons/modules/inbox/inbox.svg',
       primary: !has('crm'),
     })
   }

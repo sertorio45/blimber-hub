@@ -210,7 +210,7 @@ export const navMenu: NavMenu[] = [
     items: [
       {
         title: 'WhatsApp',
-        icon: 'i-lucide-message-circle',
+        icon: '/icons/modules/inbox/inbox.svg',
         roles: ['admin', 'funcionario', 'cliente', 'atendente'],
         children: [
           { title: 'Painel', icon: 'i-lucide-layout-dashboard', link: '/whatsapp/dashboard' },

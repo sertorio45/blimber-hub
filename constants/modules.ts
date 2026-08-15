@@ -48,7 +48,7 @@ export const MODULE_META: Record<string, ModuleMeta> = {
   whatsapp: {
     slug: 'whatsapp',
     title: 'WhatsApp',
-    icon: 'lucide:message-circle',
+    icon: '/icons/modules/inbox/inbox.svg',
     basePath: '/whatsapp',
     defaultPath: '/whatsapp/dashboard',
   },

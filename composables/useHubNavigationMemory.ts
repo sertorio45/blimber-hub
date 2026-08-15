@@ -51,7 +51,7 @@ const DESTINATION_CATALOG: Array<{ prefix: string, title: string, icon: string }
   { prefix: '/crm', title: 'CRM', icon: '/icons/modules/crm/crm.svg' },
   { prefix: '/whatsapp/conversations', title: 'Conversas', icon: 'lucide:messages-square' },
   { prefix: '/whatsapp/dashboard', title: 'Painel WhatsApp', icon: 'lucide:layout-dashboard' },
-  { prefix: '/whatsapp', title: 'WhatsApp', icon: 'lucide:message-circle' },
+  { prefix: '/whatsapp', title: 'WhatsApp', icon: '/icons/modules/inbox/inbox.svg' },
   { prefix: '/marketing/approvals', title: 'Aprovações', icon: 'lucide:badge-check' },
   { prefix: '/marketing/production/tasks', title: 'Filas de produção', icon: 'lucide:list-todo' },
   { prefix: '/marketing/production', title: 'Produção', icon: 'lucide:kanban' },
