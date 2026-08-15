@@ -193,7 +193,7 @@ export function buildHubActions(input: {
       title: 'Marketing',
       description: 'Calendário e posts',
       to: '/marketing',
-      icon: 'lucide:megaphone',
+      icon: '/icons/modules/marketing/marketing.svg',
     })
   }
   if (has('article')) {

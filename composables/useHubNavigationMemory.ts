@@ -62,7 +62,7 @@ const DESTINATION_CATALOG: Array<{ prefix: string, title: string, icon: string }
   { prefix: '/marketing/settings', title: 'Configurações de Marketing', icon: 'lucide:settings' },
   { prefix: '/marketing/logs', title: 'Logs de marketing', icon: 'lucide:scroll-text' },
   { prefix: '/marketing/integrations', title: 'Integrações', icon: 'lucide:plug' },
-  { prefix: '/marketing', title: 'Marketing', icon: 'lucide:megaphone' },
+  { prefix: '/marketing', title: 'Marketing', icon: '/icons/modules/marketing/marketing.svg' },
   { prefix: '/articles', title: 'Artigos', icon: 'lucide:book-a' },
   { prefix: '/settings', title: 'Configurações', icon: 'lucide:settings' },
 ]

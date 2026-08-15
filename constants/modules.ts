@@ -29,7 +29,7 @@ export const MODULE_META: Record<string, ModuleMeta> = {
   marketing: {
     slug: 'marketing',
     title: 'Marketing',
-    icon: 'lucide:megaphone',
+    icon: '/icons/modules/marketing/marketing.svg',
     basePath: '/marketing',
     defaultPath: '/marketing',
   },

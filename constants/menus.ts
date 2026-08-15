@@ -29,7 +29,7 @@ export const navMenu: NavMenu[] = [
     items: [
       {
         title: 'Marketing',
-        icon: 'i-lucide-megaphone',
+        icon: '/icons/modules/marketing/marketing.svg',
         roles: ['admin', 'funcionario', 'cliente', 'atendente'],
         /**
          * Organic / editorial product tree, plus Ads submenu (ETAPA 2)
