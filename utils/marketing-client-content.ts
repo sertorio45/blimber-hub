@@ -20,6 +20,11 @@ export function clientPortalPostsListQuery(options: {
   return { exclude_editorial_status: 'draft' }
 }
 
+/** Client portal: “Ir para aprovar” / filled Approvals shortcut only with a non-empty inbox. */
+export function shouldShowClientApproveAction(pendingCount: number): boolean {
+  return pendingCount > 0
+}
+
 export function includeClientPortalBoardItem(
   mvpStatus: MarketingMvpStatus | string | null | undefined,
   options: {

@@ -13,6 +13,7 @@ import {
   previewUrl,
   uniqueApprovalPreviewAssets,
 } from '@/utils/marketing-social-preview'
+import { shouldShowClientApproveAction } from '~/utils/marketing-client-content'
 
 definePageMeta({
   middleware: ['auth'],
@@ -59,6 +60,9 @@ const { data: pendingApprovals } = useMarketingFetch({
 })
 
 const pendingApprovalCount = computed(() => pendingApprovals.value.length)
+const showClientApproveAction = computed(() =>
+  shouldShowClientApproveAction(pendingApprovalCount.value),
+)
 const pendingApprovalPreviews = computed(() =>
   pendingApprovals.value.slice(0, 3).map((item: any) => {
     const assets = uniqueApprovalPreviewAssets(item.raw || {
@@ -80,8 +84,11 @@ const statusCards = computed(() => {
     ? ['aprovacao', 'agendado', 'publicado', 'erro']
     : ['rascunho', 'producao', 'aprovacao', 'agendado', 'publicado', 'erro']
 
-  const linkFor = (status: MarketingMvpStatus) => {
-    if (status === 'aprovacao' && (canClientApprove.value || !isClientExperience.value))
+  const linkFor = (status: MarketingMvpStatus): string | null => {
+    if (status === 'aprovacao' && canClientApprove.value)
+      return showClientApproveAction.value ? '/marketing/approvals' : null
+
+    if (status === 'aprovacao' && !isClientExperience.value)
       return '/marketing/approvals'
 
     if (isClientExperience.value)
@@ -103,7 +110,7 @@ const statusCards = computed(() => {
     link: linkFor(status),
     highlight: (status === 'aprovacao' || status === 'erro') && (
       status === 'aprovacao' && canClientApprove.value
-        ? pendingApprovalCount.value > 0
+        ? showClientApproveAction.value
         : (byStatus?.[status] || 0) > 0
     ),
   }))
@@ -150,7 +157,11 @@ const statusCards = computed(() => {
               : 'Nada para aprovar agora' }}
           </CardDescription>
         </div>
-        <Button class="shrink-0" @click="navigateTo('/marketing/approvals')">
+        <Button
+          v-if="showClientApproveAction"
+          class="shrink-0"
+          @click="navigateTo('/marketing/approvals')"
+        >
           Ir para aprovar
           <Icon name="lucide:arrow-right" class="ml-2 h-4 w-4" />
         </Button>
@@ -191,10 +202,18 @@ const statusCards = computed(() => {
     </Card>
 
     <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-      <NuxtLink v-for="card in statusCards" :key="card.status" :to="card.link">
+      <component
+        :is="card.link ? 'NuxtLink' : 'div'"
+        v-for="card in statusCards"
+        :key="card.status"
+        :to="card.link || undefined"
+      >
         <Card
-          class="h-full transition-colors hover:bg-muted/40"
-          :class="{ 'border-primary/40': card.highlight }"
+          class="h-full"
+          :class="{
+            'transition-colors hover:bg-muted/40': Boolean(card.link),
+            'border-primary/40': card.highlight,
+          }"
         >
           <CardContent class="flex items-center gap-4 p-6">
             <MarketingMvpStatusBadge :status="card.status" />
@@ -208,7 +227,7 @@ const statusCards = computed(() => {
             </div>
           </CardContent>
         </Card>
-      </NuxtLink>
+      </component>
     </div>
 
     <div
@@ -273,8 +292,7 @@ const statusCards = computed(() => {
         <CardContent class="grid gap-3 sm:grid-cols-2">
           <template v-if="isClientExperience">
             <Button
-              v-if="workspace.can('marketing.social.approval.client')"
-              :variant="pendingApprovalCount ? 'default' : 'outline'"
+              v-if="workspace.can('marketing.social.approval.client') && showClientApproveAction"
               class="h-auto justify-start p-4"
               @click="navigateTo('/marketing/approvals')"
             >
@@ -282,9 +300,7 @@ const statusCards = computed(() => {
               <span class="text-left">
                 <span class="block font-medium">Aprovações</span>
                 <span class="block text-xs text-muted-foreground">
-                  {{ pendingApprovalCount
-                    ? `${pendingApprovalCount} peça${pendingApprovalCount === 1 ? '' : 's'} aguardando você`
-                    : 'Revise peças enviadas para você' }}
+                  {{ pendingApprovalCount }} peça{{ pendingApprovalCount === 1 ? '' : 's' }} aguardando você
                 </span>
               </span>
             </Button>

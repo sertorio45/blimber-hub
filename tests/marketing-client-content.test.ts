@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   clientPortalPostsListQuery,
   includeClientPortalBoardItem,
+  shouldShowClientApproveAction,
 } from '~/utils/marketing-client-content'
 
 describe('clientPortalPostsListQuery', () => {
@@ -31,6 +32,17 @@ describe('clientPortalPostsListQuery', () => {
       isClientExperience: true,
       mvpStatus: 'rascunho',
     })).toEqual({})
+  })
+})
+
+describe('shouldShowClientApproveAction', () => {
+  it('hides go-approve CTAs when the inbox is empty', () => {
+    expect(shouldShowClientApproveAction(0)).toBe(false)
+  })
+
+  it('shows go-approve CTAs when there are posts to review', () => {
+    expect(shouldShowClientApproveAction(1)).toBe(true)
+    expect(shouldShowClientApproveAction(4)).toBe(true)
   })
 })
 
