@@ -2,6 +2,18 @@ import { createSocialNotification, writeSocialAudit } from '~/server/utils/socia
 import { publishToLinkedin } from '~/server/utils/social-publishers/linkedin-publisher'
 import { publishToMeta } from '~/server/utils/social-publishers/meta-publisher'
 
+/** Publication media for a channel: variant-linked rows only (not reference assets). */
+export function mediaAssetsForVariant(
+  snapshot: { assets?: Array<{ variant_id?: string | null, position?: number, media_assets?: unknown }> } | null | undefined,
+  variantId: string,
+) {
+  return (snapshot?.assets || [])
+    .filter(row => row.variant_id === variantId)
+    .sort((a, b) => Number(a.position) - Number(b.position))
+    .map(row => row.media_assets)
+    .filter(Boolean)
+}
+
 function retryDelay(attempt: number) {
   const minutes = Math.min(6 * 60, 2 ** Math.max(0, attempt - 1))
   return new Date(Date.now() + minutes * 60 * 1000).toISOString()
@@ -70,10 +82,7 @@ export async function processPublicationJob(
 
   const snapshot = version?.snapshot || {}
   const variant = (snapshot.variants || []).find((row: any) => row.id === claimed.variant_id)
-  const assetRelations = (snapshot.assets || [])
-    .filter((row: any) => row.variant_id === claimed.variant_id)
-    .sort((a: any, b: any) => Number(a.position) - Number(b.position))
-  const assets = assetRelations.map((row: any) => row.media_assets).filter(Boolean)
+  const assets = mediaAssetsForVariant(snapshot, claimed.variant_id)
 
   if (!variant || !account) {
     const message = 'Snapshot, variante ou conta social não encontrado'

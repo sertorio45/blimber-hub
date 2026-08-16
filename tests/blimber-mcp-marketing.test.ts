@@ -601,7 +601,22 @@ describe('blimber marketing tools (mocked)', () => {
           }
         }
         if (table === 'social_post_variants') {
-          return { delete: deleteFn, insert: insertFn }
+          return {
+            delete: deleteFn,
+            insert: (payload: unknown) => {
+              insertFn(payload)
+              const rows = Array.isArray(payload) ? payload : [payload]
+              return {
+                select: async () => ({
+                  data: rows.map((row: Record<string, unknown>, index: number) => ({
+                    id: `var-${index}`,
+                    ...row,
+                  })),
+                  error: null,
+                }),
+              }
+            },
+          }
         }
         callCount++
         if (callCount === 1) {

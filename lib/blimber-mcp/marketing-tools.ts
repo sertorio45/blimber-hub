@@ -9,6 +9,7 @@ import {
 } from '~/server/utils/media-library-upload'
 import { fetchPublicHttpsMedia, assertPublicMediaUrl } from '~/server/utils/media-url-fetch'
 import { assertPackageAllowsNewPost } from '~/server/utils/social-packages'
+import { validateSocialPostAssets } from '~/server/utils/social-post-assets'
 import {
   assertBlimberWriteConfirmation,
   blimberWriteConfirmationFields,
@@ -126,6 +127,185 @@ function actorPreviewNote(actorUserId: string | null): string {
     : 'Execute (dryRun=false) exige actorUserId no body ou BLIMBER_MCP_ACTOR_USER_ID no servidor.'
 }
 
+function throwMcpFromH3(error: unknown, fallback = 'Mídia inválida'): never {
+  if (error instanceof BlimberMcpError)
+    throw error
+  const statusMessage = String((error as any)?.statusMessage || (error as any)?.message || fallback)
+  const statusCode = Number((error as any)?.statusCode) || 400
+  throw new BlimberMcpError('INVALID_ASSETS', statusMessage, statusCode)
+}
+
+async function assertMcpSocialPostAssets(
+  client: BlimberMcpToolContext['client'],
+  tenantId: string,
+  variants: Array<{ platform?: 'facebook' | 'instagram' | 'linkedin', format: 'static' | 'carousel' | 'video' | 'story', assetIds: string[] }>,
+  referenceAssetIds: string[],
+) {
+  try {
+    await validateSocialPostAssets(client, tenantId, variants, referenceAssetIds)
+  }
+  catch (error) {
+    throwMcpFromH3(error)
+  }
+}
+
+type PostFormat = 'static' | 'carousel' | 'video' | 'story'
+
+export type PlannedInlineAsset = {
+  source: 'url' | 'base64'
+  sourceUrl: string | null
+  name: string
+  kind: 'image' | 'video' | 'unknown'
+  sizeBytes: number | null
+}
+
+function assertPublicationNeedsChannel(
+  publicationCount: number,
+  accountId?: string,
+  platform?: string,
+) {
+  if (publicationCount > 0 && (!accountId || !platform)) {
+    throw new BlimberMcpError(
+      'VARIANT_REQUIRED',
+      'Peças de publicação (assetIds, sourceUrls, sourceBase64) exigem accountId e platform. Use referenceAssetIds só para referências de arte (não publicadas).',
+      400,
+    )
+  }
+}
+
+function assertPlannedPublicationCount(format: PostFormat, count: number) {
+  if (format === 'carousel' && count > 10) {
+    throw new BlimberMcpError(
+      'INVALID_ASSETS',
+      'Carrosséis aceitam no máximo 10 peças (biblioteca + upload inline).',
+      400,
+    )
+  }
+  if (format !== 'carousel' && count > 1) {
+    throw new BlimberMcpError(
+      'INVALID_ASSETS',
+      'Post estático, story ou vídeo aceita somente um arquivo. Use format=carousel para várias imagens.',
+      400,
+    )
+  }
+}
+
+async function previewInlineUploads(input: {
+  sourceUrls: string[]
+  sourceBase64: string[]
+}): Promise<PlannedInlineAsset[]> {
+  const planned: PlannedInlineAsset[] = []
+
+  for (const sourceUrl of input.sourceUrls) {
+    await assertPublicMediaUrl(sourceUrl, false)
+    const name = filenameFromUrl(sourceUrl)
+    let kind: PlannedInlineAsset['kind'] = 'unknown'
+    try {
+      kind = assertLibraryUploadKind(undefined, name, 'publication').kind
+    }
+    catch {
+      kind = 'unknown'
+    }
+    planned.push({
+      source: 'url',
+      sourceUrl,
+      name,
+      kind,
+      sizeBytes: null,
+    })
+  }
+
+  for (const raw of input.sourceBase64) {
+    const decoded = decodeLibraryBase64(raw)
+    const name = 'upload.bin'
+    const mime = decoded.mimeHint || undefined
+    const kind = assertLibraryUploadKind(mime, name, 'publication').kind
+    planned.push({
+      source: 'base64',
+      sourceUrl: null,
+      name,
+      kind,
+      sizeBytes: decoded.buffer.length,
+    })
+  }
+
+  return planned
+}
+
+async function persistInlinePublicationAssets(
+  ctx: BlimberMcpToolContext,
+  input: {
+    tenantId: string
+    createdBy: string
+    sourceUrls: string[]
+    sourceBase64: string[]
+  },
+): Promise<{ ids: string[], uploaded: Array<{ id: string, name: string, source: 'url' | 'base64' }> }> {
+  const ids: string[] = []
+  const uploaded: Array<{ id: string, name: string, source: 'url' | 'base64' }> = []
+
+  const persistOne = async (
+    buffer: Buffer,
+    filename: string,
+    inputMime: string | undefined,
+    source: 'url' | 'base64',
+  ) => {
+    const persisted = await persistLibraryAsset({
+      client: ctx.client,
+      tenantId: input.tenantId,
+      createdBy: input.createdBy,
+      filename,
+      buffer,
+      inputMime,
+      purpose: 'publication',
+      formatHint: 'auto',
+      metadataSource: 'blimber_mcp_create_post',
+    })
+    const id = String(persisted.asset.id)
+    ids.push(id)
+    uploaded.push({ id, name: String(persisted.asset.name || filename), source })
+  }
+
+  try {
+    for (const sourceUrl of input.sourceUrls) {
+      const fetched = await fetchPublicHttpsMedia(sourceUrl)
+      await persistOne(
+        fetched.buffer,
+        fetched.filenameHint || filenameFromUrl(sourceUrl),
+        fetched.contentType,
+        'url',
+      )
+    }
+    for (const raw of input.sourceBase64) {
+      const decoded = decodeLibraryBase64(raw)
+      await persistOne(
+        decoded.buffer,
+        'upload.bin',
+        decoded.mimeHint || undefined,
+        'base64',
+      )
+    }
+  }
+  catch (error) {
+    if (error instanceof BlimberMcpError) {
+      error.details = {
+        ...(typeof error.details === 'object' && error.details ? error.details as Record<string, unknown> : {}),
+        uploadedAssetIds: ids,
+        postCreated: false,
+      }
+      throw error
+    }
+    throw new BlimberMcpError(
+      'UPLOAD_FAILED',
+      error instanceof Error ? error.message : 'Falha no upload inline do post.',
+      400,
+      { uploadedAssetIds: ids, postCreated: false },
+    )
+  }
+
+  return { ids, uploaded }
+}
+
 function mapCampaignRow(row: Record<string, any>, postsCount?: number) {
   return {
     kind: 'editorial' as const,
@@ -212,7 +392,14 @@ export const marketingCreatePostSchema = z.object({
   campaignId: uuid.nullable().optional(),
   scheduledAt: z.string().datetime({ offset: true }).nullable().optional(),
   timezone: z.string().min(1).max(80).default('America/Sao_Paulo'),
+  /** Library IDs (purpose=publication) attached to the channel for Graph/LinkedIn publish. */
+  assetIds: z.array(uuid).max(20).default([]),
+  /** Library IDs (purpose=reference) on the post only — not published. */
   referenceAssetIds: z.array(uuid).max(20).default([]),
+  /** HTTPS URLs uploaded in this call (publication). Same SSRF/size limits as marketing_upload_asset. */
+  sourceUrls: z.array(z.string().url().max(2048)).max(10).default([]),
+  /** Base64 payloads uploaded in this call (publication). Max ~8MB decoded each. */
+  sourceBase64: z.array(z.string().min(8).max(12_000_000)).max(5).default([]),
   /** Optional single-channel draft (requires accountId from listSocialAccounts). */
   accountId: uuid.optional(),
   platform: platformEnum.optional(),
@@ -228,6 +415,8 @@ const variantInputSchema = z.object({
   platform: platformEnum,
   format: formatEnum.default('static'),
   caption: z.string().max(5000).optional(),
+  /** Library publication IDs for this channel (same as Hub UI variant.assetIds). */
+  assetIds: z.array(uuid).max(20).default([]),
 })
 
 export const marketingUpdatePostSchema = z.object({
@@ -243,6 +432,12 @@ export const marketingUpdatePostSchema = z.object({
   timezone: z.string().min(1).max(80).optional(),
   /** Replaces all variants (social channels) linked to this post. */
   variants: z.array(variantInputSchema).max(10).optional(),
+  /** Replaces post-level reference assets (variant_id null). Omit to leave unchanged. */
+  referenceAssetIds: z.array(uuid).max(20).optional(),
+  /** Inline HTTPS uploads; merged into variants[0].assetIds. Requires variants. */
+  sourceUrls: z.array(z.string().url().max(2048)).max(10).default([]),
+  /** Inline base64 uploads; merged into variants[0].assetIds. Requires variants. */
+  sourceBase64: z.array(z.string().min(8).max(12_000_000)).max(5).default([]),
   actorUserId: uuid.optional(),
   ...blimberWriteConfirmationFields,
   ...blimberWriteDryRunField,
@@ -358,12 +553,12 @@ export type MarketingToolName =
 
 export const MARKETING_TOOL_DESCRIPTIONS: Record<MarketingToolName, string> = {
   marketing_list_social_accounts: 'Lista contas sociais ativas do tenant (para variant/accountId).',
-  marketing_list_assets: 'Lista mídias da Biblioteca (ids para referência em posts). Upload: marketing_upload_asset.',
+  marketing_list_assets: 'Lista mídias da Biblioteca (ids para createPost.assetIds publicação ou referenceAssetIds). Upload: marketing_upload_asset.',
   marketing_get_brand_context: 'Lê Brand Context (tom, CTAs, restrições) do Brand Center do tenant.',
   marketing_list_posts: 'Lista posts editoriais (social_posts) do tenant.',
   marketing_get_post: 'Detalhe de um post editorial por postId.',
-  marketing_create_post: 'Cria rascunho de post editorial (dryRun default true sem actor; execute exige actorUserId ou env).',
-  marketing_update_post: 'Atualiza campos de um post draft, incluindo variants/contas sociais (dryRun default true).',
+  marketing_create_post: 'Cria rascunho editorial. assetIds = biblioteca (publicar); sourceUrls/sourceBase64 = upload no mesmo call; referenceAssetIds = só referência. dryRun default true.',
+  marketing_update_post: 'Atualiza draft: variants.assetIds, sourceUrls/sourceBase64 (no 1º canal) e referenceAssetIds. dryRun default true.',
   marketing_delete_post: 'Soft-delete de 1 post editorial (dryRun default true). Isolado por tenant; sem exclusão em massa nem remota.',
   marketing_delete_asset: 'Remove 1 mídia da Biblioteca (storage + DB). dryRun default true. Bloqueia se vinculada a posts.',
   marketing_upload_asset: 'Upload na Biblioteca (HTTPS URL preferencial ou base64). Compressão/storage iguais ao Hub. dryRun default true.',
@@ -459,7 +654,7 @@ export async function marketingListAssets(
   return {
     tenantId: input.tenantId,
     libraryUrl: MARKETING_LIBRARY_URL,
-    note: 'Use marketing_upload_asset (sourceUrl HTTPS) para enviar arquivos. Referencie assetIds nos posts.',
+    note: 'Publicar: createPost.assetIds (biblioteca, purpose=publication) e/ou createPost.sourceUrls/sourceBase64 no mesmo call, com accountId+platform. referenceAssetIds = só referência de arte. Upload avulso: marketing_upload_asset.',
     assets: rows.map((asset: any) => ({
       id: String(asset.id),
       name: asset.name,
@@ -598,20 +793,26 @@ export async function marketingCreatePost(
     }
   }
 
-  if (input.referenceAssetIds.length) {
-    const { data: assets } = await ctx.client
-      .from('media_assets')
-      .select('id')
-      .eq('tenant_id', input.tenantId)
-      .in('id', input.referenceAssetIds)
-    if ((assets || []).length !== input.referenceAssetIds.length) {
-      throw new BlimberMcpError(
-        'INVALID_ASSETS',
-        'Um ou mais referenceAssetIds não pertencem ao tenant.',
-        400,
-      )
-    }
+  if (input.assetIds.length && (!input.accountId || !input.platform)) {
+    throw new BlimberMcpError(
+      'VARIANT_REQUIRED',
+      'Peças de publicação (assetIds) exigem accountId e platform. Use referenceAssetIds só para referências de arte (não publicadas).',
+      400,
+    )
   }
+
+  await assertMcpSocialPostAssets(
+    ctx.client,
+    input.tenantId,
+    input.accountId && input.platform
+      ? [{
+          platform: input.platform,
+          format: input.format,
+          assetIds: input.assetIds,
+        }]
+      : [],
+    input.referenceAssetIds,
+  )
 
   if (input.accountId || input.platform) {
     if (!input.accountId || !input.platform) {
@@ -666,8 +867,10 @@ export async function marketingCreatePost(
               platform: input.platform,
               format: input.format,
               caption: input.caption || input.content,
+              assetIds: input.assetIds,
             }
           : null,
+        assetIds: input.assetIds,
         referenceAssetIds: input.referenceAssetIds,
         packageWarned: packageGate.warned,
       },
@@ -690,6 +893,7 @@ export async function marketingCreatePost(
     throwWriteError(postError)
 
   try {
+    let createdVariantId: string | null = null
     if (input.accountId && input.platform) {
       const { data: createdVariant, error: variantError } = await ctx.client
         .from('social_post_variants')
@@ -712,7 +916,21 @@ export async function marketingCreatePost(
       if (variantError)
         throw new Error(variantError.message)
 
-      void createdVariant
+      createdVariantId = createdVariant?.id || null
+
+      if (createdVariantId && input.assetIds.length) {
+        const { error: assetsError } = await ctx.client
+          .from('social_post_assets')
+          .insert(input.assetIds.map((assetId, position) => ({
+            tenant_id: input.tenantId,
+            post_id: post.id,
+            variant_id: createdVariantId,
+            asset_id: assetId,
+            position,
+          })))
+        if (assetsError)
+          throw new Error(assetsError.message)
+      }
     }
 
     if (input.referenceAssetIds.length) {
@@ -742,6 +960,8 @@ export async function marketingCreatePost(
     dryRun: false as const,
     kind: 'editorial' as const,
     post: mapPostRow(post),
+    assetIds: input.assetIds,
+    referenceAssetIds: input.referenceAssetIds,
     packageWarned: packageGate.warned,
   }
 }
@@ -829,6 +1049,19 @@ export async function marketingUpdatePost(
     }
   }
 
+  if (input.variants || input.referenceAssetIds) {
+    await assertMcpSocialPostAssets(
+      ctx.client,
+      input.tenantId,
+      (input.variants || []).map(v => ({
+        platform: v.platform,
+        format: v.format,
+        assetIds: v.assetIds,
+      })),
+      input.referenceAssetIds || [],
+    )
+  }
+
   if (dryRun) {
     return {
       dryRun: true as const,
@@ -838,6 +1071,7 @@ export async function marketingUpdatePost(
       before: mapPostRow(existing),
       afterPreview: updatePayload,
       variantsPreview: input.variants ?? null,
+      referenceAssetIds: input.referenceAssetIds ?? null,
       notes: ['Reenvie com dryRun=false após confirmação.'],
     }
   }
@@ -867,7 +1101,7 @@ export async function marketingUpdatePost(
     if (input.variants.length) {
       const caption = input.content ?? existing.content ?? ''
       const hashtags = input.hashtags ?? ((existing.metadata as any)?.hashtags || [])
-      const { error: insError } = await ctx.client
+      const { data: createdVariants, error: insError } = await ctx.client
         .from('social_post_variants')
         .insert(input.variants.map(v => ({
           tenant_id: input.tenantId,
@@ -882,8 +1116,52 @@ export async function marketingUpdatePost(
             cta: input.cta?.trim() ?? ((existing.metadata as any)?.cta || ''),
           },
         })))
+        .select('id')
       if (insError)
         throw new BlimberMcpError('DB_ERROR', insError.message, 400)
+
+      const publicationRows = (createdVariants || []).flatMap((created: { id: string }, index: number) => {
+        const assetIds = input.variants![index]?.assetIds || []
+        return assetIds.map((assetId, position) => ({
+          tenant_id: input.tenantId,
+          post_id: input.postId,
+          variant_id: created.id,
+          asset_id: assetId,
+          position,
+        }))
+      })
+      if (publicationRows.length) {
+        const { error: assetsError } = await ctx.client
+          .from('social_post_assets')
+          .insert(publicationRows)
+        if (assetsError)
+          throw new BlimberMcpError('DB_ERROR', assetsError.message, 400)
+      }
+    }
+  }
+
+  if (input.referenceAssetIds) {
+    const { error: delRefError } = await ctx.client
+      .from('social_post_assets')
+      .delete()
+      .eq('post_id', input.postId)
+      .eq('tenant_id', input.tenantId)
+      .is('variant_id', null)
+    if (delRefError)
+      throw new BlimberMcpError('DB_ERROR', delRefError.message, 400)
+
+    if (input.referenceAssetIds.length) {
+      const { error: referenceError } = await ctx.client
+        .from('social_post_assets')
+        .insert(input.referenceAssetIds.map((assetId, position) => ({
+          tenant_id: input.tenantId,
+          post_id: input.postId,
+          variant_id: null,
+          asset_id: assetId,
+          position,
+        })))
+      if (referenceError)
+        throw new BlimberMcpError('DB_ERROR', referenceError.message, 400)
     }
   }
 

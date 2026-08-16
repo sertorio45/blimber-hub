@@ -103,8 +103,8 @@ paths:
       operationId: listMediaAssets
       summary: Listar biblioteca de mídia
       description: >
-        Lista media_assets do tenant (ids para referência). Upload via
-        uploadMediaAsset (sourceUrl HTTPS).
+        Lista media_assets do tenant. IDs de purpose=publication vão em
+        createPost.assetIds (publicar). purpose=reference em referenceAssetIds.
       parameters:
         - name: tenantId
           in: query
@@ -390,13 +390,26 @@ paths:
                   type: string
                   maxLength: 80
                   default: America/Sao_Paulo
+                assetIds:
+                  type: array
+                  maxItems: 20
+                  items:
+                    type: string
+                    format: uuid
+                  description: >
+                    IDs da biblioteca com purpose=publication (listMediaAssets).
+                    Anexa à variant do canal (social_post_assets.variant_id) —
+                    é o que o publicador Graph/LinkedIn envia. Exige accountId
+                    e platform. Não faz upload no create; use uploadMediaAsset antes.
                 referenceAssetIds:
                   type: array
                   maxItems: 20
                   items:
                     type: string
                     format: uuid
-                  description: IDs da biblioteca (listMediaAssets). Sem upload.
+                  description: >
+                    IDs purpose=reference (moodboard). Ficam no post com
+                    variant_id nulo e NÃO são publicados.
                 accountId:
                   type: string
                   format: uuid
@@ -538,6 +551,23 @@ paths:
                         type: string
                         maxLength: 5000
                         description: Per-channel caption. Defaults to post content.
+                      assetIds:
+                        type: array
+                        maxItems: 20
+                        items:
+                          type: string
+                          format: uuid
+                        description: >
+                          IDs purpose=publication da biblioteca para este canal.
+                referenceAssetIds:
+                  type: array
+                  maxItems: 20
+                  items:
+                    type: string
+                    format: uuid
+                  description: >
+                    Substitui referências do post (variant_id nulo). Omita para
+                    não alterar. Array vazio remove as referências.
                 actorUserId:
                   type: string
                   format: uuid

@@ -20,6 +20,7 @@ const TOOL_INPUT_HINTS: Record<MarketingToolName, string[]> = {
     'campaignId?',
     'hashtags?',
     'referenceAssetIds?',
+    'assetIds? (publicação; exige accountId+platform)',
     'accountId+platform?',
     'dryRun? (default true)',
     'actorUserId?',
@@ -34,6 +35,8 @@ const TOOL_INPUT_HINTS: Record<MarketingToolName, string[]> = {
     'campaignId?',
     'dryRun? (default true)',
     'actorUserId?',
+    'variants[] (accountId+platform, assetIds?)',
+    'referenceAssetIds?',
   ],
   marketing_delete_post: [
     'tenantId',

@@ -43,11 +43,12 @@ Preview (`dryRun=true`, default) **não** exige actor. Execute (`dryRun=false`) 
 3. `createEditorialCampaign` com `dryRun: true` → confirmar → `dryRun: false`
 4. `createPost` com `campaignId` da campanha editorial
 
-### 2. Criar post com referência de mídia
+### 2. Criar post com mídia da biblioteca (publicar)
 
-1. `uploadMediaAsset` com `sourceUrl` HTTPS pública (`dryRun: true` → confirmar → `dryRun: false`) **ou** `listMediaAssets` se o arquivo já estiver no Hub
-2. `createPost` com `referenceAssetIds: [...]`
-3. Opcional: `accountId` + `platform` de `listSocialAccounts`
+1. `uploadMediaAsset` com `sourceUrl` HTTPS (`dryRun: true` → confirmar → `dryRun: false`) **ou** `listMediaAssets` (`purpose=publication`) se o arquivo já estiver no Hub
+2. `listSocialAccounts` → `accountId` + `platform`
+3. `createPost` com `assetIds: [...]` (peças finais) **e** `accountId` + `platform`. `referenceAssetIds` é só moodboard (não vai para o Graph).
+4. Agendar/publicar no Hub — o worker gera URL assinada do bucket `marketing-assets` e o Graph busca essa URL (ou o LinkedIn faz download + upload).
 
 ### 3. Editar rascunho
 
