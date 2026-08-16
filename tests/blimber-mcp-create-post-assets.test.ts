@@ -90,16 +90,20 @@ function createPostClient(opts: {
         const insertError = table === 'social_post_assets' && opts.assetsInsertError
           ? { message: opts.assetsInsertError }
           : null
+        const createdId = table === 'social_posts' ? 'post-1' : 'variant-1'
+        const createdRow = {
+          id: createdId,
+          title: (row as any)?.title,
+          ...row as object,
+        }
         return {
           select: () => ({
             single: async () => ({
-              data: {
-                id: table === 'social_posts' ? 'post-1' : 'variant-1',
-                title: (row as any)?.title,
-                ...row as object,
-              },
+              data: createdRow,
               error: null,
             }),
+            then: (resolve: (value: { data: unknown[], error: null }) => unknown) =>
+              Promise.resolve({ data: [createdRow], error: null }).then(resolve),
           }),
           then: (resolve: (value: { error: typeof insertError }) => unknown) =>
             Promise.resolve({ error: insertError }).then(resolve),
@@ -277,6 +281,270 @@ describe('createPost library publication assets', () => {
         },
       ),
     ).rejects.toBeInstanceOf(BlimberMcpError)
+  })
+})
+
+describe('createPost inline library uploads', () => {
+  it('dryRun lists planned URLs without writing', async () => {
+    const { inserts, client } = createPostClient({
+      accounts: [{ id: ACCOUNT_ID, platform: 'instagram' }],
+    })
+
+    const result: any = await marketingCreatePost(
+      { client: client as any },
+      {
+        ...writeBase,
+        accountId: ACCOUNT_ID,
+        platform: 'instagram',
+        format: 'static',
+        sourceUrls: ['https://cdn.example.com/hero.png'],
+        dryRun: true,
+      },
+    )
+
+    expect(result.dryRun).toBe(true)
+    expect(result.preview.plannedAssets.libraryPublicationIds).toEqual([])
+    expect(result.preview.plannedAssets.inlineUploads).toEqual([
+      expect.objectContaining({
+        source: 'url',
+        sourceUrl: 'https://cdn.example.com/hero.png',
+        name: 'hero.png',
+      }),
+    ])
+    expect(result.preview.plannedAssets.attachOrder).toContain('assetIds')
+    expect(inserts.social_posts).toBeUndefined()
+    expect(inserts.media_assets).toBeUndefined()
+  })
+
+  it('rejects private hosts on dryRun (SSRF)', async () => {
+    await expect(
+      marketingCreatePost(
+        { client: createPostClient({ accounts: [{ id: ACCOUNT_ID, platform: 'instagram' }] }).client as any },
+        {
+          ...writeBase,
+          accountId: ACCOUNT_ID,
+          platform: 'instagram',
+          sourceUrls: ['https://127.0.0.1/secret.png'],
+          dryRun: true,
+        },
+      ),
+    ).rejects.toMatchObject({ code: 'MEDIA_URL_SSRF_BLOCKED' })
+  })
+
+  it('rejects inline publication without a social channel', async () => {
+    await expect(
+      marketingCreatePost(
+        { client: createPostClient({}).client as any },
+        {
+          ...writeBase,
+          sourceUrls: ['https://cdn.example.com/hero.png'],
+          dryRun: true,
+        },
+      ),
+    ).rejects.toMatchObject({ code: 'VARIANT_REQUIRED' })
+  })
+
+  it('execute uploads base64 then attaches after existing assetIds', async () => {
+    const { inserts, client } = createPostClient({
+      accounts: [{ id: ACCOUNT_ID, platform: 'instagram' }],
+      assets: [{ id: PUB_ASSET_ID, purpose: 'publication', mime_type: 'image/jpeg' }],
+    })
+
+    const result: any = await marketingCreatePost(
+      { client: client as any },
+      {
+        ...writeBase,
+        accountId: ACCOUNT_ID,
+        platform: 'instagram',
+        format: 'carousel',
+        assetIds: [PUB_ASSET_ID],
+        sourceBase64: [`data:image/png;base64,${PNG_BASE64}`],
+        dryRun: false,
+      },
+    )
+
+    expect(result.assetIds).toEqual([PUB_ASSET_ID, UPLOADED_ASSET_ID])
+    expect(result.uploadedAssetIds).toEqual([UPLOADED_ASSET_ID])
+    expect(inserts.media_assets).toHaveLength(1)
+    expect(inserts.social_post_assets[0]).toEqual([
+      {
+        tenant_id: TENANT_ID,
+        post_id: 'post-1',
+        variant_id: 'variant-1',
+        asset_id: PUB_ASSET_ID,
+        position: 0,
+      },
+      {
+        tenant_id: TENANT_ID,
+        post_id: 'post-1',
+        variant_id: 'variant-1',
+        asset_id: UPLOADED_ASSET_ID,
+        position: 1,
+      },
+    ])
+  })
+
+  it('execute fetches HTTPS URL through the library pipeline', async () => {
+    const fetchImpl = vi.fn(async () => new Response(PNG_BUFFER, {
+      status: 200,
+      headers: { 'content-type': 'image/png', 'content-disposition': 'attachment; filename="hero.png"' },
+    }))
+    vi.stubGlobal('fetch', fetchImpl)
+
+    const { inserts, client } = createPostClient({
+      accounts: [{ id: ACCOUNT_ID, platform: 'instagram' }],
+    })
+
+    const result: any = await marketingCreatePost(
+      { client: client as any },
+      {
+        ...writeBase,
+        accountId: ACCOUNT_ID,
+        platform: 'instagram',
+        format: 'static',
+        sourceUrls: ['https://cdn.example.com/hero.png'],
+        dryRun: false,
+      },
+    )
+
+    expect(fetchImpl).toHaveBeenCalled()
+    expect(result.uploadedAssetIds).toEqual([UPLOADED_ASSET_ID])
+    expect(result.assetIds).toEqual([UPLOADED_ASSET_ID])
+    expect(inserts.media_assets).toHaveLength(1)
+    expect((inserts.media_assets[0] as any).purpose).toBe('publication')
+    expect((inserts.media_assets[0] as any).tenant_id).toBe(TENANT_ID)
+  })
+
+  it('does not create a post when the upload fetch fails', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      throw new Error('network down')
+    }))
+
+    const { inserts, client } = createPostClient({
+      accounts: [{ id: ACCOUNT_ID, platform: 'instagram' }],
+    })
+
+    await expect(
+      marketingCreatePost(
+        { client: client as any },
+        {
+          ...writeBase,
+          accountId: ACCOUNT_ID,
+          platform: 'instagram',
+          sourceUrls: ['https://cdn.example.com/hero.png'],
+          dryRun: false,
+        },
+      ),
+    ).rejects.toMatchObject({
+      details: expect.objectContaining({ postCreated: false }),
+    })
+    expect(inserts.social_posts).toBeUndefined()
+  })
+
+  it('returns post id when attach fails after create', async () => {
+    const { client } = createPostClient({
+      accounts: [{ id: ACCOUNT_ID, platform: 'instagram' }],
+      assets: [{ id: PUB_ASSET_ID, purpose: 'publication', mime_type: 'image/jpeg' }],
+      assetsInsertError: 'fk boom',
+    })
+
+    await expect(
+      marketingCreatePost(
+        { client: client as any },
+        {
+          ...writeBase,
+          accountId: ACCOUNT_ID,
+          platform: 'instagram',
+          assetIds: [PUB_ASSET_ID],
+          dryRun: false,
+        },
+      ),
+    ).rejects.toMatchObject({
+      code: 'ATTACH_FAILED',
+      details: { postId: 'post-1', libraryAssetIds: [PUB_ASSET_ID], uploadedAssetIds: [] },
+    })
+  })
+})
+
+describe('updatePost inline library uploads', () => {
+  const existingPost = {
+    id: POST_ID,
+    title: 'Post A',
+    content: 'Texto',
+    status: 'draft',
+    tenant_id: TENANT_ID,
+    deleted_at: null,
+    metadata: {},
+  }
+
+  it('dryRun previews URLs on the first variant without writing', async () => {
+    const { inserts, client } = createPostClient({
+      accounts: [{ id: ACCOUNT_ID, platform: 'instagram' }],
+      existingPost,
+    })
+
+    const result: any = await marketingUpdatePost(
+      { client: client as any },
+      {
+        tenantId: TENANT_ID,
+        postId: POST_ID,
+        confirm: true,
+        confirmTenantId: TENANT_ID,
+        variants: [{
+          accountId: ACCOUNT_ID,
+          platform: 'instagram',
+          format: 'static',
+          assetIds: [],
+        }],
+        sourceUrls: ['https://cdn.example.com/hero.png'],
+        dryRun: true,
+      },
+    )
+
+    expect(result.dryRun).toBe(true)
+    expect(result.plannedAssets.inlineUploads[0].sourceUrl).toBe('https://cdn.example.com/hero.png')
+    expect(inserts.media_assets).toBeUndefined()
+  })
+
+  it('execute merges uploaded id after variants[0].assetIds', async () => {
+    const { inserts, client } = createPostClient({
+      accounts: [{ id: ACCOUNT_ID, platform: 'instagram' }],
+      assets: [{ id: PUB_ASSET_ID, purpose: 'publication', mime_type: 'image/jpeg' }],
+      existingPost,
+    })
+
+    const result: any = await marketingUpdatePost(
+      { client: client as any, actorUserId: ACTOR_ID },
+      {
+        tenantId: TENANT_ID,
+        postId: POST_ID,
+        confirm: true,
+        confirmTenantId: TENANT_ID,
+        actorUserId: ACTOR_ID,
+        variants: [{
+          accountId: ACCOUNT_ID,
+          platform: 'instagram',
+          format: 'carousel',
+          assetIds: [PUB_ASSET_ID],
+        }],
+        sourceBase64: [`data:image/png;base64,${PNG_BASE64}`],
+        dryRun: false,
+      },
+    )
+
+    expect(result.uploadedAssetIds).toEqual([UPLOADED_ASSET_ID])
+    expect(inserts.social_post_assets[0]).toEqual([
+      expect.objectContaining({
+        asset_id: PUB_ASSET_ID,
+        position: 0,
+        variant_id: 'variant-1',
+      }),
+      expect.objectContaining({
+        asset_id: UPLOADED_ASSET_ID,
+        position: 1,
+        variant_id: 'variant-1',
+      }),
+    ])
   })
 })
 
