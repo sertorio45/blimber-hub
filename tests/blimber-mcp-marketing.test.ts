@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   BlimberMcpError,
+  marketingApprovePost,
   marketingCreateCampaign,
   marketingCreatePost,
   marketingDeletePost,
@@ -852,5 +853,229 @@ describe('blimber marketing tools (mocked)', () => {
       deleteMode: 'soft',
       post: { id: POST_ID, title: 'Post duplicado', campaignId: CAMPAIGN_ID },
     })
+  })
+})
+
+describe('blimber marketing editorial approve (mocked)', () => {
+  const POST_ID = '33333333-3333-3333-3333-333333333333'
+
+  function editorialChain(table: string, post: Record<string, unknown>, pending: Record<string, unknown> | null) {
+    const chain: any = {
+      select: () => chain,
+      eq: () => chain,
+      order: () => chain,
+      limit: () => chain,
+      maybeSingle: async () => {
+        if (table === 'social_posts')
+          return { data: post, error: null }
+        if (table === 'approval_requests')
+          return { data: pending, error: null }
+        return { data: null, error: null }
+      },
+    }
+    return chain
+  }
+
+  it('approvePost dry-run on draft previews bypass path', async () => {
+    const post = {
+      id: POST_ID,
+      title: 'Rascunho',
+      content: 'Oi',
+      status: 'draft',
+      editorial_status: 'draft',
+      tenant_id: TENANT_ID,
+      deleted_at: null,
+      metadata: {},
+    }
+    const client = {
+      from: (table: string) => editorialChain(table, post, null),
+    }
+
+    const result = await marketingApprovePost(
+      { client: client as any },
+      {
+        tenantId: TENANT_ID,
+        postId: POST_ID,
+        confirm: true,
+        confirmTenantId: TENANT_ID,
+        dryRun: true,
+      },
+    )
+
+    expect(result).toMatchObject({
+      dryRun: true,
+      wouldMutate: true,
+      decision: 'approved',
+      path: 'bypass',
+    })
+  })
+
+  it('updatePost editorialStatus=approved dry-run does not ignore status', async () => {
+    const post = {
+      id: POST_ID,
+      title: 'Rascunho',
+      content: 'Oi',
+      status: 'draft',
+      editorial_status: 'draft',
+      tenant_id: TENANT_ID,
+      deleted_at: null,
+      metadata: {},
+    }
+    const client = {
+      from: (table: string) => editorialChain(table, post, null),
+    }
+
+    const result = await marketingUpdatePost(
+      { client: client as any },
+      {
+        tenantId: TENANT_ID,
+        postId: POST_ID,
+        editorialStatus: 'approved',
+        confirm: true,
+        confirmTenantId: TENANT_ID,
+        dryRun: true,
+      },
+    )
+
+    expect(result).toMatchObject({
+      dryRun: true,
+      editorial: { decision: 'approved', path: 'bypass' },
+    })
+  })
+
+  it('updatePost rejects publication status values', async () => {
+    await expect(
+      marketingUpdatePost(
+        { client: { from: () => ({}) } as any },
+        {
+          tenantId: TENANT_ID,
+          postId: POST_ID,
+          status: 'published',
+          confirm: true,
+          confirmTenantId: TENANT_ID,
+          dryRun: true,
+        },
+      ),
+    ).rejects.toMatchObject({ code: 'PUBLICATION_STATUS_UNSUPPORTED' })
+  })
+
+  it('changes_requested without pending request is 409', async () => {
+    const post = {
+      id: POST_ID,
+      title: 'Rascunho',
+      editorial_status: 'draft',
+      tenant_id: TENANT_ID,
+      deleted_at: null,
+    }
+    const client = {
+      from: (table: string) => editorialChain(table, post, null),
+    }
+
+    await expect(
+      marketingApprovePost(
+        { client: client as any },
+        {
+          tenantId: TENANT_ID,
+          postId: POST_ID,
+          decision: 'changes_requested',
+          comment: 'Ajustar headline',
+          confirm: true,
+          confirmTenantId: TENANT_ID,
+          dryRun: true,
+        },
+      ),
+    ).rejects.toMatchObject({ code: 'NO_PENDING_REQUEST', statusCode: 409 })
+  })
+
+  it('approvePost execute without actor returns ACTOR_REQUIRED', async () => {
+    const previousActor = process.env.BLIMBER_MCP_ACTOR_USER_ID
+    delete process.env.BLIMBER_MCP_ACTOR_USER_ID
+    const post = {
+      id: POST_ID,
+      title: 'Rascunho',
+      editorial_status: 'draft',
+      tenant_id: TENANT_ID,
+      deleted_at: null,
+    }
+    const client = {
+      from: (table: string) => editorialChain(table, post, null),
+    }
+
+    try {
+      await expect(
+        marketingApprovePost(
+          { client: client as any },
+          {
+            tenantId: TENANT_ID,
+            postId: POST_ID,
+            confirm: true,
+            confirmTenantId: TENANT_ID,
+            dryRun: false,
+          },
+        ),
+      ).rejects.toMatchObject({ code: 'ACTOR_REQUIRED', statusCode: 503 })
+    }
+    finally {
+      if (previousActor === undefined)
+        delete process.env.BLIMBER_MCP_ACTOR_USER_ID
+      else
+        process.env.BLIMBER_MCP_ACTOR_USER_ID = previousActor
+    }
+  })
+
+  it('approvePost execute bypasses draft as platform admin', async () => {
+    const { createFakeDomainClient } = await import('./helpers/fake-supabase-domain')
+    const versionId = '44444444-4444-4444-4444-444444444444'
+    const db = {
+      social_posts: [{
+        id: POST_ID,
+        title: 'Rascunho',
+        content: 'Oi',
+        tenant_id: TENANT_ID,
+        editorial_status: 'draft',
+        created_by: ACTOR_ID,
+        deleted_at: null,
+        approval_bypassed: false,
+      }],
+      approval_requests: [],
+      content_versions: [{
+        id: versionId,
+        tenant_id: TENANT_ID,
+        post_id: POST_ID,
+        version: 1,
+      }],
+      notifications: [],
+      social_automation_rules: [{ tenant_id: TENANT_ID, trigger_key: 'editorial.approved', enabled: false }],
+      social_automation_runs: [],
+    }
+    const domain = createFakeDomainClient(db)
+    const client = {
+      ...domain,
+      auth: {
+        admin: {
+          getUserById: async () => ({
+            data: { user: { id: ACTOR_ID, app_metadata: { role: 'admin' } } },
+            error: null,
+          }),
+        },
+      },
+    }
+
+    const result = await marketingApprovePost(
+      { client: client as any },
+      {
+        tenantId: TENANT_ID,
+        postId: POST_ID,
+        confirm: true,
+        confirmTenantId: TENANT_ID,
+        dryRun: false,
+        actorUserId: ACTOR_ID,
+      },
+    )
+
+    expect(result).toMatchObject({ dryRun: false, path: 'bypass', decision: 'approved' })
+    expect((result as any).post.editorialStatus).toBe('approved')
+    expect(db.social_posts[0]!.editorial_status).toBe('approved')
+    expect(db.social_posts[0]!.approval_bypassed).toBe(true)
   })
 })

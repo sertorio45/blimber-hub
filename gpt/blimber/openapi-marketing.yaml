@@ -5,7 +5,7 @@ info:
     Ação 1 (Marketing + platform + brand). Auth Bearer BLIMBER_MCP_API_KEY.
     Ads pagos: Ação 2 (openapi-ads.yaml, host ads.blimber.com.br). Não importe
     o índice openapi.yaml no mesmo GPT.
-  version: 0.4.4
+  version: 0.4.5
   contact:
     name: Blimber Hub
 servers:
@@ -485,9 +485,8 @@ paths:
       operationId: updatePost
       summary: Atualizar post draft
       description: >
-        Atualiza draft. dryRun default true. variants substitui canais
-        (assetIds de publicação). sourceUrls/sourceBase64 exigem variants
-        (upload no 1º canal). referenceAssetIds substitui referências.
+        Atualiza copy/mídia e/ou editorialStatus (domínio Hub: bypass/decision/cancel).
+        dryRun default true. variants substitui canais. sourceUrls exigem variants.
       parameters:
         - name: postId
           in: path
@@ -600,21 +599,26 @@ paths:
                   description: >
                     Substitui referências do post (variant_id nulo). Omita para
                     não alterar. Array vazio remove as referências.
-                sourceUrls:
-                  type: array
-                  maxItems: 10
-                  items:
-                    type: string
-                    format: uri
+                editorialStatus:
+                  type: string
+                  enum: [draft, approved, changes_requested, rejected]
                   description: >
-                    Upload HTTPS neste call; entra em variants[0].assetIds.
-                    Exige variants[].
-                sourceBase64:
-                  type: array
-                  maxItems: 5
-                  items:
-                    type: string
-                  description: Upload base64 neste call; mesmo destino que sourceUrls.
+                    Ciclo editorial (social_posts.editorial_status) via domínio
+                    Hub. approved em rascunho = bypassApproval (superadmin/bypass).
+                    Em fila = submitApprovalDecision. draft = cancelApprovalRun.
+                status:
+                  type: string
+                  enum: [draft, approved]
+                  description: Alias de editorialStatus (só draft|approved). Não publica.
+                comment:
+                  type: string
+                  maxLength: 2000
+                  description: Obrigatório em changes_requested/rejected conforme o fluxo.
+                justification:
+                  type: string
+                  minLength: 5
+                  maxLength: 2000
+                  description: Justificativa do bypass (rascunho → approved). Default no servidor se omitir.
                 actorUserId:
                   type: string
                   format: uuid
@@ -633,6 +637,73 @@ paths:
           description: Preview ou post atualizado
         "401":
           description: Não autorizado
+
+  /api/gpt/marketing/posts/{postId}/approve:
+    post:
+      operationId: approvePost
+      summary: Aprovar ou decidir editorial do post
+      description: >
+        Avança o ciclo editorial (não publica). dryRun default true.
+        Rascunho → approved usa bypassApproval (superadmin ou cap bypass),
+        igual ao painel. Se houver approval_request pendente, registra
+        submitApprovalDecision. decision também aceita changes_requested,
+        rejected e draft (cancelar fila).
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: ID do post.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tenantId, confirmTenantId, confirm]
+              properties:
+                tenantId:
+                  type: string
+                  format: uuid
+                decision:
+                  type: string
+                  enum: [approved, changes_requested, rejected, draft]
+                  default: approved
+                comment:
+                  type: string
+                  maxLength: 2000
+                justification:
+                  type: string
+                  minLength: 5
+                  maxLength: 2000
+                  description: Justificativa do bypass (rascunho). Default no servidor se omitir.
+                requestId:
+                  type: string
+                  format: uuid
+                  description: Opcional. approval_requests.id pendente.
+                actorUserId:
+                  type: string
+                  format: uuid
+                confirmTenantId:
+                  type: string
+                  format: uuid
+                confirm:
+                  type: boolean
+                  enum: [true]
+                dryRun:
+                  type: boolean
+                  default: true
+      responses:
+        "200":
+          description: Preview ou post com editorial atualizado
+        "401":
+          description: Não autorizado
+        "403":
+          description: Sem permissão / outro tenant
+        "409":
+          description: Sem fila para changes_requested/rejected
 
   /api/gpt/marketing/posts/{postId}/delete:
     post:

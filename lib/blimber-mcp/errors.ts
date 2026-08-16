@@ -97,6 +97,19 @@ export function formatBlimberMcpError(error: unknown) {
     }
   }
 
+  const statusCode = Number((error as { statusCode?: unknown })?.statusCode)
+  const statusMessage = (error as { statusMessage?: unknown })?.statusMessage
+  if (Number.isFinite(statusCode) && statusCode >= 400 && typeof statusMessage === 'string') {
+    return {
+      ok: false as const,
+      error: {
+        code: statusCode === 403 ? 'FORBIDDEN' : statusCode === 404 ? 'NOT_FOUND' : 'EDITORIAL_ERROR',
+        message: statusMessage,
+        statusCode,
+      },
+    }
+  }
+
   const message = error instanceof Error ? error.message : 'Erro interno'
   return {
     ok: false as const,

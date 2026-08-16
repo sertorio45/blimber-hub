@@ -28,6 +28,7 @@ Preview (`dryRun=true`, default) **não** exige actor. Execute (`dryRun=false`) 
 | POST | `/api/gpt/marketing/posts` | `createPost` |
 | GET | `/api/gpt/marketing/posts/{id}?tenantId=` | `getPost` |
 | PUT | `/api/gpt/marketing/posts/{id}` | `updatePost` |
+| POST | `/api/gpt/marketing/posts/{id}/approve` | `approvePost` |
 | DELETE | `/api/gpt/marketing/posts/{id}` | `deletePost` |
 | GET | `/api/gpt/marketing/campaigns?...` | `listEditorialCampaigns` |
 | POST | `/api/gpt/marketing/campaigns` | `createEditorialCampaign` |
@@ -58,6 +59,15 @@ Estático/story/vídeo = 1 arquivo; carrossel até 10. Tenant isolado. Agendar/p
 1. `listPosts` / `getPost`
 2. `updatePost` dryRun → confirmar → execute  
    (bloqueado se `published` / `publishing`)
+
+### 3b. Aprovar rascunho (draft → approved)
+
+1. `getPost` — confirme `editorialStatus`
+2. `approvePost` com `dryRun: true` (preview `path`: `bypass` no rascunho, `decision` se houver fila)
+3. Confirme com o usuário → `approvePost` com `dryRun: false`, `confirm: true`, `confirmTenantId === tenantId`
+4. O ator (`BLIMBER_MCP_ACTOR_USER_ID`) precisa ser superadmin **ou** ter `marketing.social.approval.bypass` / caps de decisão no tenant. Usa `bypassApproval` / `submitApprovalDecision` — não atualiza `editorial_status` direto.
+
+Equivalente: `updatePost` com `editorialStatus: "approved"` (e `status: "approved"` só como alias). `changes_requested` / `rejected` exigem `approval_request` pendente + `comment`.
 
 ### 4. Remover duplicados de uma campanha
 

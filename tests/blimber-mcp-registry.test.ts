@@ -181,6 +181,9 @@ const EXPECTED_ROUTE_FILES: Record<string, string[]> = {
     'server/api/gpt/marketing/posts/[postId].put.ts',
     'server/api/gpt/marketing/posts/[postId].delete.ts',
   ],
+  '/api/gpt/marketing/posts/{postId}/approve': [
+    'server/api/gpt/marketing/posts/[postId]/approve.post.ts',
+  ],
   '/api/gpt/marketing/posts/{postId}/delete': [
     'server/api/gpt/marketing/posts/[postId]/delete.post.ts',
   ],
@@ -266,6 +269,8 @@ describe('blimber unified MCP registry + openapi', () => {
     const names = registry.tools.map(t => t.name)
     expect(names).toContain('searchTenants')
     expect(names).toContain('marketing_list_posts')
+    expect(names).toContain('marketing_update_post')
+    expect(names).toContain('marketing_approve_post')
     expect(names).toContain('marketing_delete_post')
     expect(names).toContain('marketing_delete_asset')
     expect(names).toContain('marketing_upload_asset')
@@ -315,7 +320,8 @@ describe('blimber unified MCP registry + openapi', () => {
     expect(operationIds).toContain('listSocialAccounts')
     expect(operationIds).toContain('listMediaAssets')
     expect(operationIds).toContain('getBrandContext')
-    expect(operationIds).toContain('createPost')
+    expect(operationIds).toContain('updatePost')
+    expect(operationIds).toContain('approvePost')
     expect(operationIds).toContain('deletePost')
     expect(operationIds).toContain('deleteMediaAsset')
     expect(operationIds).toContain('uploadMediaAsset')
@@ -333,6 +339,7 @@ describe('blimber unified MCP registry + openapi', () => {
     expect(paths).toContain('/api/gpt/marketing/assets/{assetId}/delete')
     expect(paths).toContain('/api/gpt/marketing/brand-context')
     expect(paths).toContain('/api/gpt/marketing/posts')
+    expect(paths).toContain('/api/gpt/marketing/posts/{postId}/approve')
     expect(paths).toContain('/api/gpt/marketing/posts/{postId}/delete')
     expect(paths).toContain('/api/gpt/marketing/campaigns')
     expect(paths.some(p => p.startsWith('/api/gpt/meta/'))).toBe(false)

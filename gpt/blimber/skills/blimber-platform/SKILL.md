@@ -31,16 +31,38 @@ description: >-
 5. Mutações: dryRun → confirmar → `dryRun: false` + `confirm` + `confirmTenantId`.
 6. Respostas em **PT-BR**.
 
-## Tools — Ação Marketing (16, host app.*)
+## Tools — Ação Marketing (17, host app.*)
 
 | Tool / operationId | Uso |
 |--------------------|-----|
 | `searchTenants` | nome → tenantId |
 | `listBlimberTools` | catálogo unificado |
-| `listPosts` / `getPost` / `createPost` / `updatePost` | editorial; createPost aceita assetIds + sourceUrls no mesmo call |
+| `listPosts` / `getPost` / `createPost` / `updatePost` / `approvePost` | editorial; createPost aceita assetIds + sourceUrls; approvePost (ou updatePost.editorialStatus) move draft→approved |
 | `listEditorialCampaigns` / `getEditorialCampaign` / `createEditorialCampaign` / `updateEditorialCampaign` | campanha mensal |
 | `getBrandContext` | Brand Center |
 | `listMediaAssets` / `uploadMediaAsset` / `listSocialAccounts` | biblioteca / contas |
+
+### Draft → approved (MCP)
+
+1. `searchTenants` → `tenantId`
+2. `getPost` (confirme `editorialStatus: draft`)
+3. Preview: `approvePost` com `dryRun: true` (path=`bypass` no rascunho; `decision` se já houver fila)
+4. Execute:
+
+```json
+{
+  "tenantId": "<uuid>",
+  "confirmTenantId": "<mesmo uuid>",
+  "confirm": true,
+  "dryRun": false,
+  "decision": "approved"
+}
+```
+
+`BLIMBER_MCP_ACTOR_USER_ID` deve ser o UUID do superadmin (ou usuário com `marketing.social.approval.bypass`). Equivalente no Hub: bypass de aprovação — **não** um UPDATE solto em `editorial_status`. Alternativa: `updatePost` com `editorialStatus: "approved"` (mesmo domínio).
+
+`changes_requested` / `rejected` exigem `approval_request` pendente + `comment`. `decision: draft` cancela a fila (`cancelApprovalRun`).
+
 
 ## Tools — Ação Ads (26, host ads.*)
 

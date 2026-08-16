@@ -18,6 +18,12 @@ import {
 } from './confirm'
 import { resolveMcpActorUserId } from './auth'
 import { BlimberMcpError, mapSupabaseRpcError } from './errors'
+import {
+  editorialDecisionEnum,
+  executeEditorialTransition,
+  previewEditorialTransition,
+  resolveRequestedEditorial,
+} from './marketing-editorial'
 import type { BlimberMcpToolContext } from './types'
 import {
   MARKETING_BRAND_URL,
@@ -441,6 +447,25 @@ export const marketingUpdatePostSchema = z.object({
   sourceUrls: z.array(z.string().url().max(2048)).max(10).default([]),
   /** Inline base64 uploads; merged into variants[0].assetIds. Requires variants. */
   sourceBase64: z.array(z.string().min(8).max(12_000_000)).max(5).default([]),
+  /** First-class editorial_status. Does not write the column directly — Hub domain (bypass / decision / cancel). */
+  editorialStatus: editorialDecisionEnum.optional(),
+  /** Alias limitado: só draft|approved → editorial_status. published/scheduled recusados. */
+  status: z.string().max(40).optional(),
+  comment: z.string().max(2000).nullable().optional(),
+  justification: z.string().trim().min(5).max(2000).optional(),
+  actorUserId: uuid.optional(),
+  ...blimberWriteConfirmationFields,
+  ...blimberWriteDryRunField,
+})
+
+export const marketingApprovePostSchema = z.object({
+  tenantId: tenantIdField,
+  postId: uuid,
+  /** approved (default) | changes_requested | rejected | draft */
+  decision: editorialDecisionEnum.default('approved'),
+  comment: z.string().max(2000).nullable().optional(),
+  justification: z.string().trim().min(5).max(2000).optional(),
+  requestId: uuid.optional(),
   actorUserId: uuid.optional(),
   ...blimberWriteConfirmationFields,
   ...blimberWriteDryRunField,
@@ -546,6 +571,7 @@ export type MarketingToolName =
   | 'marketing_get_post'
   | 'marketing_create_post'
   | 'marketing_update_post'
+  | 'marketing_approve_post'
   | 'marketing_delete_post'
   | 'marketing_delete_asset'
   | 'marketing_upload_asset'
@@ -561,7 +587,8 @@ export const MARKETING_TOOL_DESCRIPTIONS: Record<MarketingToolName, string> = {
   marketing_list_posts: 'Lista posts editoriais (social_posts) do tenant.',
   marketing_get_post: 'Detalhe de um post editorial por postId.',
   marketing_create_post: 'Cria rascunho editorial. assetIds = biblioteca (publicar); sourceUrls/sourceBase64 = upload no mesmo call; referenceAssetIds = só referência. dryRun default true.',
-  marketing_update_post: 'Atualiza draft: variants.assetIds, sourceUrls/sourceBase64 (no 1º canal) e referenceAssetIds. dryRun default true.',
+  marketing_update_post: 'Atualiza draft (copy/mídia) e/ou editorialStatus (draft|approved|changes_requested|rejected) via domínio Hub. dryRun default true.',
+  marketing_approve_post: 'Avança editorial: draft→approved (bypass/superadmin), ou decide approval_request (approved/changes_requested/rejected). dryRun default true.',
   marketing_delete_post: 'Soft-delete de 1 post editorial (dryRun default true). Isolado por tenant; sem exclusão em massa nem remota.',
   marketing_delete_asset: 'Remove 1 mídia da Biblioteca (storage + DB). dryRun default true. Bloqueia se vinculada a posts.',
   marketing_upload_asset: 'Upload na Biblioteca (HTTPS URL preferencial ou base64). Compressão/storage iguais ao Hub. dryRun default true.',
@@ -579,6 +606,7 @@ export const MARKETING_TOOL_SCHEMAS = {
   marketing_get_post: marketingGetPostSchema,
   marketing_create_post: marketingCreatePostSchema,
   marketing_update_post: marketingUpdatePostSchema,
+  marketing_approve_post: marketingApprovePostSchema,
   marketing_delete_post: marketingDeletePostSchema,
   marketing_delete_asset: marketingDeleteAssetSchema,
   marketing_upload_asset: marketingUploadAssetSchema,
@@ -1018,6 +1046,144 @@ export async function marketingCreatePost(
   }
 }
 
+function hasContentPatch(input: z.infer<typeof marketingUpdatePostSchema>): boolean {
+  return input.title !== undefined
+    || input.content !== undefined
+    || input.artText !== undefined
+    || input.cta !== undefined
+    || input.hashtags !== undefined
+    || input.campaignId !== undefined
+    || input.scheduledAt !== undefined
+    || input.timezone !== undefined
+    || input.variants !== undefined
+    || input.referenceAssetIds !== undefined
+    || input.sourceUrls.length > 0
+    || input.sourceBase64.length > 0
+}
+
+async function applyEditorialIfRequested(
+  ctx: BlimberMcpToolContext,
+  input: {
+    tenantId: string
+    postId: string
+    editorialStatus?: z.infer<typeof editorialDecisionEnum>
+    status?: string
+    comment?: string | null
+    justification?: string
+    actorUserId?: string
+    dryRun: boolean
+  },
+) {
+  const decision = resolveRequestedEditorial({
+    editorialStatus: input.editorialStatus,
+    status: input.status,
+  })
+  if (!decision)
+    return null
+
+  if (input.dryRun) {
+    const preview = await previewEditorialTransition(ctx, {
+      tenantId: input.tenantId,
+      postId: input.postId,
+      decision,
+      comment: input.comment,
+      justification: input.justification,
+    })
+    return {
+      dryRun: true as const,
+      decision,
+      path: preview.path,
+      pendingRequestId: preview.pendingRequest?.id ?? null,
+      currentEditorialStatus: preview.post.editorial_status ?? null,
+      notes: preview.notes,
+    }
+  }
+
+  const result = await executeEditorialTransition(ctx, {
+    tenantId: input.tenantId,
+    postId: input.postId,
+    decision,
+    actorUserId: input.actorUserId,
+    comment: input.comment,
+    justification: input.justification,
+  })
+  return {
+    dryRun: false as const,
+    decision,
+    path: result.path,
+    pendingRequestId: result.preview.pendingRequest?.id ?? null,
+  }
+}
+
+async function refetchMappedPost(
+  ctx: BlimberMcpToolContext,
+  tenantId: string,
+  postId: string,
+  fallback: Record<string, any>,
+) {
+  const { data } = await ctx.client
+    .from('social_posts')
+    .select('*')
+    .eq('tenant_id', tenantId)
+    .eq('id', postId)
+    .maybeSingle()
+  return mapPostRow(data || fallback)
+}
+
+export async function marketingApprovePost(
+  ctx: BlimberMcpToolContext,
+  raw: unknown,
+) {
+  const input = marketingApprovePostSchema.parse(raw)
+  assertBlimberWriteConfirmation(input)
+  const dryRun = resolveDryRun(input.dryRun, true)
+
+  if (dryRun) {
+    const preview = await previewEditorialTransition(ctx, {
+      tenantId: input.tenantId,
+      postId: input.postId,
+      decision: input.decision,
+      requestId: input.requestId,
+      comment: input.comment,
+      justification: input.justification,
+    })
+    return {
+      dryRun: true as const,
+      wouldMutate: preview.path !== 'already',
+      entity: 'social_post',
+      kind: 'editorial' as const,
+      decision: input.decision,
+      path: preview.path,
+      before: mapPostRow(preview.post),
+      pendingRequestId: preview.pendingRequest?.id ?? null,
+      justification: preview.justification,
+      notes: [
+        ...preview.notes,
+        'Reenvie com dryRun=false após confirmação.',
+        'draft→approved no rascunho usa bypassApproval (superadmin / cap bypass), não um UPDATE solto em editorial_status.',
+      ],
+    }
+  }
+
+  const result = await executeEditorialTransition(ctx, {
+    tenantId: input.tenantId,
+    postId: input.postId,
+    decision: input.decision,
+    actorUserId: input.actorUserId,
+    requestId: input.requestId,
+    comment: input.comment,
+    justification: input.justification,
+  })
+
+  return {
+    dryRun: false as const,
+    kind: 'editorial' as const,
+    decision: input.decision,
+    path: result.path,
+    post: await refetchMappedPost(ctx, input.tenantId, input.postId, result.preview.post),
+  }
+}
+
 export async function marketingUpdatePost(
   ctx: BlimberMcpToolContext,
   raw: unknown,
@@ -1025,6 +1191,18 @@ export async function marketingUpdatePost(
   const input = marketingUpdatePostSchema.parse(raw)
   assertBlimberWriteConfirmation(input)
   const dryRun = resolveDryRun(input.dryRun, true)
+  const contentPatch = hasContentPatch(input)
+  const editorialDecision = resolveRequestedEditorial({
+    editorialStatus: input.editorialStatus,
+    status: input.status,
+  })
+  if (!contentPatch && !editorialDecision) {
+    throw new BlimberMcpError(
+      'EMPTY_UPDATE',
+      'Informe campos de conteúdo e/ou editorialStatus (draft|approved|changes_requested|rejected).',
+      400,
+    )
+  }
 
   const { data: existing } = await ctx.client
     .from('social_posts')
@@ -1044,6 +1222,36 @@ export async function marketingUpdatePost(
       'Uma publicação enviada ou publicada não pode ser alterada via GPT.',
       409,
     )
+  }
+
+  if (!contentPatch) {
+    const editorial = await applyEditorialIfRequested(ctx, {
+      tenantId: input.tenantId,
+      postId: input.postId,
+      editorialStatus: input.editorialStatus,
+      status: input.status,
+      comment: input.comment,
+      justification: input.justification,
+      actorUserId: input.actorUserId,
+      dryRun,
+    })
+    if (dryRun) {
+      return {
+        dryRun: true as const,
+        wouldMutate: editorial?.path !== 'already',
+        entity: 'social_post',
+        kind: 'editorial' as const,
+        before: mapPostRow(existing),
+        editorial,
+        notes: editorial?.notes || ['Reenvie com dryRun=false após confirmação.'],
+      }
+    }
+    return {
+      dryRun: false as const,
+      kind: 'editorial' as const,
+      editorial,
+      post: await refetchMappedPost(ctx, input.tenantId, input.postId, existing),
+    }
   }
 
   if (input.campaignId) {
@@ -1132,6 +1340,18 @@ export async function marketingUpdatePost(
   })
 
   if (dryRun) {
+    const editorial = editorialDecision
+      ? await applyEditorialIfRequested(ctx, {
+          tenantId: input.tenantId,
+          postId: input.postId,
+          editorialStatus: input.editorialStatus,
+          status: input.status,
+          comment: input.comment,
+          justification: input.justification,
+          actorUserId: input.actorUserId,
+          dryRun: true,
+        })
+      : null
     return {
       dryRun: true as const,
       wouldMutate: true,
@@ -1139,6 +1359,7 @@ export async function marketingUpdatePost(
       kind: 'editorial' as const,
       before: mapPostRow(existing),
       afterPreview: updatePayload,
+      editorial,
       variantsPreview: input.variants ?? null,
       plannedAssets: {
         libraryPublicationIds: (input.variants || []).flatMap(v => v.assetIds),
@@ -1152,6 +1373,7 @@ export async function marketingUpdatePost(
       notes: [
         'Reenvie com dryRun=false após confirmação. Upload só no execute.',
         `Uploads inline entram no 1º canal. Ordem: ${PUBLICATION_ATTACH_ORDER}.`,
+        ...(editorial?.notes || []),
       ],
     }
   }
@@ -1289,10 +1511,26 @@ export async function marketingUpdatePost(
     }
   }
 
+  const editorial = editorialDecision
+    ? await applyEditorialIfRequested(ctx, {
+        tenantId: input.tenantId,
+        postId: input.postId,
+        editorialStatus: input.editorialStatus,
+        status: input.status,
+        comment: input.comment,
+        justification: input.justification,
+        actorUserId: input.actorUserId,
+        dryRun: false,
+      })
+    : null
+
   return {
     dryRun: false as const,
     kind: 'editorial' as const,
-    post: mapPostRow(data),
+    post: editorial
+      ? await refetchMappedPost(ctx, input.tenantId, input.postId, data)
+      : mapPostRow(data),
+    editorial,
     uploadedAssetIds: uploaded.ids,
     referenceAssetIds: input.referenceAssetIds ?? undefined,
   }
@@ -1928,6 +2166,7 @@ export const MARKETING_TOOL_HANDLERS: Record<MarketingToolName, MarketingHandler
   marketing_get_post: marketingGetPost,
   marketing_create_post: marketingCreatePost,
   marketing_update_post: marketingUpdatePost,
+  marketing_approve_post: marketingApprovePost,
   marketing_delete_post: marketingDeletePost,
   marketing_delete_asset: marketingDeleteAsset,
   marketing_upload_asset: marketingUploadAsset,

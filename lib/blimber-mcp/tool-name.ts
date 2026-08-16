@@ -45,6 +45,7 @@ const OPENAPI_TO_MARKETING: Record<string, string> = {
   getPost: 'marketing_get_post',
   createPost: 'marketing_create_post',
   updatePost: 'marketing_update_post',
+  approvePost: 'marketing_approve_post',
   deletePost: 'marketing_delete_post',
   listEditorialCampaigns: 'marketing_list_campaigns',
   getEditorialCampaign: 'marketing_get_campaign',

@@ -6,7 +6,7 @@ O ChatGPT aceita **no máximo 30 operations por Ação** e **recusa o mesmo host
 
 | Artefato | Arquivo |
 |----------|---------|
-| OpenAPI Marketing (**importe**) | `openapi-marketing.yaml` → `https://app.blimber.com.br` (16 ops) |
+| OpenAPI Marketing (**importe**) | `openapi-marketing.yaml` → `https://app.blimber.com.br` (17 ops) |
 | OpenAPI Ads (**importe**) | `openapi-ads.yaml` → `https://ads.blimber.com.br` (26 ops) |
 | Índice (**não importe**) | `openapi.yaml` |
 | Instruções | `instructions.md` |
@@ -42,7 +42,7 @@ Docs: `docs/mcp-blimber-platform.md`, `docs/gpt-blimber-MARKETING.md`, `docs/gpt
 
 ## Operations
 
-### Ação Marketing (16) — `app.blimber.com.br`
+### Ação Marketing (17) — `app.blimber.com.br`
 
 | operationId | Path |
 |-------------|------|
@@ -56,6 +56,7 @@ Docs: `docs/mcp-blimber-platform.md`, `docs/gpt-blimber-MARKETING.md`, `docs/gpt
 | `createPost` | `POST /api/gpt/marketing/posts` |
 | `getPost` | `GET /api/gpt/marketing/posts/{postId}` |
 | `updatePost` | `PUT /api/gpt/marketing/posts/{postId}` |
+| `approvePost` | `POST /api/gpt/marketing/posts/{postId}/approve` |
 | `deletePost` | `POST /api/gpt/marketing/posts/{postId}/delete` |
 | `deleteMediaAsset` | `POST /api/gpt/marketing/assets/{assetId}/delete` |
 | `listEditorialCampaigns` | `GET /api/gpt/marketing/campaigns` |

@@ -64,6 +64,7 @@ export {
   marketingListSocialAccounts,
   marketingUpdateCampaign,
   marketingUpdatePost,
+  marketingApprovePost,
   type MarketingToolName,
 } from './marketing-tools'
 export {
