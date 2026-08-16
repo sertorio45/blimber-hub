@@ -3,6 +3,7 @@ import { z } from 'zod'
 
 import {
   attachApprovalPreviewUrls,
+  canDecideApprovalRequest,
   canSeeInternalComments,
   mapApprovalListItem,
 } from '~/server/utils/social-approval-ux'
@@ -141,7 +142,6 @@ export default defineEventHandler(async (event) => {
     .maybeSingle()
 
   const item = mapApprovalListItem(row, tenant || null)
-  const isAssignee = (row.approval_request_approvers || []).some((a: any) => a.user_id === userId)
   const canManage = isPlatformStaff
     || capabilities.includes('marketing.social.manage')
     || capabilities.includes('marketing.social.workflow.manage')
@@ -169,7 +169,14 @@ export default defineEventHandler(async (event) => {
     data: {
       ...item,
       error_state: errorState,
-      can_decide: row.status === 'pending' && (isAssignee || isPlatformStaff),
+      can_decide: canDecideApprovalRequest({
+        status: row.status,
+        stage: row.stage,
+        approverIds: (row.approval_request_approvers || []).map((a: any) => a.user_id),
+        userId,
+        capabilities,
+        isPlatformStaff,
+      }),
       can_cancel: row.status === 'pending' && canManage,
       can_edit: canManage || capabilities.includes('marketing.social.update'),
       revision_reason: lastChangeDecision?.comment || null,

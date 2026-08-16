@@ -107,6 +107,24 @@ describe('guarda de rotas por tipo de organização', () => {
     expect(canEnterWorkspaceRoute(clientScope, { audience: 'both' })).toBe(true)
   })
 
+  it('portal do cliente entra em /marketing/approvals com approval.client', () => {
+    const clientApprover = {
+      capabilities: ['marketing.social.approval.client'],
+      organizationType: 'direct' as const,
+      isClientExperience: true,
+    }
+
+    expect(canEnterWorkspaceRoute(clientApprover, {
+      capability: 'marketing.social.approval.client',
+    })).toBe(true)
+    expect(canEnterWorkspaceRoute({
+      ...clientApprover,
+      capabilities: ['marketing.social.read'],
+    }, {
+      capability: 'marketing.social.approval.client',
+    })).toBe(false)
+  })
+
   it('menu marketing MVP esconde pacotes e marca ops de agência', () => {
     const marketing = navMenu
       .flatMap(section => section.items)
@@ -138,7 +156,8 @@ describe('guarda de rotas por tipo de organização', () => {
     const topTitles = marketing.children.map(child => child.title)
 
     expect(packages).toBeUndefined()
-    expect(approvals.audience).toBe('agency')
+    expect(approvals.audience).toBeUndefined()
+    expect(approvals.capability).toBe('marketing.social.approval.client')
     expect(production.audience).toBe('agency')
     expect(publishing.audience).toBe('agency')
     expect(brand.audience).toBe('agency')
@@ -238,11 +257,14 @@ describe('matchesNavAudience', () => {
       '/marketing/ads',
       '/marketing/settings',
       '/settings/integrations',
+      '/marketing/approvals',
       '/marketing/posts',
       '/marketing/library',
     ])
     expect(isClientPortalMarketingLink('/marketing/packages')).toBe(false)
     expect(isClientPortalMarketingLink('/marketing/content')).toBe(true)
+    expect(isClientPortalMarketingLink('/marketing/approvals')).toBe(true)
+    expect(isClientPortalMarketingLink('/marketing/approvals?request=abc')).toBe(true)
     expect(isClientPortalMarketingLink('/marketing/content/new')).toBe(true)
     expect(isClientPortalMarketingLink('/marketing/posts')).toBe(true)
     expect(isClientPortalMarketingLink('/marketing/posts/new')).toBe(true)

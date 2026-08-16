@@ -269,6 +269,61 @@ describe('social approval domain', () => {
     })).rejects.toMatchObject({ statusCode: 403 })
   })
 
+  it('5b. company admin with client capability can decide without being assigned', async () => {
+    const started = await startApprovalWorkflow(client, {
+      tenantId: ids.tenant,
+      postId: ids.post,
+      userId: ids.author,
+      approverIds: [ids.client],
+    })
+
+    const result = await submitApprovalDecision(client, {
+      tenantId: ids.tenant,
+      requestId: started.request!.id,
+      userId: ids.client2,
+      decision: 'approved',
+      capabilities: ['marketing.social.approval.client'],
+    })
+
+    expect(result.status).toBe('approved')
+    expect(post(db).editorial_status).toBe('approved')
+  })
+
+  it('5c. reject and request-changes require a reason', async () => {
+    const started = await startApprovalWorkflow(client, {
+      tenantId: ids.tenant,
+      postId: ids.post,
+      userId: ids.author,
+      approverIds: [ids.client],
+    })
+
+    await expect(submitApprovalDecision(client, {
+      tenantId: ids.tenant,
+      requestId: started.request!.id,
+      userId: ids.client,
+      decision: 'rejected',
+      capabilities: ['marketing.social.approval.client'],
+    })).rejects.toMatchObject({ statusCode: 400 })
+
+    await expect(submitApprovalDecision(client, {
+      tenantId: ids.tenant,
+      requestId: started.request!.id,
+      userId: ids.client,
+      decision: 'changes_requested',
+      capabilities: ['marketing.social.approval.client'],
+    })).rejects.toMatchObject({ statusCode: 400 })
+
+    const result = await submitApprovalDecision(client, {
+      tenantId: ids.tenant,
+      requestId: started.request!.id,
+      userId: ids.client,
+      decision: 'rejected',
+      comment: 'A arte não representa a marca',
+      capabilities: ['marketing.social.approval.client'],
+    })
+    expect(result.status).toBe('rejected')
+  })
+
   it('6. deciding with a mismatched tenant is rejected', async () => {
     const started = await startApprovalWorkflow(client, {
       tenantId: ids.tenant,
@@ -389,6 +444,7 @@ describe('social approval domain', () => {
     expect(isSelfServeSocialRelease({
       organizationType: 'direct',
       effectiveRole: 'cliente',
+      capabilities: ['marketing.social.approval.client', 'marketing.social.schedule'],
     })).toBe(true)
     expect(isSelfServeSocialRelease({
       organizationType: 'agency',

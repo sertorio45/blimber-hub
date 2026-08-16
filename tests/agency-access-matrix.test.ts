@@ -185,11 +185,12 @@ describe('direct (client) access matrix', () => {
       'view_reports',
       'manage_integrations',
       'access_tenant',
+      'approve_client',
     ], [
       'list_clients',
       'edit_client',
       'submit_approval',
-      'approve_client',
+      'approve_internal',
       'delete_local',
     ])
   })
@@ -267,6 +268,14 @@ describe('cross-cutting security rules', () => {
     expect(canSeeInternalComments(DIRECT_ROLE_CAPABILITIES.viewer, false)).toBe(false)
     expect(canSeeInternalComments(AGENCY_ROLE_CAPABILITIES.owner, false)).toBe(true)
     expect(canSeeInternalComments(AGENCY_ROLE_CAPABILITIES.internal_approver, false)).toBe(true)
+  })
+
+  it('direct owner and extra approver can approve as client without agency portfolio', () => {
+    expect(DIRECT_ROLE_CAPABILITIES.owner).toContain('marketing.social.approval.client')
+    expect(DIRECT_ROLE_CAPABILITIES.approver).toContain('marketing.social.approval.client')
+    expect(DIRECT_ROLE_CAPABILITIES.owner).not.toContain('marketing.social.approval.internal')
+    expect(DIRECT_ROLE_CAPABILITIES.owner).not.toContain('agency.clients.read')
+    expect(DIRECT_ROLE_CAPABILITIES.approver).not.toContain('agency.clients.read')
   })
 
   it('delete.remote requires its own capability — create is not enough', () => {

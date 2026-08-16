@@ -285,6 +285,8 @@ export const DIRECT_ROLE_CAPABILITIES: Record<DirectRoleSlug, readonly string[]>
     'marketing.social.create',
     'marketing.social.update',
     'marketing.social.comment',
+    'marketing.social.approval.client',
+    'marketing.social.approve',
     'marketing.social.schedule',
     'marketing.social.publish',
     'marketing.social.reports',

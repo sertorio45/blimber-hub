@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { createError } from 'h3'
 
 import { holdsCapability } from '~/constants/workspace'
+import { canDecideApprovalRequest } from '~/server/utils/social-approval-ux'
 import { createSocialNotification } from '~/server/utils/social-audit'
 
 /**
@@ -881,7 +882,6 @@ export async function submitApprovalDecision(client: any, input: SubmitDecisionI
   const requireCommentOnReject = stage?.require_comment_on_reject ?? true
   const mode: StageMode = (stage?.mode as StageMode) || (request.policy as StageMode) || 'any'
 
-  // Assigned approver (or platform admin) only.
   const { data: approver } = await client
     .from('approval_request_approvers')
     .select('id')
@@ -889,7 +889,16 @@ export async function submitApprovalDecision(client: any, input: SubmitDecisionI
     .eq('user_id', input.userId)
     .maybeSingle()
 
-  if (!approver && !input.isPlatformAdmin)
+  const stageType = stage?.stage_type || request.stage || 'client'
+  const canDecide = canDecideApprovalRequest({
+    status: 'pending',
+    stage: stageType,
+    approverIds: approver ? [input.userId] : [],
+    userId: input.userId,
+    capabilities: input.capabilities || [],
+    isPlatformStaff: input.isPlatformAdmin,
+  })
+  if (!canDecide)
     throw createError({ statusCode: 403, statusMessage: 'Você não é aprovador desta solicitação' })
 
   // Stage capability is authoritative: legacy `marketing.social.approve` must NOT

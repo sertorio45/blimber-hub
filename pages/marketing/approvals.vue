@@ -26,16 +26,12 @@ const {
 } = useWorkspace()
 const { isClientExperience } = useMarketingAudience()
 
-if (import.meta.client) {
-  watch(isClientExperience, (client) => {
-    if (client)
-      navigateTo('/marketing')
-  }, { immediate: true })
-}
-
 const isClientPortal = computed(() =>
-  !can('agency.clients.read')
-  && (organizationRelationshipType.value === 'managed' || !isAgencyWorkspace.value),
+  isClientExperience.value
+  || (
+    !can('agency.clients.read')
+    && (organizationRelationshipType.value === 'managed' || !isAgencyWorkspace.value)
+  ),
 )
 
 const isAgencyBoard = computed(() =>
@@ -58,6 +54,7 @@ const activeId = ref<string | null>(null)
 const activeTenantId = ref<string | null>(null)
 const selectedIds = ref<string[]>([])
 const batchSaving = ref(false)
+const confirmBulkOpen = ref(false)
 
 const listQuery = computed(() => {
   const q: Record<string, unknown> = {
@@ -109,11 +106,16 @@ const listQuery = computed(() => {
   if (filters.to)
     q.to = new Date(`${filters.to}T23:59:59`).toISOString()
 
-  // Client portal: only what matters — pending assigned to them by default
+  // Client portal: assigned + tenant client-stage they can decide. No agency filters.
   if (isClientPortal.value) {
+    const status = filters.bucket === 'approved'
+      ? 'approved'
+      : filters.bucket === 'all'
+        ? 'all'
+        : 'pending'
     return {
-      status: filters.bucket === 'approved' ? 'approved' : filters.bucket === 'all' ? 'all' : 'pending',
-      assignedToMe: filters.bucket !== 'all' && filters.bucket !== 'approved',
+      inbox: 'client',
+      status,
     }
   }
 
@@ -131,7 +133,7 @@ const { data: listResponse, pending, showSkeleton, refresh } = useMarketingFetch
 const items = computed(() => listResponse.value?.data || [])
 const monthGroups = computed(() => listResponse.value?.meta?.groups || [])
 const pendingSelectable = computed(() =>
-  items.value.filter((item: any) => item.status === 'pending'),
+  items.value.filter((item: any) => item.status === 'pending' && item.can_decide !== false),
 )
 const allPendingSelected = computed(() =>
   pendingSelectable.value.length > 0
@@ -158,6 +160,12 @@ function toggleSelectAllPending() {
     selectedIds.value = pendingSelectable.value.map((item: any) => item.id)
 }
 
+function requestBulkApprove() {
+  if (!selectedIds.value.length)
+    return
+  confirmBulkOpen.value = true
+}
+
 async function approveSelected() {
   if (!selectedIds.value.length)
     return
@@ -177,6 +185,7 @@ async function approveSelected() {
       toast.success(`${data.succeeded} conteúdos aprovados`)
     }
     selectedIds.value = []
+    confirmBulkOpen.value = false
     await refresh()
   }
   catch (error: any) {
@@ -445,8 +454,9 @@ const clientBuckets = [
       </label>
       <Button
         size="sm"
+        class="min-h-11"
         :disabled="!selectedIds.length || batchSaving"
-        @click="approveSelected"
+        @click="requestBulkApprove"
       >
         <Icon name="lucide:check" class="mr-1 h-4 w-4" />
         Aprovar selecionados ({{ selectedIds.length }})
@@ -478,7 +488,7 @@ const clientBuckets = [
         class="relative overflow-hidden rounded-xl border bg-card text-left transition hover:border-primary/40 hover:shadow-sm"
       >
         <div
-          v-if="isClientPortal && item.status === 'pending'"
+          v-if="isClientPortal && item.status === 'pending' && item.can_decide !== false"
           class="absolute left-3 top-3 z-10"
           @click.stop
         >
@@ -526,7 +536,7 @@ const clientBuckets = [
               <Icon :name="platformIcon(platform)" class="h-3 w-3" />
               {{ platform }}
             </Badge>
-            <Badge v-if="item.stage" variant="secondary">
+            <Badge v-if="!isClientPortal && item.stage" variant="secondary">
               {{ APPROVAL_STAGE_LABELS[item.stage as 'internal' | 'client'] }}
             </Badge>
             <Badge v-if="item.version_number" variant="outline">
@@ -598,5 +608,30 @@ const clientBuckets = [
       :client-mode="isClientPortal"
       @decided="onDecided"
     />
+
+    <AlertDialog v-model:open="confirmBulkOpen">
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>
+            Aprovar {{ selectedIds.length }} {{ selectedIds.length === 1 ? 'peça' : 'peças' }}
+          </AlertDialogTitle>
+          <AlertDialogDescription>
+            As peças selecionadas serão aprovadas. Pedir alterações e reprovar continuam peça a peça.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel :disabled="batchSaving">
+            Cancelar
+          </AlertDialogCancel>
+          <AlertDialogAction
+            class="min-h-11"
+            :disabled="batchSaving || !selectedIds.length"
+            @click.prevent="approveSelected"
+          >
+            Aprovar {{ selectedIds.length }} {{ selectedIds.length === 1 ? 'peça' : 'peças' }}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   </div>
 </template>

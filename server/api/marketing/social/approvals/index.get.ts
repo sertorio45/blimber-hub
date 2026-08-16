@@ -3,6 +3,7 @@ import { z } from 'zod'
 
 import {
   attachApprovalPreviewUrls,
+  canDecideApprovalRequest,
   mapApprovalListItem,
 } from '~/server/utils/social-approval-ux'
 import { requireSocialContext } from '~/server/utils/social-context'
@@ -22,6 +23,8 @@ const querySchema = z.object({
   to: z.string().optional(),
   search: z.string().optional(),
   groupBy: z.enum(['month']).optional(),
+  /** Company portal inbox: assigned + tenant client-stage they can decide. */
+  inbox: z.enum(['client']).optional(),
   /** When set with agency capability, list across accessible managed tenants. */
   organizationId: z.string().uuid().optional(),
   tenantIdFilter: z.string().uuid().optional(),
@@ -91,7 +94,12 @@ export default defineEventHandler(async (event) => {
     )
 
     const mapped = rows
-      .map((row: any) => mapApprovalListItem(row, tenantById.get(row.tenant_id) || null))
+      .map((row: any) => withCanDecide(
+        mapApprovalListItem(row, tenantById.get(row.tenant_id) || null),
+        workspace.userId,
+        workspace.capabilities,
+        workspace.isPlatformStaff,
+      ))
       .filter((item: any) => matchesClientFilters(item, query))
 
     return {
@@ -114,10 +122,15 @@ export default defineEventHandler(async (event) => {
 
   request = applyCommonFilters(request, query, user.id)
 
-  // Restrict to assigned requests when the caller is an approver without portfolio/manage scope.
+  const canDecideClientStage = holdsCapability(workspace.capabilities, 'marketing.social.approval.client')
+  const clientInbox = query.inbox === 'client' && (isPlatformStaff || canDecideClientStage)
+
+  // Restrict to assigned requests when the caller is an approver without
+  // portfolio/manage scope — except company admins/approvers listing the portal inbox.
   const restrictToAssigned = Boolean(query.assignedToMe)
     || (
-      !isPlatformStaff
+      !clientInbox
+      && !isPlatformStaff
       && !holdsCapability(workspace.capabilities, 'marketing.social.manage')
       && !holdsCapability(workspace.capabilities, 'agency.clients.read')
     )
@@ -146,8 +159,21 @@ export default defineEventHandler(async (event) => {
     .maybeSingle()
 
   const mapped = rows
-    .map((row: any) => mapApprovalListItem(row, tenant || null))
-    .filter((item: any) => matchesClientFilters(item, query))
+    .map((row: any) => withCanDecide(
+      mapApprovalListItem(row, tenant || null),
+      user.id,
+      workspace.capabilities,
+      isPlatformStaff,
+    ))
+    .filter((item: any) => {
+      if (!matchesClientFilters(item, query))
+        return false
+      if (!clientInbox)
+        return true
+      if (item.stage === 'internal' && !item.approver_ids.includes(user.id))
+        return false
+      return true
+    })
 
   return {
     data: mapped,
@@ -208,6 +234,25 @@ function applyCommonFilters(request: any, query: z.infer<typeof querySchema>, us
 
   void userId
   return next
+}
+
+function withCanDecide(
+  item: ReturnType<typeof mapApprovalListItem>,
+  userId: string,
+  capabilities: Iterable<string>,
+  isPlatformStaff?: boolean,
+) {
+  return {
+    ...item,
+    can_decide: canDecideApprovalRequest({
+      status: item.status,
+      stage: item.stage,
+      approverIds: item.approver_ids,
+      userId,
+      capabilities,
+      isPlatformStaff,
+    }),
+  }
 }
 
 function matchesClientFilters(item: any, query: z.infer<typeof querySchema>) {

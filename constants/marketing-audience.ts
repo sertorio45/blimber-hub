@@ -14,6 +14,7 @@ export const CLIENT_PORTAL_MARKETING_LINKS = [
   '/marketing/ads',
   '/marketing/settings',
   '/settings/integrations',
+  '/marketing/approvals',
   // Legacy bookmarks (redirected to MVP routes).
   '/marketing/posts',
   '/marketing/library',
@@ -40,7 +41,6 @@ const CLIENT_PORTAL_MARKETING_BLOCKLIST = [
   '/marketing/production',
   '/marketing/production/tasks',
   '/marketing/posts/tasks',
-  '/marketing/approvals',
   '/marketing/briefings',
   '/marketing/brand-guide',
   '/marketing/brand',

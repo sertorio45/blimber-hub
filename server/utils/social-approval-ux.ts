@@ -2,6 +2,8 @@ import type { H3Event } from 'h3'
 
 import { createError } from 'h3'
 
+import { holdsCapability } from '~/constants/workspace'
+
 /**
  * Enriches approval request rows with signed preview URLs from the snapshot.
  * Mutates rows in place and returns them.
@@ -43,6 +45,30 @@ export function isOverdue(dueAt: string | null | undefined, status: string) {
   if (status !== 'pending' || !dueAt)
     return false
   return new Date(dueAt).getTime() < Date.now()
+}
+
+/** Whether the actor may register a decision on this approval request. */
+export function canDecideApprovalRequest(input: {
+  status: string
+  stage?: string | null
+  approverIds?: string[] | null
+  userId: string
+  capabilities: Iterable<string>
+  isPlatformStaff?: boolean
+}): boolean {
+  if (input.status !== 'pending')
+    return false
+  if (input.isPlatformStaff)
+    return true
+
+  const assigned = (input.approverIds || []).includes(input.userId)
+  const stage = input.stage || 'client'
+
+  if (assigned)
+    return true
+
+  return stage === 'client'
+    && holdsCapability(input.capabilities, 'marketing.social.approval.client')
 }
 
 /** Client-facing roles must never see internal comments. */

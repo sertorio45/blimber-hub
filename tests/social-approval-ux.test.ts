@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  canDecideApprovalRequest,
   canSeeInternalComments,
   isOverdue,
   mapApprovalListItem,
@@ -56,5 +57,39 @@ describe('social-approval-ux', () => {
     expect(isOverdue('2000-01-01T00:00:00.000Z', 'pending')).toBe(true)
     expect(isOverdue('2000-01-01T00:00:00.000Z', 'approved')).toBe(false)
     expect(waitingMs(null)).toBeNull()
+  })
+
+  it('company admin can decide unassigned client-stage requests', () => {
+    expect(canDecideApprovalRequest({
+      status: 'pending',
+      stage: 'client',
+      approverIds: ['someone-else'],
+      userId: 'admin-1',
+      capabilities: ['marketing.social.approval.client'],
+    })).toBe(true)
+
+    expect(canDecideApprovalRequest({
+      status: 'pending',
+      stage: 'internal',
+      approverIds: ['someone-else'],
+      userId: 'admin-1',
+      capabilities: ['marketing.social.approval.client'],
+    })).toBe(false)
+
+    expect(canDecideApprovalRequest({
+      status: 'pending',
+      stage: 'client',
+      approverIds: ['approver-1'],
+      userId: 'approver-1',
+      capabilities: ['marketing.social.approval.client'],
+    })).toBe(true)
+
+    expect(canDecideApprovalRequest({
+      status: 'approved',
+      stage: 'client',
+      approverIds: [],
+      userId: 'admin-1',
+      capabilities: ['marketing.social.approval.client'],
+    })).toBe(false)
   })
 })

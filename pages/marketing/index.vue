@@ -174,6 +174,18 @@ const statusCards = computed(() => {
         <CardContent class="grid gap-3 sm:grid-cols-2">
           <template v-if="isClientExperience">
             <Button
+              v-if="workspace.can('marketing.social.approval.client')"
+              variant="outline"
+              class="h-auto justify-start p-4"
+              @click="navigateTo('/marketing/approvals')"
+            >
+              <Icon name="lucide:badge-check" class="mr-3 h-5 w-5" />
+              <span class="text-left">
+                <span class="block font-medium">Aprovações</span>
+                <span class="block text-xs text-muted-foreground">Revise peças enviadas para você</span>
+              </span>
+            </Button>
+            <Button
               v-if="canCreate"
               variant="outline"
               class="h-auto justify-start p-4"

@@ -108,6 +108,18 @@ const assets = computed(() => {
 const variants = computed(() => detail.value?.version?.snapshot?.variants || [])
 const formatHint = computed(() => variants.value[0]?.format || null)
 
+const clientChangeCategories: Partial<Record<ApprovalChangeCategory, string>> = {
+  art: 'Imagem',
+  copy: 'Texto',
+  other: 'Texto e imagem',
+}
+
+const changeCategoryOptions = computed(() => {
+  if (props.clientMode)
+    return clientChangeCategories
+  return APPROVAL_CHANGE_CATEGORY_LABELS
+})
+
 const lastRevisionReason = computed(() => detail.value?.revision_reason || null)
 
 const errorMessages: Record<string, { title: string, description: string }> = {
@@ -184,8 +196,10 @@ watch(() => [props.open, props.requestId], ([isOpen]) => {
 function startDecision(decision: ApprovalDecision) {
   decisionMode.value = decision
   decisionComment.value = ''
-  changeCategory.value = 'art'
+  changeCategory.value = props.clientMode && decision === 'changes_requested' ? 'other' : 'art'
   showDecisionForm.value = true
+  if (decision === 'changes_requested' && props.clientMode)
+    annotateMode.value = true
 }
 
 async function submitDecision() {
@@ -412,6 +426,7 @@ const showStickyActions = computed(() => {
     <SheetContent
       side="right"
       class="flex h-dvh w-full flex-col gap-0 p-0 sm:max-w-xl md:max-w-2xl lg:max-w-3xl"
+      :aria-label="detail?.title || 'Revisão de conteúdo'"
     >
       <div class="border-b px-4 py-4 sm:px-6">
         <SheetHeader class="space-y-1 text-left">
@@ -495,6 +510,7 @@ const showStickyActions = computed(() => {
                     v-if="can('marketing.social.comment')"
                     size="sm"
                     variant="outline"
+                    class="min-h-11"
                     :disabled="saving"
                     @click="annotateMode = !annotateMode"
                   >
@@ -692,7 +708,7 @@ const showStickyActions = computed(() => {
                           </SelectItem>
                         </SelectContent>
                       </Select>
-                      <Button size="sm" :disabled="saving || !threadComment.trim()" @click="sendComment">
+                      <Button size="sm" class="min-h-11" :disabled="saving || !threadComment.trim()" @click="sendComment">
                         Comentar
                       </Button>
                     </div>
@@ -755,17 +771,17 @@ const showStickyActions = computed(() => {
 
             <div v-if="showDecisionForm && decisionMode" class="mt-6 space-y-3 rounded-xl border p-4">
               <h4 class="font-semibold">
-                {{ decisionMode === 'approved' ? 'Confirmar aprovação' : decisionMode === 'rejected' ? 'Reprovar' : 'Solicitar alterações' }}
+                {{ decisionMode === 'approved' ? 'Confirmar aprovação' : decisionMode === 'rejected' ? 'Reprovar' : 'Pedir alterações' }}
               </h4>
               <div v-if="decisionMode === 'changes_requested'" class="space-y-2">
-                <Label>Categoria</Label>
+                <Label>O que precisa mudar</Label>
                 <Select v-model="changeCategory">
-                  <SelectTrigger>
+                  <SelectTrigger class="min-h-11">
                     <SelectValue placeholder="Selecione" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem
-                      v-for="(label, key) in APPROVAL_CHANGE_CATEGORY_LABELS"
+                      v-for="(label, key) in changeCategoryOptions"
                       :key="key"
                       :value="key"
                     >
@@ -773,19 +789,23 @@ const showStickyActions = computed(() => {
                     </SelectItem>
                   </SelectContent>
                 </Select>
+                <p v-if="clientMode" class="text-xs text-muted-foreground">
+                  Descreva o texto e, se quiser, marque um ponto na imagem acima.
+                </p>
               </div>
               <div class="space-y-2">
                 <Label>
-                  {{ decisionMode === 'approved' ? 'Comentário opcional' : 'Comentário obrigatório' }}
+                  {{ decisionMode === 'approved' ? 'Comentário opcional' : 'Motivo obrigatório' }}
                 </Label>
                 <Textarea v-model="decisionComment" class="min-h-28 text-base sm:text-sm" />
               </div>
               <div class="flex gap-2">
-                <Button variant="outline" @click="showDecisionForm = false">
+                <Button variant="outline" class="min-h-11" @click="showDecisionForm = false">
                   Voltar
                 </Button>
                 <Button
                   :variant="decisionMode === 'approved' ? 'default' : 'destructive'"
+                  class="min-h-11"
                   :disabled="saving"
                   @click="submitDecision"
                 >
@@ -805,7 +825,7 @@ const showStickyActions = computed(() => {
         <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
           <Button
             v-if="canApprove && detail.can_decide && detail.status === 'pending'"
-            class="w-full sm:w-auto"
+            class="min-h-11 w-full sm:w-auto"
             @click="startDecision('approved')"
           >
             Aprovar
@@ -813,18 +833,18 @@ const showStickyActions = computed(() => {
           <Button
             v-if="canApprove && detail.can_decide && detail.status === 'pending'"
             variant="outline"
-            class="w-full sm:w-auto"
+            class="min-h-11 w-full sm:w-auto"
             @click="startDecision('changes_requested')"
           >
-            Solicitar alterações
+            Pedir alterações
           </Button>
           <Button
-            v-if="canApprove && detail.can_decide && !clientMode && detail.status === 'pending'"
+            v-if="canApprove && detail.can_decide && detail.status === 'pending'"
             variant="destructive"
-            class="w-full sm:w-auto"
+            class="min-h-11 w-full sm:w-auto"
             @click="startDecision('rejected')"
           >
-            Rejeitar
+            Reprovar
           </Button>
           <Button
             v-if="canEdit && (detail.status === 'changes_requested' || detail.status === 'pending')"

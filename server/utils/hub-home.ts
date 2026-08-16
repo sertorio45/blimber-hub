@@ -344,14 +344,14 @@ export async function buildTenantAttention(input: {
       const local: HubAttentionItem[] = []
       const [pendingApprovals, failedPosts] = await Promise.all([
         countRows(client, 'approval_requests', q =>
-          q.eq('tenant_id', tenantId).eq('status', 'pending')),
+          q.eq('tenant_id', tenantId).eq('status', 'pending').eq('stage', 'client')),
         countRows(client, 'social_posts', q =>
           q.eq('tenant_id', tenantId).eq('status', 'failed').gte('updated_at', recentFailuresSince)),
       ])
       pushIf(local, {
         id: 'mkt-approvals',
-        title: 'Aprovações pendentes',
-        description: 'Conteúdo aguardando decisão',
+        title: 'Aguardando você',
+        description: 'Peças na etapa de aprovação do cliente',
         count: pendingApprovals,
         to: '/marketing/approvals',
         icon: 'lucide:badge-check',

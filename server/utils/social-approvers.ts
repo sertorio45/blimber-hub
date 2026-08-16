@@ -65,7 +65,7 @@ export async function listEligibleSocialApprovers(
   const { data: roleCapabilities, error: capabilityError } = await client
     .from('role_capabilities')
     .select('role')
-    .eq('capability', 'marketing.social.approve')
+    .in('capability', ['marketing.social.approve', 'marketing.social.approval.client'])
     .or(`tenant_id.is.null,tenant_id.eq.${tenantId}`)
   if (capabilityError)
     throw createError({ statusCode: 400, statusMessage: capabilityError.message })

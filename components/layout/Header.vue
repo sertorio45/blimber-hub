@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import DarkToggle from '~/components/DarkToggle.vue'
+import ApprovalInboxBell from '~/components/layout/ApprovalInboxBell.vue'
 </script>
 
 <template>
@@ -9,6 +10,7 @@ import DarkToggle from '~/components/DarkToggle.vue'
     </div>
     <div class="flex shrink-0 items-center gap-2">
       <slot />
+      <ApprovalInboxBell />
       <DarkToggle />
     </div>
   </header>

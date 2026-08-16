@@ -96,8 +96,7 @@ export const navMenu: NavMenu[] = [
             title: 'Aprovações',
             icon: 'i-lucide-badge-check',
             link: '/marketing/approvals',
-            capability: 'marketing.social.read',
-            audience: 'agency',
+            capability: 'marketing.social.approval.client',
           },
           {
             title: 'Biblioteca',
