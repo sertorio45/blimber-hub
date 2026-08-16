@@ -7,6 +7,12 @@ import {
 } from '~/types/marketing-mvp'
 import MarketingMvpStatusBadge from '~/components/marketing/MarketingMvpStatusBadge.vue'
 import { useMarketingAudience } from '~/composables/marketing/useMarketingAudience'
+import {
+  isImageAsset,
+  platformIcon,
+  previewUrl,
+  uniqueApprovalPreviewAssets,
+} from '@/utils/marketing-social-preview'
 
 definePageMeta({
   middleware: ['auth'],
@@ -15,11 +21,15 @@ definePageMeta({
 
 const { tenantId } = useTenant()
 const workspace = useWorkspace()
+const social = useMarketingSocial()
 const { isClientExperience } = useMarketingAudience()
 
 const canCreate = computed(() => workspace.can('marketing.social.create'))
 const canReports = computed(() => workspace.can('marketing.social.reports'))
 const canIntegrations = computed(() => workspace.can('marketing.social.integrations'))
+const canClientApprove = computed(() =>
+  isClientExperience.value && workspace.can('marketing.social.approval.client'),
+)
 
 const { data: overview, showSkeleton } = useMarketingFetch({
   key: () => `marketing-mvp-overview-${tenantId.value}`,
@@ -34,19 +44,49 @@ const { data: overview, showSkeleton } = useMarketingFetch({
   enabled: () => Boolean(tenantId.value),
 })
 
+const { data: pendingApprovals } = useMarketingFetch({
+  key: () => `marketing-overview-client-approvals-${tenantId.value}`,
+  handler: async () => {
+    const response = await social.listApprovals({
+      inbox: 'client',
+      status: 'pending',
+    })
+    return (response.data || []).filter((item: any) => item.can_decide !== false)
+  },
+  default: () => [] as any[],
+  watch: [tenantId, canClientApprove],
+  enabled: () => Boolean(tenantId.value) && canClientApprove.value,
+})
+
+const pendingApprovalCount = computed(() => pendingApprovals.value.length)
+const pendingApprovalPreviews = computed(() =>
+  pendingApprovals.value.slice(0, 3).map((item: any) => {
+    const assets = uniqueApprovalPreviewAssets(item.raw || {
+      content_versions: { snapshot: item.preview_snapshot },
+    })
+    const thumb = assets.find(asset => isImageAsset(asset) && previewUrl(asset)) || assets[0]
+    return {
+      id: item.id,
+      title: item.title || 'Sem título',
+      platforms: (item.platforms || []) as string[],
+      thumbUrl: thumb ? previewUrl(thumb) : null,
+    }
+  }),
+)
+
 const statusCards = computed(() => {
   const byStatus = overview.value.contents_by_mvp_status
   const order: MarketingMvpStatus[] = isClientExperience.value
-    ? ['agendado', 'publicado', 'erro']
+    ? ['aprovacao', 'agendado', 'publicado', 'erro']
     : ['rascunho', 'producao', 'aprovacao', 'agendado', 'publicado', 'erro']
 
   const linkFor = (status: MarketingMvpStatus) => {
-    // Client portal: single "Publicações" surface is `/marketing/content`.
+    if (status === 'aprovacao' && (canClientApprove.value || !isClientExperience.value))
+      return '/marketing/approvals'
+
     if (isClientExperience.value)
       return `/marketing/content?mvp_status=${status}`
 
-    if (status === 'aprovacao')
-      return '/marketing/approvals'
     if (status === 'producao')
       return '/marketing/production'
     if (status === 'agendado' || status === 'publicado' || status === 'erro')
@@ -57,9 +97,15 @@ const statusCards = computed(() => {
   return order.map(status => ({
     status,
     label: MARKETING_MVP_STATUS_LABELS[status],
-    value: byStatus?.[status] || 0,
+    value: status === 'aprovacao' && canClientApprove.value
+      ? pendingApprovalCount.value
+      : (byStatus?.[status] || 0),
     link: linkFor(status),
-    highlight: (status === 'aprovacao' || status === 'erro') && (byStatus?.[status] || 0) > 0,
+    highlight: (status === 'aprovacao' || status === 'erro') && (
+      status === 'aprovacao' && canClientApprove.value
+        ? pendingApprovalCount.value > 0
+        : (byStatus?.[status] || 0) > 0
+    ),
   }))
 })
 </script>
@@ -70,11 +116,11 @@ const statusCards = computed(() => {
     <div class="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
       <div>
         <h1 class="text-2xl font-bold tracking-tight">
-          {{ isClientExperience ? 'Conteúdo' : 'Visão geral' }}
+          Visão geral
         </h1>
         <p class="mt-1 text-muted-foreground">
           <template v-if="isClientExperience">
-            Acompanhe e publique conteúdo nas suas redes.
+            Aprove peças, acompanhe a agenda e veja o que já está no ar.
           </template>
           <template v-else>
             Planejamento, produção, aprovação e publicação em um único fluxo.
@@ -90,6 +136,59 @@ const statusCards = computed(() => {
         Calendário
       </Button>
     </div>
+
+    <Card
+      v-if="canClientApprove"
+      :class="{ 'border-primary/40': pendingApprovalCount > 0 }"
+    >
+      <CardHeader class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <CardTitle>Aguardando sua aprovação</CardTitle>
+          <CardDescription>
+            {{ pendingApprovalCount
+              ? `${pendingApprovalCount} peça${pendingApprovalCount === 1 ? '' : 's'} para revisar.`
+              : 'Nada para aprovar agora' }}
+          </CardDescription>
+        </div>
+        <Button class="shrink-0" @click="navigateTo('/marketing/approvals')">
+          Ir para aprovar
+          <Icon name="lucide:arrow-right" class="ml-2 h-4 w-4" />
+        </Button>
+      </CardHeader>
+      <CardContent v-if="pendingApprovalPreviews.length" class="grid gap-3 sm:grid-cols-3">
+        <button
+          v-for="item in pendingApprovalPreviews"
+          :key="item.id"
+          type="button"
+          class="flex items-center gap-3 rounded-lg border p-3 text-left transition-colors hover:bg-muted/40"
+          @click="navigateTo(`/marketing/approvals?request=${item.id}`)"
+        >
+          <div class="h-12 w-12 shrink-0 overflow-hidden rounded-md bg-muted">
+            <img
+              v-if="item.thumbUrl"
+              :src="item.thumbUrl"
+              :alt="item.title"
+              class="h-full w-full object-cover"
+            >
+            <div v-else class="flex h-full items-center justify-center text-muted-foreground">
+              <Icon name="lucide:image-off" class="h-4 w-4" />
+            </div>
+          </div>
+          <div class="min-w-0">
+            <p class="truncate text-sm font-medium">
+              {{ item.title }}
+            </p>
+            <p class="mt-0.5 flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+              <span v-for="platform in item.platforms" :key="`${item.id}-${platform}`" class="inline-flex items-center gap-0.5">
+                <Icon :name="platformIcon(platform)" class="h-3 w-3" />
+                {{ platform }}
+              </span>
+              <span v-if="!item.platforms.length">Peça pendente</span>
+            </p>
+          </div>
+        </button>
+      </CardContent>
+    </Card>
 
     <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
       <NuxtLink v-for="card in statusCards" :key="card.status" :to="card.link">
@@ -175,14 +274,18 @@ const statusCards = computed(() => {
           <template v-if="isClientExperience">
             <Button
               v-if="workspace.can('marketing.social.approval.client')"
-              variant="outline"
+              :variant="pendingApprovalCount ? 'default' : 'outline'"
               class="h-auto justify-start p-4"
               @click="navigateTo('/marketing/approvals')"
             >
               <Icon name="lucide:badge-check" class="mr-3 h-5 w-5" />
               <span class="text-left">
                 <span class="block font-medium">Aprovações</span>
-                <span class="block text-xs text-muted-foreground">Revise peças enviadas para você</span>
+                <span class="block text-xs text-muted-foreground">
+                  {{ pendingApprovalCount
+                    ? `${pendingApprovalCount} peça${pendingApprovalCount === 1 ? '' : 's'} aguardando você`
+                    : 'Revise peças enviadas para você' }}
+                </span>
               </span>
             </Button>
             <Button

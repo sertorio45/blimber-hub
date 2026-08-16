@@ -1,6 +1,9 @@
 import { getQuery } from 'h3'
 
+import { SOCIAL_EDITORIAL_STATUS_LABELS } from '~/types/marketing-social'
 import { requireSocialContext } from '~/server/utils/social-context'
+
+const EDITORIAL_STATUS_VALUES = new Set(Object.keys(SOCIAL_EDITORIAL_STATUS_LABELS))
 
 export default defineEventHandler(async (event) => {
   const query = getQuery(event)
@@ -47,6 +50,16 @@ export default defineEventHandler(async (event) => {
     request = request.eq('status', String(query.status))
   if (query.editorial_status && query.editorial_status !== 'all')
     request = request.eq('editorial_status', String(query.editorial_status))
+  if (query.exclude_editorial_status) {
+    const excluded = String(query.exclude_editorial_status)
+      .split(',')
+      .map(value => value.trim())
+      .filter(value => EDITORIAL_STATUS_VALUES.has(value))
+    if (excluded.length === 1)
+      request = request.neq('editorial_status', excluded[0])
+    else if (excluded.length)
+      request = request.not('editorial_status', 'in', `(${excluded.join(',')})`)
+  }
   if (query.publication_status && query.publication_status !== 'all')
     request = request.eq('publication_status', String(query.publication_status))
   if (query.campaign_id)

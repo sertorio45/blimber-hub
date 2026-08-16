@@ -117,6 +117,15 @@ describe('guarda de rotas por tipo de organização', () => {
     expect(canEnterWorkspaceRoute(clientApprover, {
       capability: 'marketing.social.approval.client',
     })).toBe(true)
+    expect(canEnterWorkspaceRoute(clientApprover, {
+      capability: 'marketing.social.read',
+    })).toBe(false)
+    expect(canEnterWorkspaceRoute({
+      ...clientApprover,
+      capabilities: ['marketing.social.read', 'marketing.social.approval.client'],
+    }, {
+      capability: 'marketing.social.read',
+    })).toBe(true)
     expect(canEnterWorkspaceRoute({
       ...clientApprover,
       capabilities: ['marketing.social.read'],

@@ -9,6 +9,10 @@ import { useWorkspace } from '~/composables/useWorkspace'
 import { SOCIAL_STATUS_LABELS } from '~/types/marketing-social'
 import { MARKETING_MVP_STATUS_LABELS } from '~/types/marketing-mvp'
 import { resolveMarketingMvpStatus } from '~/utils/marketing-mvp-status'
+import {
+  clientPortalPostsListQuery,
+  includeClientPortalBoardItem,
+} from '~/utils/marketing-client-content'
 
 definePageMeta({
   middleware: ['auth'],
@@ -48,6 +52,7 @@ const postsQueryKey = computed(() =>
     campaignId.value,
     assignedTo.value,
     search.value,
+    isClientExperience.value ? 'client' : 'agency',
   ].join('-'),
 )
 
@@ -84,9 +89,13 @@ const { data: response, showSkeleton, refresh } = useMarketingFetch({
     platform: platform.value !== 'all' ? platform.value : undefined,
     campaign_id: campaignId.value !== 'all' ? campaignId.value : undefined,
     assigned_to: assignedTo.value !== 'all' ? assignedTo.value : undefined,
+    ...clientPortalPostsListQuery({
+      isClientExperience: isClientExperience.value,
+      mvpStatus: mvpStatus.value,
+    }),
   }),
   default: () => ({ data: [] as any[], pagination: {} as Record<string, unknown> }),
-  watch: [social.tenantId, platform, campaignId, assignedTo, search],
+  watch: [social.tenantId, platform, campaignId, assignedTo, search, mvpStatus, isClientExperience],
   enabled: () => Boolean(social.tenantId.value),
 })
 
@@ -146,10 +155,10 @@ const boardItems = computed<SocialContentBoardItem[]>(() => {
       }
     })
 
-  if (mvpStatus.value === 'all')
-    return items
-
-  return items.filter(item => item.mvpStatus === mvpStatus.value)
+  return items.filter(item => includeClientPortalBoardItem(item.mvpStatus, {
+    isClientExperience: isClientExperience.value,
+    mvpStatusFilter: mvpStatus.value,
+  }))
 })
 
 function openDelete(post: any) {
@@ -167,7 +176,7 @@ function openDelete(post: any) {
         </h1>
         <p class="mt-1 text-muted-foreground">
           {{ isClientExperience
-            ? 'Crie, agende e publique conteúdo nas suas redes.'
+            ? 'Peças aguardando aprovação, agendadas ou publicadas — sem rascunhos da agência.'
             : 'Editor central do Marketing — peça única do fluxo ideia → publicado.' }}
         </p>
       </div>
@@ -203,7 +212,7 @@ function openDelete(post: any) {
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">
-              Todos os status
+              {{ isClientExperience ? 'Exceto rascunhos' : 'Todos os status' }}
             </SelectItem>
             <SelectItem
               v-for="(label, value) in MARKETING_MVP_STATUS_LABELS"
@@ -281,8 +290,10 @@ function openDelete(post: any) {
       v-else
       :items="boardItems"
       :view-mode="viewMode"
-      empty-title="Nenhum conteúdo encontrado"
-      empty-description="Crie o primeiro rascunho para iniciar o fluxo editorial."
+      :empty-title="isClientExperience ? 'Nenhuma publicação encontrada' : 'Nenhum conteúdo encontrado'"
+      :empty-description="isClientExperience
+        ? 'Quando houver peças para aprovar, agendadas ou no ar, elas aparecem aqui.'
+        : 'Crie o primeiro rascunho para iniciar o fluxo editorial.'"
     >
       <template #actions="{ item }">
         <Button
