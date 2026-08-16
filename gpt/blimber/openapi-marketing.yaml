@@ -5,7 +5,7 @@ info:
     Ação 1 (Marketing + platform + brand). Auth Bearer BLIMBER_MCP_API_KEY.
     Ads pagos: Ação 2 (openapi-ads.yaml, host ads.blimber.com.br). Não importe
     o índice openapi.yaml no mesmo GPT.
-  version: 0.4.3
+  version: 0.4.4
   contact:
     name: Blimber Hub
 servers:
@@ -345,8 +345,8 @@ paths:
       summary: Criar post editorial (draft)
       description: >
         Cria rascunho em social_posts. dryRun default true (preview, sem actor).
-        Exige confirm=true e confirmTenantId=tenantId. Execute (dryRun=false)
-        exige actorUserId ou BLIMBER_MCP_ACTOR_USER_ID.
+        confirm + confirmTenantId. Execute exige actor. Mídia: assetIds da
+        biblioteca e/ou sourceUrls/sourceBase64 no mesmo call.
       requestBody:
         required: true
         content:
@@ -397,19 +397,31 @@ paths:
                     type: string
                     format: uuid
                   description: >
-                    IDs da biblioteca com purpose=publication (listMediaAssets).
-                    Anexa à variant do canal (social_post_assets.variant_id) —
-                    é o que o publicador Graph/LinkedIn envia. Exige accountId
-                    e platform. Não faz upload no create; use uploadMediaAsset antes.
+                    IDs da biblioteca (purpose=publication). Anexa ao canal.
+                    Exige accountId+platform. Combine com sourceUrls se quiser.
                 referenceAssetIds:
                   type: array
                   maxItems: 20
                   items:
                     type: string
                     format: uuid
+                  description: IDs purpose=reference (moodboard). Não são publicados.
+                sourceUrls:
+                  type: array
+                  maxItems: 10
+                  items:
+                    type: string
+                    format: uri
                   description: >
-                    IDs purpose=reference (moodboard). Ficam no post com
-                    variant_id nulo e NÃO são publicados.
+                    HTTPS públicos. Upload + anexa neste call (pipeline da
+                    biblioteca). Ordem: assetIds, sourceUrls, sourceBase64.
+                    dryRun só lista, não grava.
+                sourceBase64:
+                  type: array
+                  maxItems: 5
+                  items:
+                    type: string
+                  description: Base64 (máx ~8MB cada). Prefira sourceUrls.
                 accountId:
                   type: string
                   format: uuid
@@ -473,8 +485,9 @@ paths:
       operationId: updatePost
       summary: Atualizar post draft
       description: >
-        Atualiza campos de post draft. dryRun default true. Exige confirm +
-        confirmTenantId. actorUserId opcional (created_by só em create).
+        Atualiza draft. dryRun default true. variants substitui canais
+        (assetIds de publicação). sourceUrls/sourceBase64 exigem variants
+        (upload no 1º canal). referenceAssetIds substitui referências.
       parameters:
         - name: postId
           in: path
@@ -559,6 +572,25 @@ paths:
                           format: uuid
                         description: >
                           IDs purpose=publication da biblioteca para este canal.
+                sourceUrls:
+                  type: array
+                  maxItems: 10
+                  items:
+                    type: string
+                    format: uri
+                    maxLength: 2048
+                  description: >
+                    Upload HTTPS neste call; entra em variants[0] depois de assetIds.
+                    Exige variants[]. Mesmos limites SSRF do uploadMediaAsset.
+                sourceBase64:
+                  type: array
+                  maxItems: 5
+                  items:
+                    type: string
+                    minLength: 8
+                    maxLength: 12000000
+                  description: >
+                    Upload base64 neste call (~8MB); anexa após sourceUrls no 1º canal.
                 referenceAssetIds:
                   type: array
                   maxItems: 20
@@ -568,6 +600,21 @@ paths:
                   description: >
                     Substitui referências do post (variant_id nulo). Omita para
                     não alterar. Array vazio remove as referências.
+                sourceUrls:
+                  type: array
+                  maxItems: 10
+                  items:
+                    type: string
+                    format: uri
+                  description: >
+                    Upload HTTPS neste call; entra em variants[0].assetIds.
+                    Exige variants[].
+                sourceBase64:
+                  type: array
+                  maxItems: 5
+                  items:
+                    type: string
+                  description: Upload base64 neste call; mesmo destino que sourceUrls.
                 actorUserId:
                   type: string
                   format: uuid

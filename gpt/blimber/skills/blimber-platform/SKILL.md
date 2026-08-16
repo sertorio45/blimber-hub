@@ -37,7 +37,7 @@ description: >-
 |--------------------|-----|
 | `searchTenants` | nome → tenantId |
 | `listBlimberTools` | catálogo unificado |
-| `listPosts` / `getPost` / `createPost` / `updatePost` | conteúdo editorial |
+| `listPosts` / `getPost` / `createPost` / `updatePost` | editorial; createPost aceita assetIds + sourceUrls no mesmo call |
 | `listEditorialCampaigns` / `getEditorialCampaign` / `createEditorialCampaign` / `updateEditorialCampaign` | campanha mensal |
 | `getBrandContext` | Brand Center |
 | `listMediaAssets` / `uploadMediaAsset` / `listSocialAccounts` | biblioteca / contas |

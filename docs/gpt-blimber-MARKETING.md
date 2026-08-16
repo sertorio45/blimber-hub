@@ -43,12 +43,15 @@ Preview (`dryRun=true`, default) **não** exige actor. Execute (`dryRun=false`) 
 3. `createEditorialCampaign` com `dryRun: true` → confirmar → `dryRun: false`
 4. `createPost` com `campaignId` da campanha editorial
 
-### 2. Criar post com mídia da biblioteca (publicar)
+### 2. Criar post com mídia (biblioteca e/ou upload no mesmo call)
 
-1. `uploadMediaAsset` com `sourceUrl` HTTPS (`dryRun: true` → confirmar → `dryRun: false`) **ou** `listMediaAssets` (`purpose=publication`) se o arquivo já estiver no Hub
-2. `listSocialAccounts` → `accountId` + `platform`
-3. `createPost` com `assetIds: [...]` (peças finais) **e** `accountId` + `platform`. `referenceAssetIds` é só moodboard (não vai para o Graph).
-4. Agendar/publicar no Hub — o worker gera URL assinada do bucket `marketing-assets` e o Graph busca essa URL (ou o LinkedIn faz download + upload).
+1. `listSocialAccounts` → `accountId` + `platform` (obrigatório para peças de **publicação**)
+2. Já na biblioteca: `listMediaAssets` (`purpose=publication`) → `createPost.assetIds`
+3. Upload no mesmo `createPost`: `sourceUrls` (HTTPS) e/ou `sourceBase64` — mesmo pipeline/SSRF da biblioteca. `dryRun: true` lista o plano **sem** gravar.
+4. Referência de arte (não publicada): `referenceAssetIds` (`purpose=reference`)
+5. Só biblioteca, sem post: `uploadMediaAsset`
+
+Estático/story/vídeo = 1 arquivo; carrossel até 10. Tenant isolado. Agendar/publicar no Hub.
 
 ### 3. Editar rascunho
 

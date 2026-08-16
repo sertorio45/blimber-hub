@@ -232,6 +232,8 @@ async function previewInlineUploads(input: {
   return planned
 }
 
+const PUBLICATION_ATTACH_ORDER = 'assetIds, depois sourceUrls, depois sourceBase64'
+
 async function persistInlinePublicationAssets(
   ctx: BlimberMcpToolContext,
   input: {
@@ -239,6 +241,7 @@ async function persistInlinePublicationAssets(
     createdBy: string
     sourceUrls: string[]
     sourceBase64: string[]
+    metadataSource?: string
   },
 ): Promise<{ ids: string[], uploaded: Array<{ id: string, name: string, source: 'url' | 'base64' }> }> {
   const ids: string[] = []
@@ -259,7 +262,7 @@ async function persistInlinePublicationAssets(
       inputMime,
       purpose: 'publication',
       formatHint: 'auto',
-      metadataSource: 'blimber_mcp_create_post',
+      metadataSource: input.metadataSource || 'blimber_mcp_create_post',
     })
     const id = String(persisted.asset.id)
     ids.push(id)
@@ -793,13 +796,11 @@ export async function marketingCreatePost(
     }
   }
 
-  if (input.assetIds.length && (!input.accountId || !input.platform)) {
-    throw new BlimberMcpError(
-      'VARIANT_REQUIRED',
-      'Peças de publicação (assetIds) exigem accountId e platform. Use referenceAssetIds só para referências de arte (não publicadas).',
-      400,
-    )
-  }
+  const inlineCount = input.sourceUrls.length + input.sourceBase64.length
+  const plannedPublicationCount = input.assetIds.length + inlineCount
+  assertPublicationNeedsChannel(plannedPublicationCount, input.accountId, input.platform)
+  if (plannedPublicationCount)
+    assertPlannedPublicationCount(input.format, plannedPublicationCount)
 
   await assertMcpSocialPostAssets(
     ctx.client,
@@ -813,6 +814,11 @@ export async function marketingCreatePost(
       : [],
     input.referenceAssetIds,
   )
+
+  const inlinePreview = await previewInlineUploads({
+    sourceUrls: input.sourceUrls,
+    sourceBase64: input.sourceBase64,
+  })
 
   if (input.accountId || input.platform) {
     if (!input.accountId || !input.platform) {
@@ -870,17 +876,55 @@ export async function marketingCreatePost(
               assetIds: input.assetIds,
             }
           : null,
+        plannedAssets: {
+          libraryPublicationIds: input.assetIds,
+          libraryReferenceIds: input.referenceAssetIds,
+          inlineUploads: inlinePreview,
+          attachOrder: PUBLICATION_ATTACH_ORDER,
+        },
         assetIds: input.assetIds,
         referenceAssetIds: input.referenceAssetIds,
+        sourceUrls: input.sourceUrls,
+        sourceBase64Count: input.sourceBase64.length,
         packageWarned: packageGate.warned,
       },
       notes: [
         'Post editorial (social_posts), não anúncio Meta.',
-        'Default dryRun=true — reenvie com dryRun=false após confirmação.',
+        'assetIds = biblioteca (purpose=publication) no canal. sourceUrls/sourceBase64 = upload neste call (mesmo pipeline da Biblioteca).',
+        `Ordem no canal: ${PUBLICATION_ATTACH_ORDER}.`,
+        'referenceAssetIds = referências de arte (não publicadas).',
+        'Default dryRun=true — reenvie com dryRun=false após confirmação. Upload só ocorre no execute.',
         actorPreviewNote(actorUserId),
         `Hub: ${MARKETING_CONTENT_URL}`,
       ],
     }
+  }
+
+  const uploaded = inlineCount
+    ? await persistInlinePublicationAssets(ctx, {
+        tenantId: input.tenantId,
+        createdBy: actorUserId!,
+        sourceUrls: input.sourceUrls,
+        sourceBase64: input.sourceBase64,
+        metadataSource: 'blimber_mcp_create_post',
+      })
+    : { ids: [] as string[], uploaded: [] as Array<{ id: string, name: string, source: 'url' | 'base64' }> }
+
+  const publicationAssetIds = [...input.assetIds, ...uploaded.ids]
+
+  if (publicationAssetIds.length || input.referenceAssetIds.length) {
+    await assertMcpSocialPostAssets(
+      ctx.client,
+      input.tenantId,
+      input.accountId && input.platform
+        ? [{
+            platform: input.platform,
+            format: input.format,
+            assetIds: publicationAssetIds,
+          }]
+        : [],
+      input.referenceAssetIds,
+    )
   }
 
   const { data: post, error: postError } = await ctx.client
@@ -918,10 +962,10 @@ export async function marketingCreatePost(
 
       createdVariantId = createdVariant?.id || null
 
-      if (createdVariantId && input.assetIds.length) {
+      if (createdVariantId && publicationAssetIds.length) {
         const { error: assetsError } = await ctx.client
           .from('social_post_assets')
-          .insert(input.assetIds.map((assetId, position) => ({
+          .insert(publicationAssetIds.map((assetId, position) => ({
             tenant_id: input.tenantId,
             post_id: post.id,
             variant_id: createdVariantId,
@@ -948,11 +992,18 @@ export async function marketingCreatePost(
     }
   }
   catch (error) {
-    await ctx.client.from('social_posts').delete().eq('id', post.id)
     throw new BlimberMcpError(
-      'CREATE_FAILED',
-      error instanceof Error ? error.message : 'Falha ao criar canais/assets do post',
+      'ATTACH_FAILED',
+      error instanceof Error
+        ? `Post criado sem mídia completa: ${error.message}`
+        : 'Post criado, mas falhou o vínculo de canais/assets.',
       400,
+      {
+        postId: post.id,
+        uploadedAssetIds: uploaded.ids,
+        libraryAssetIds: input.assetIds,
+        referenceAssetIds: input.referenceAssetIds,
+      },
     )
   }
 
@@ -960,7 +1011,8 @@ export async function marketingCreatePost(
     dryRun: false as const,
     kind: 'editorial' as const,
     post: mapPostRow(post),
-    assetIds: input.assetIds,
+    assetIds: publicationAssetIds,
+    uploadedAssetIds: uploaded.ids,
     referenceAssetIds: input.referenceAssetIds,
     packageWarned: packageGate.warned,
   }
@@ -1032,6 +1084,15 @@ export async function marketingUpdatePost(
   if (input.timezone !== undefined)
     updatePayload.timezone = input.timezone
 
+  const inlineCount = input.sourceUrls.length + input.sourceBase64.length
+  if (inlineCount && !input.variants?.length) {
+    throw new BlimberMcpError(
+      'VARIANT_REQUIRED',
+      'sourceUrls/sourceBase64 no update exigem variants[] (o upload entra no primeiro canal).',
+      400,
+    )
+  }
+
   if (input.variants?.length) {
     const accountIds = input.variants.map(v => v.accountId)
     const { data: accounts } = await ctx.client
@@ -1047,6 +1108,9 @@ export async function marketingUpdatePost(
         400,
       )
     }
+
+    const first = input.variants[0]!
+    assertPlannedPublicationCount(first.format, first.assetIds.length + inlineCount)
   }
 
   if (input.variants || input.referenceAssetIds) {
@@ -1062,6 +1126,11 @@ export async function marketingUpdatePost(
     )
   }
 
+  const inlinePreview = await previewInlineUploads({
+    sourceUrls: input.sourceUrls,
+    sourceBase64: input.sourceBase64,
+  })
+
   if (dryRun) {
     return {
       dryRun: true as const,
@@ -1071,9 +1140,46 @@ export async function marketingUpdatePost(
       before: mapPostRow(existing),
       afterPreview: updatePayload,
       variantsPreview: input.variants ?? null,
+      plannedAssets: {
+        libraryPublicationIds: (input.variants || []).flatMap(v => v.assetIds),
+        libraryReferenceIds: input.referenceAssetIds ?? null,
+        inlineUploads: inlinePreview,
+        attachOrder: `variants[0]: ${PUBLICATION_ATTACH_ORDER}`,
+      },
+      sourceUrls: input.sourceUrls,
+      sourceBase64Count: input.sourceBase64.length,
       referenceAssetIds: input.referenceAssetIds ?? null,
-      notes: ['Reenvie com dryRun=false após confirmação.'],
+      notes: [
+        'Reenvie com dryRun=false após confirmação. Upload só no execute.',
+        `Uploads inline entram no 1º canal. Ordem: ${PUBLICATION_ATTACH_ORDER}.`,
+      ],
     }
+  }
+
+  const uploaded = inlineCount
+    ? await persistInlinePublicationAssets(ctx, {
+        tenantId: input.tenantId,
+        createdBy: await requireActorUserId(ctx, input.actorUserId),
+        sourceUrls: input.sourceUrls,
+        sourceBase64: input.sourceBase64,
+        metadataSource: 'blimber_mcp_update_post',
+      })
+    : { ids: [] as string[], uploaded: [] as Array<{ id: string, name: string, source: 'url' | 'base64' }> }
+
+  const mergedVariants = (input.variants || []).map((variant, index) => ({
+    ...variant,
+    assetIds: index === 0
+      ? [...variant.assetIds, ...uploaded.ids]
+      : variant.assetIds,
+  }))
+
+  if (mergedVariants.length || input.referenceAssetIds) {
+    await assertMcpSocialPostAssets(
+      ctx.client,
+      input.tenantId,
+      mergedVariants,
+      input.referenceAssetIds || [],
+    )
   }
 
   const { data, error } = await ctx.client
@@ -1098,12 +1204,12 @@ export async function marketingUpdatePost(
     if (delError)
       throw new BlimberMcpError('DB_ERROR', delError.message, 400)
 
-    if (input.variants.length) {
+    if (mergedVariants.length) {
       const caption = input.content ?? existing.content ?? ''
       const hashtags = input.hashtags ?? ((existing.metadata as any)?.hashtags || [])
       const { data: createdVariants, error: insError } = await ctx.client
         .from('social_post_variants')
-        .insert(input.variants.map(v => ({
+        .insert(mergedVariants.map(v => ({
           tenant_id: input.tenantId,
           post_id: input.postId,
           account_id: v.accountId,
@@ -1117,11 +1223,17 @@ export async function marketingUpdatePost(
           },
         })))
         .select('id')
-      if (insError)
-        throw new BlimberMcpError('DB_ERROR', insError.message, 400)
+      if (insError) {
+        throw new BlimberMcpError(
+          'ATTACH_FAILED',
+          `Post atualizado sem canais: ${insError.message}`,
+          400,
+          { postId: input.postId, uploadedAssetIds: uploaded.ids },
+        )
+      }
 
       const publicationRows = (createdVariants || []).flatMap((created: { id: string }, index: number) => {
-        const assetIds = input.variants![index]?.assetIds || []
+        const assetIds = mergedVariants[index]?.assetIds || []
         return assetIds.map((assetId, position) => ({
           tenant_id: input.tenantId,
           post_id: input.postId,
@@ -1134,8 +1246,14 @@ export async function marketingUpdatePost(
         const { error: assetsError } = await ctx.client
           .from('social_post_assets')
           .insert(publicationRows)
-        if (assetsError)
-          throw new BlimberMcpError('DB_ERROR', assetsError.message, 400)
+        if (assetsError) {
+          throw new BlimberMcpError(
+            'ATTACH_FAILED',
+            `Post atualizado sem mídia completa: ${assetsError.message}`,
+            400,
+            { postId: input.postId, uploadedAssetIds: uploaded.ids },
+          )
+        }
       }
     }
   }
@@ -1160,8 +1278,14 @@ export async function marketingUpdatePost(
           asset_id: assetId,
           position,
         })))
-      if (referenceError)
-        throw new BlimberMcpError('DB_ERROR', referenceError.message, 400)
+      if (referenceError) {
+        throw new BlimberMcpError(
+          'ATTACH_FAILED',
+          `Post atualizado, referências não vinculadas: ${referenceError.message}`,
+          400,
+          { postId: input.postId },
+        )
+      }
     }
   }
 
@@ -1169,6 +1293,8 @@ export async function marketingUpdatePost(
     dryRun: false as const,
     kind: 'editorial' as const,
     post: mapPostRow(data),
+    uploadedAssetIds: uploaded.ids,
+    referenceAssetIds: input.referenceAssetIds ?? undefined,
   }
 }
 

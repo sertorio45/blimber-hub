@@ -21,6 +21,8 @@ export default defineEventHandler(async (event) => {
     timezone: optionalString(body.timezone),
     variants: Array.isArray(body.variants) ? body.variants : undefined,
     referenceAssetIds: Array.isArray(body.referenceAssetIds) ? body.referenceAssetIds : undefined,
+    sourceUrls: Array.isArray(body.sourceUrls) ? body.sourceUrls : undefined,
+    sourceBase64: Array.isArray(body.sourceBase64) ? body.sourceBase64 : undefined,
     actorUserId: optionalString(body.actorUserId),
     confirmTenantId: optionalString(body.confirmTenantId),
     confirm: body.confirm === true ? true : body.confirm,

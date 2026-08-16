@@ -11,7 +11,7 @@ Ads no ChatGPT = `openapi-ads.yaml` (host `ads.*`). Pack standalone `gpt/blimber
 - `GET /api/gpt/tools` — catálogo (listBlimberTools)
 
 ### Marketing
-- `GET/POST /api/gpt/marketing/posts`
+- `GET/POST /api/gpt/marketing/posts` — createPost: `assetIds` (biblioteca) e `sourceUrls`/`sourceBase64` (upload no mesmo call)
 - `GET/PUT /api/gpt/marketing/posts/{postId}`
 - `GET/POST /api/gpt/marketing/campaigns`
 - `GET/PUT /api/gpt/marketing/campaigns/{campaignId}`

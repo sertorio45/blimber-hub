@@ -20,6 +20,8 @@ export default defineEventHandler(async (event) => {
     timezone: optionalString(body.timezone),
     assetIds: Array.isArray(body.assetIds) ? body.assetIds : undefined,
     referenceAssetIds: Array.isArray(body.referenceAssetIds) ? body.referenceAssetIds : undefined,
+    sourceUrls: Array.isArray(body.sourceUrls) ? body.sourceUrls : undefined,
+    sourceBase64: Array.isArray(body.sourceBase64) ? body.sourceBase64 : undefined,
     accountId: optionalString(body.accountId),
     platform: optionalString(body.platform),
     format: optionalString(body.format),
