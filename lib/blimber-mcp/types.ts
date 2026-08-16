@@ -64,7 +64,18 @@ export interface BlimberMcpSupabaseLike {
       createSignedUrl?: (
         path: string,
         expiresIn: number,
-      ) => Promise<{ data: { signedUrl?: string | null } | null }>
+      ) => Promise<{
+        data: { signedUrl?: string | null, signedURL?: string | null } | null
+        error?: { message?: string } | null
+      }>
+      upload?: (
+        path: string,
+        body: Buffer | Uint8Array,
+        options?: { cacheControl?: string, contentType?: string, upsert?: boolean },
+      ) => Promise<{ error: { message: string } | null }>
+      remove?: (
+        paths: string[],
+      ) => Promise<{ error: { message?: string } | null }>
       list?: (
         path: string,
         options?: { search?: string, limit?: number },

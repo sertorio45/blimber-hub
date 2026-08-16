@@ -17,6 +17,7 @@ Ads no ChatGPT = `openapi-ads.yaml` (host `ads.*`). Pack standalone `gpt/blimber
 - `GET/PUT /api/gpt/marketing/campaigns/{campaignId}`
 - `GET /api/gpt/marketing/brand-context?tenantId=`
 - `GET /api/gpt/marketing/assets?tenantId=`
+- `POST /api/gpt/marketing/assets/upload`
 - `GET /api/gpt/marketing/accounts?tenantId=`
 
 ## Ação Ads — `openapi-ads.yaml` (`ads.blimber.com.br`)

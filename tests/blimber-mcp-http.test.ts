@@ -14,6 +14,7 @@ describe('blimber MCP remote server tools', () => {
     expect(names).toContain('listBlimberTools')
     expect(names).toContain('marketing_list_posts')
     expect(names).toContain('marketing_delete_asset')
+    expect(names).toContain('marketing_upload_asset')
     expect(names).toContain('meta_list_campaigns')
     expect(names).toContain('meta_create_campaign')
     expect(names).toContain('ads_google_status')

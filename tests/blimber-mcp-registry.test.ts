@@ -169,6 +169,7 @@ const EXPECTED_ROUTE_FILES: Record<string, string[]> = {
   '/api/gpt/marketing/tools': ['server/api/gpt/marketing/tools.get.ts'],
   '/api/gpt/marketing/accounts': ['server/api/gpt/marketing/accounts.get.ts'],
   '/api/gpt/marketing/assets': ['server/api/gpt/marketing/assets.get.ts'],
+  '/api/gpt/marketing/assets/upload': ['server/api/gpt/marketing/assets/upload.post.ts'],
   '/api/gpt/marketing/brand-context': ['server/api/gpt/marketing/brand-context.get.ts'],
   '/api/gpt/brand/context': ['server/api/gpt/brand/context.get.ts'],
   '/api/gpt/marketing/posts': [
@@ -267,6 +268,7 @@ describe('blimber unified MCP registry + openapi', () => {
     expect(names).toContain('marketing_list_posts')
     expect(names).toContain('marketing_delete_post')
     expect(names).toContain('marketing_delete_asset')
+    expect(names).toContain('marketing_upload_asset')
     expect(names).toContain('marketing_create_campaign')
     expect(names).toContain('meta_list_campaigns')
     expect(names).toContain('ads_meta_list_campaigns')
@@ -316,6 +318,7 @@ describe('blimber unified MCP registry + openapi', () => {
     expect(operationIds).toContain('createPost')
     expect(operationIds).toContain('deletePost')
     expect(operationIds).toContain('deleteMediaAsset')
+    expect(operationIds).toContain('uploadMediaAsset')
     expect(operationIds).toContain('createEditorialCampaign')
     expect(operationIds).not.toContain('listCampaigns')
     expect(operationIds).not.toContain('createCampaign')
@@ -326,6 +329,7 @@ describe('blimber unified MCP registry + openapi', () => {
     expect(paths).toContain('/api/gpt/tools')
     expect(paths).toContain('/api/gpt/marketing/accounts')
     expect(paths).toContain('/api/gpt/marketing/assets')
+    expect(paths).toContain('/api/gpt/marketing/assets/upload')
     expect(paths).toContain('/api/gpt/marketing/assets/{assetId}/delete')
     expect(paths).toContain('/api/gpt/marketing/brand-context')
     expect(paths).toContain('/api/gpt/marketing/posts')
@@ -340,6 +344,7 @@ describe('blimber unified MCP registry + openapi', () => {
       ['/api/gpt/marketing/posts/{postId}', 'put'],
       ['/api/gpt/marketing/campaigns', 'post'],
       ['/api/gpt/marketing/campaigns/{campaignId}', 'put'],
+      ['/api/gpt/marketing/assets/upload', 'post'],
     ] as const) {
       const props = pathsDoc[path]?.[method]?.requestBody?.content?.['application/json']?.schema?.properties
       expect(props?.actorUserId, `${method.toUpperCase()} ${path} actorUserId`).toBeTruthy()

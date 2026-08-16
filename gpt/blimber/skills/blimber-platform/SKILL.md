@@ -31,7 +31,7 @@ description: >-
 5. Mutações: dryRun → confirmar → `dryRun: false` + `confirm` + `confirmTenantId`.
 6. Respostas em **PT-BR**.
 
-## Tools — Ação Marketing (13, host app.*)
+## Tools — Ação Marketing (16, host app.*)
 
 | Tool / operationId | Uso |
 |--------------------|-----|
@@ -40,7 +40,7 @@ description: >-
 | `listPosts` / `getPost` / `createPost` / `updatePost` | conteúdo editorial |
 | `listEditorialCampaigns` / `getEditorialCampaign` / `createEditorialCampaign` / `updateEditorialCampaign` | campanha mensal |
 | `getBrandContext` | Brand Center |
-| `listMediaAssets` / `listSocialAccounts` | biblioteca / contas |
+| `listMediaAssets` / `uploadMediaAsset` / `listSocialAccounts` | biblioteca / contas |
 
 ## Tools — Ação Ads (26, host ads.*)
 

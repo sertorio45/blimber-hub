@@ -28,6 +28,7 @@ describe('resolveBlimberMcpToolName', () => {
     expect(resolveBlimberMcpToolName('ads_meta_create_ad', known)).toBe('meta_create_ad')
     expect(resolveBlimberMcpToolName('createAd', known)).toBe('meta_create_ad')
     expect(resolveBlimberMcpToolName('Blimber_Hub.createAd', known)).toBe('meta_create_ad')
+    expect(resolveBlimberMcpToolName('uploadMediaAsset', known)).toBe('marketing_upload_asset')
     expect(resolveBlimberMcpToolName('not_a_tool', known)).toBeNull()
   })
 })

@@ -1,6 +1,13 @@
 import { z } from 'zod'
 import { fetchBrandContextForTenant } from '~/server/utils/brand-context'
 import { LINKED_POSTS_EMBED_SELECT } from '~/server/utils/media-asset-deletion'
+import {
+  assertLibraryUploadKind,
+  decodeLibraryBase64,
+  filenameFromUrl,
+  persistLibraryAsset,
+} from '~/server/utils/media-library-upload'
+import { fetchPublicHttpsMedia, assertPublicMediaUrl } from '~/server/utils/media-url-fetch'
 import { assertPackageAllowsNewPost } from '~/server/utils/social-packages'
 import {
   assertBlimberWriteConfirmation,
@@ -257,6 +264,43 @@ export const marketingDeleteAssetSchema = z.object({
   ...blimberWriteDryRunField,
 })
 
+const libraryCategoryEnum = z.enum([
+  'logo',
+  'brand_manual',
+  'photo',
+  'video',
+  'product',
+  'document',
+  'reference',
+])
+
+export const marketingUploadAssetSchema = z.object({
+  tenantId: tenantIdField,
+  /** HTTPS URL — preferred for ChatGPT MCP. XOR sourceBase64. */
+  sourceUrl: z.string().url().max(2048).optional(),
+  /** Raw or data-URL base64 (max ~8MB decoded). XOR sourceUrl. */
+  sourceBase64: z.string().min(8).max(12_000_000).optional(),
+  name: z.string().trim().min(1).max(255).optional(),
+  mimeType: z.string().max(150).optional(),
+  purpose: z.enum(['reference', 'publication']).default('publication'),
+  category: libraryCategoryEnum.nullable().optional(),
+  formatHint: z.enum(['auto', 'square', 'portrait', 'landscape', 'story']).default('auto'),
+  campaignId: uuid.nullable().optional(),
+  actorUserId: uuid.optional(),
+  ...blimberWriteConfirmationFields,
+  ...blimberWriteDryRunField,
+}).superRefine((data, ctx) => {
+  const hasUrl = Boolean(data.sourceUrl)
+  const hasB64 = Boolean(data.sourceBase64)
+  if (hasUrl === hasB64) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Informe sourceUrl OU sourceBase64, não ambos nem nenhum.',
+      path: ['sourceUrl'],
+    })
+  }
+})
+
 export const marketingListCampaignsSchema = z.object({
   tenantId: tenantIdField,
   status: socialCampaignStatus.or(z.literal('all')).optional(),
@@ -306,6 +350,7 @@ export type MarketingToolName =
   | 'marketing_update_post'
   | 'marketing_delete_post'
   | 'marketing_delete_asset'
+  | 'marketing_upload_asset'
   | 'marketing_list_campaigns'
   | 'marketing_get_campaign'
   | 'marketing_create_campaign'
@@ -313,7 +358,7 @@ export type MarketingToolName =
 
 export const MARKETING_TOOL_DESCRIPTIONS: Record<MarketingToolName, string> = {
   marketing_list_social_accounts: 'Lista contas sociais ativas do tenant (para variant/accountId).',
-  marketing_list_assets: 'Lista mídias da Biblioteca (ids para referência em posts). Sem upload binário.',
+  marketing_list_assets: 'Lista mídias da Biblioteca (ids para referência em posts). Upload: marketing_upload_asset.',
   marketing_get_brand_context: 'Lê Brand Context (tom, CTAs, restrições) do Brand Center do tenant.',
   marketing_list_posts: 'Lista posts editoriais (social_posts) do tenant.',
   marketing_get_post: 'Detalhe de um post editorial por postId.',
@@ -321,6 +366,7 @@ export const MARKETING_TOOL_DESCRIPTIONS: Record<MarketingToolName, string> = {
   marketing_update_post: 'Atualiza campos de um post draft, incluindo variants/contas sociais (dryRun default true).',
   marketing_delete_post: 'Soft-delete de 1 post editorial (dryRun default true). Isolado por tenant; sem exclusão em massa nem remota.',
   marketing_delete_asset: 'Remove 1 mídia da Biblioteca (storage + DB). dryRun default true. Bloqueia se vinculada a posts.',
+  marketing_upload_asset: 'Upload na Biblioteca (HTTPS URL preferencial ou base64). Compressão/storage iguais ao Hub. dryRun default true.',
   marketing_list_campaigns: 'Lista campanhas EDITORIAIS (social_campaigns) — não são Meta Ads.',
   marketing_get_campaign: 'Detalhe de campanha editorial + posts vinculados.',
   marketing_create_campaign: 'Cria campanha editorial (dryRun default true sem actor; execute exige actorUserId ou env).',
@@ -337,6 +383,7 @@ export const MARKETING_TOOL_SCHEMAS = {
   marketing_update_post: marketingUpdatePostSchema,
   marketing_delete_post: marketingDeletePostSchema,
   marketing_delete_asset: marketingDeleteAssetSchema,
+  marketing_upload_asset: marketingUploadAssetSchema,
   marketing_list_campaigns: marketingListCampaignsSchema,
   marketing_get_campaign: marketingGetCampaignSchema,
   marketing_create_campaign: marketingCreateCampaignSchema,
@@ -412,7 +459,7 @@ export async function marketingListAssets(
   return {
     tenantId: input.tenantId,
     libraryUrl: MARKETING_LIBRARY_URL,
-    note: 'Upload binário via GPT não é suportado. Use a Biblioteca no Hub e referencie assetIds nos posts.',
+    note: 'Use marketing_upload_asset (sourceUrl HTTPS) para enviar arquivos. Referencie assetIds nos posts.',
     assets: rows.map((asset: any) => ({
       id: String(asset.id),
       name: asset.name,
@@ -1122,6 +1169,138 @@ export async function marketingDeleteAsset(
   }
 }
 
+export async function marketingUploadAsset(
+  ctx: BlimberMcpToolContext,
+  raw: unknown,
+) {
+  const input = marketingUploadAssetSchema.parse(raw)
+  assertBlimberWriteConfirmation(input)
+  const dryRun = resolveDryRun(input.dryRun, true)
+  const actorUserId = dryRun
+    ? resolveOptionalActorUserId(ctx, input.actorUserId)
+    : await requireActorUserId(ctx, input.actorUserId)
+
+  if (input.campaignId) {
+    const { data: campaign } = await ctx.client
+      .from('social_campaigns')
+      .select('id')
+      .eq('tenant_id', input.tenantId)
+      .eq('id', input.campaignId)
+      .maybeSingle()
+    if (!campaign) {
+      throw new BlimberMcpError(
+        'INVALID_CAMPAIGN',
+        'campaignId inválido para este tenant (deve ser social_campaigns editorial).',
+        400,
+      )
+    }
+  }
+
+  if (dryRun) {
+    let previewName = input.name || (input.sourceUrl ? filenameFromUrl(input.sourceUrl) : 'upload.bin')
+    let previewMime = input.mimeType || null
+    let previewKind: 'image' | 'video' | 'unknown' = 'unknown'
+    let previewBytes: number | null = null
+
+    if (input.sourceUrl) {
+      await assertPublicMediaUrl(input.sourceUrl, false)
+      previewName = input.name || filenameFromUrl(input.sourceUrl)
+      try {
+        previewKind = assertLibraryUploadKind(input.mimeType, previewName, input.purpose).kind
+      }
+      catch {
+        previewKind = 'unknown'
+      }
+    }
+    else if (input.sourceBase64) {
+      const decoded = decodeLibraryBase64(input.sourceBase64)
+      previewBytes = decoded.buffer.length
+      previewMime = input.mimeType || decoded.mimeHint
+      previewName = input.name || 'upload.bin'
+      previewKind = assertLibraryUploadKind(previewMime || undefined, previewName, input.purpose).kind
+    }
+
+    return {
+      dryRun: true as const,
+      wouldMutate: true,
+      entity: 'media_asset' as const,
+      preview: {
+        name: previewName,
+        mimeType: previewMime,
+        kind: previewKind,
+        purpose: input.purpose,
+        category: input.category ?? null,
+        campaignId: input.campaignId || null,
+        source: input.sourceUrl ? 'url' : 'base64',
+        sourceUrl: input.sourceUrl || null,
+        sizeBytes: previewBytes,
+        formatHint: input.formatHint,
+      },
+      notes: [
+        'Imagens passam pelo mesmo pipeline de compressão (sharp) da Biblioteca no Hub.',
+        'Vídeo (mp4/mov) sobe sem compressão, igual ao upload direto da UI.',
+        'Limite: 100MB via URL; ~8MB via sourceBase64. Prefira HTTPS URL.',
+        actorPreviewNote(actorUserId),
+        'Reenvie com dryRun=false após confirmação.',
+        `Hub: ${MARKETING_LIBRARY_URL}`,
+      ],
+    }
+  }
+
+  let buffer: Buffer
+  let inputMime: string | undefined = input.mimeType
+  let filename = input.name || 'upload.bin'
+
+  if (input.sourceUrl) {
+    const fetched = await fetchPublicHttpsMedia(input.sourceUrl)
+    buffer = fetched.buffer
+    inputMime = input.mimeType || fetched.contentType
+    filename = input.name || fetched.filenameHint || filenameFromUrl(input.sourceUrl)
+  }
+  else {
+    const decoded = decodeLibraryBase64(input.sourceBase64!)
+    buffer = decoded.buffer
+    inputMime = input.mimeType || decoded.mimeHint || inputMime
+  }
+
+  const persisted = await persistLibraryAsset({
+    client: ctx.client,
+    tenantId: input.tenantId,
+    createdBy: actorUserId!,
+    filename,
+    buffer,
+    inputMime,
+    purpose: input.purpose,
+    category: input.category,
+    formatHint: input.formatHint,
+    campaignId: input.campaignId,
+    metadataSource: 'blimber_mcp',
+  })
+
+  const asset = persisted.asset
+  return {
+    dryRun: false as const,
+    uploaded: true,
+    entity: 'media_asset' as const,
+    libraryUrl: MARKETING_LIBRARY_URL,
+    asset: {
+      id: String(asset.id),
+      name: String(asset.name || filename),
+      mimeType: persisted.meta.mimeType,
+      purpose: asset.purpose ?? input.purpose,
+      category: asset.category ?? input.category ?? null,
+      sizeBytes: persisted.meta.compressedSize,
+      width: persisted.meta.width,
+      height: persisted.meta.height,
+      campaignId: asset.campaign_id ?? input.campaignId ?? null,
+      objectPath: persisted.objectPath,
+      previewUrl: persisted.previewUrl,
+      createdAt: asset.created_at ?? null,
+    },
+    meta: persisted.meta,
+  }
+}
+
 export async function marketingListCampaigns(
   ctx: BlimberMcpToolContext,
   raw: unknown,
@@ -1347,6 +1526,7 @@ export const MARKETING_TOOL_HANDLERS: Record<MarketingToolName, MarketingHandler
   marketing_update_post: marketingUpdatePost,
   marketing_delete_post: marketingDeletePost,
   marketing_delete_asset: marketingDeleteAsset,
+  marketing_upload_asset: marketingUploadAsset,
   marketing_list_campaigns: marketingListCampaigns,
   marketing_get_campaign: marketingGetCampaign,
   marketing_create_campaign: marketingCreateCampaign,

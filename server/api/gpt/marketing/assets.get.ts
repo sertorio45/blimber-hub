@@ -6,7 +6,7 @@ import {
   runMarketingGptTool,
 } from '~/server/utils/blimber-gpt-api'
 
-/** Lista assets da Biblioteca de mídia (sem upload binário). */
+/** Lista assets da Biblioteca de mídia. */
 export default defineEventHandler(async (event) => {
   const q = queryRecord(event)
   return runMarketingGptTool(event, 'marketing_list_assets', {

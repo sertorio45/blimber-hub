@@ -22,6 +22,7 @@ Preview (`dryRun=true`, default) **não** exige actor. Execute (`dryRun=false`) 
 | GET | `/api/gpt/tenants?q=` | `searchTenants` |
 | GET | `/api/gpt/marketing/accounts?tenantId=` | `listSocialAccounts` |
 | GET | `/api/gpt/marketing/assets?tenantId=` | `listMediaAssets` |
+| POST | `/api/gpt/marketing/assets/upload` | `uploadMediaAsset` |
 | GET | `/api/gpt/marketing/brand-context?tenantId=` | `getBrandContext` |
 | GET | `/api/gpt/marketing/posts?...` | `listPosts` |
 | POST | `/api/gpt/marketing/posts` | `createPost` |
@@ -44,7 +45,7 @@ Preview (`dryRun=true`, default) **não** exige actor. Execute (`dryRun=false`) 
 
 ### 2. Criar post com referência de mídia
 
-1. `listMediaAssets` (ou peça upload no Hub: `/marketing/media`)
+1. `uploadMediaAsset` com `sourceUrl` HTTPS pública (`dryRun: true` → confirmar → `dryRun: false`) **ou** `listMediaAssets` se o arquivo já estiver no Hub
 2. `createPost` com `referenceAssetIds: [...]`
 3. Opcional: `accountId` + `platform` de `listSocialAccounts`
 
@@ -75,6 +76,6 @@ Preview (`dryRun=true`, default) **não** exige actor. Execute (`dryRun=false`) 
 | “Campanha de maio / calendário” | `social_campaigns` | `*EditorialCampaign*` |
 | “Post / conteúdo / peça” | `social_posts` | `*Post*` |
 | “Campanha de anúncio / Ads / tráfego pago” | Meta Graph | `listCampaigns` / `createCampaign` (mesmo OpenAPI) |
-| “Biblioteca / arte” | `media_assets` | `listMediaAssets` |
+| “Biblioteca / arte” | `media_assets` | `listMediaAssets` / `uploadMediaAsset` |
 
 Plano geral: [gpt-blimber-UNIFIED-PLAN.md](./gpt-blimber-UNIFIED-PLAN.md).

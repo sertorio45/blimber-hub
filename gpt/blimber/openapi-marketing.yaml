@@ -5,7 +5,7 @@ info:
     Ação 1 (Marketing + platform + brand). Auth Bearer BLIMBER_MCP_API_KEY.
     Ads pagos: Ação 2 (openapi-ads.yaml, host ads.blimber.com.br). Não importe
     o índice openapi.yaml no mesmo GPT.
-  version: 0.4.2
+  version: 0.4.3
   contact:
     name: Blimber Hub
 servers:
@@ -103,8 +103,8 @@ paths:
       operationId: listMediaAssets
       summary: Listar biblioteca de mídia
       description: >
-        Lista media_assets do tenant (ids para referência). Sem upload binário —
-        upload no Hub.
+        Lista media_assets do tenant (ids para referência). Upload via
+        uploadMediaAsset (sourceUrl HTTPS).
       parameters:
         - name: tenantId
           in: query
@@ -148,6 +148,73 @@ paths:
           description: Assets
         "401":
           description: Não autorizado
+
+  /api/gpt/marketing/assets/upload:
+    post:
+      operationId: uploadMediaAsset
+      summary: Enviar mídia para a biblioteca
+      description: >
+        Upload na biblioteca (mesmo storage/compressão do Hub). Prefira
+        sourceUrl HTTPS. sourceUrl XOR sourceBase64. dryRun default true.
+        Exige confirm + confirmTenantId. Imagem jpeg/png/webp/gif; vídeo
+        mp4/mov. URL até 100MB; base64 ~8MB.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tenantId, confirmTenantId, confirm]
+              properties:
+                tenantId:
+                  type: string
+                  format: uuid
+                confirmTenantId:
+                  type: string
+                  format: uuid
+                confirm:
+                  type: boolean
+                  enum: [true]
+                sourceUrl:
+                  type: string
+                  format: uri
+                  description: URL HTTPS pública da imagem/vídeo (preferencial).
+                sourceBase64:
+                  type: string
+                  description: Base64 ou data URL (máx ~8MB). XOR sourceUrl.
+                name:
+                  type: string
+                  maxLength: 255
+                mimeType:
+                  type: string
+                  maxLength: 150
+                purpose:
+                  type: string
+                  enum: [reference, publication]
+                  default: publication
+                category:
+                  type: string
+                  enum: [logo, brand_manual, photo, video, product, document, reference]
+                formatHint:
+                  type: string
+                  enum: [auto, square, portrait, landscape, story]
+                  default: auto
+                campaignId:
+                  type: string
+                  format: uuid
+                dryRun:
+                  type: boolean
+                  default: true
+                actorUserId:
+                  type: string
+                  format: uuid
+      responses:
+        "200":
+          description: Preview ou asset criado (id, mime, dimensões, previewUrl)
+        "401":
+          description: Não autorizado
+        "413":
+          description: Arquivo grande demais
 
   /api/gpt/marketing/assets/{assetId}/delete:
     post:

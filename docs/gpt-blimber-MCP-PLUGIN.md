@@ -124,7 +124,7 @@ Backend compartilhado — escolha um ou use os dois no mesmo ecossistema.
 1. **Vercel serverless:** endpoint em modo **stateless** + respostas JSON (`enableJsonResponse: true`) — **um transport+server MCP novo por request** (exigência do SDK; singleton quebra `tools/list` no ChatGPT).
 2. **OAuth pragmático:** não é login Supabase/Google — você valida `BLIMBER_MCP_API_KEY` uma vez na tela de consentimento; tokens OAuth são JWT HS256 de curta duração.
 3. **Sem refresh token:** ao expirar (~1 h), reconecte pelo fluxo OAuth no ChatGPT.
-4. **Sem upload binário** de mídia via MCP (igual Marketing Actions).
+4. **Upload de biblioteca:** `marketing_upload_asset` / `uploadMediaAsset` via URL HTTPS (ou base64 pequeno); sem multipart no MCP.
 5. **Google Ads:** apenas stub `ads_google_status`.
 6. **CRM:** não exposto (planned no registry).
 7. **Cold start:** primeira requisição após deploy pode ser mais lenta (init Supabase + MCP).

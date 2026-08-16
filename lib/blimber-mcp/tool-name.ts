@@ -35,6 +35,23 @@ const OPENAPI_TO_META: Record<string, string> = {
   executeBulkDelete: 'meta_execute_bulk_delete',
 }
 
+const OPENAPI_TO_MARKETING: Record<string, string> = {
+  listSocialAccounts: 'marketing_list_social_accounts',
+  listMediaAssets: 'marketing_list_assets',
+  uploadMediaAsset: 'marketing_upload_asset',
+  deleteMediaAsset: 'marketing_delete_asset',
+  getBrandContext: 'marketing_get_brand_context',
+  listPosts: 'marketing_list_posts',
+  getPost: 'marketing_get_post',
+  createPost: 'marketing_create_post',
+  updatePost: 'marketing_update_post',
+  deletePost: 'marketing_delete_post',
+  listEditorialCampaigns: 'marketing_list_campaigns',
+  getEditorialCampaign: 'marketing_get_campaign',
+  createEditorialCampaign: 'marketing_create_campaign',
+  updateEditorialCampaign: 'marketing_update_campaign',
+}
+
 /** Strip ChatGPT connector namespace: `Blimber_Hub.meta_create_ad` → `meta_create_ad`. */
 export function stripMcpConnectorNamespace(name: string): string {
   const trimmed = name.trim()
@@ -78,7 +95,7 @@ export function resolveBlimberMcpToolName(
   if (fromAds && known.has(fromAds))
     return fromAds
 
-  const fromOpenApi = OPENAPI_TO_META[stripped]
+  const fromOpenApi = OPENAPI_TO_META[stripped] || OPENAPI_TO_MARKETING[stripped]
   if (fromOpenApi && known.has(fromOpenApi))
     return fromOpenApi
 

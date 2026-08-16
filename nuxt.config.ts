@@ -79,6 +79,9 @@ export default defineNuxtConfig({
       '/api/marketing/social/upload-asset': {
         bodySizeLimit: 104857600,
       },
+      '/api/gpt/marketing/assets/upload': {
+        bodySizeLimit: 12582912,
+      },
       '/api/mcp': {
         headers: { 'Cache-Control': 'no-store' },
       },
