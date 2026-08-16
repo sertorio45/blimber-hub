@@ -1078,4 +1078,113 @@ describe('blimber marketing editorial approve (mocked)', () => {
     expect(db.social_posts[0]!.editorial_status).toBe('approved')
     expect(db.social_posts[0]!.approval_bypassed).toBe(true)
   })
+
+  it('approvePost execute as admin without org membership (not the author)', async () => {
+    const { createFakeDomainClient } = await import('./helpers/fake-supabase-domain')
+    const versionId = '55555555-5555-5555-5555-555555555555'
+    const authorId = '66666666-6666-6666-6666-666666666666'
+    const db = {
+      social_posts: [{
+        id: POST_ID,
+        title: 'Rascunho Farma',
+        content: 'Oi',
+        tenant_id: TENANT_ID,
+        editorial_status: 'draft',
+        created_by: authorId,
+        deleted_at: null,
+        approval_bypassed: false,
+      }],
+      approval_requests: [],
+      content_versions: [{
+        id: versionId,
+        tenant_id: TENANT_ID,
+        post_id: POST_ID,
+        version: 1,
+      }],
+      notifications: [],
+      social_automation_rules: [{ tenant_id: TENANT_ID, trigger_key: 'editorial.approved', enabled: false }],
+      social_automation_runs: [],
+      organization_memberships: [],
+      organization_tenants: [],
+      organization_member_tenants: [],
+    }
+    const domain = createFakeDomainClient(db)
+    const client = {
+      ...domain,
+      auth: {
+        admin: {
+          getUserById: async () => ({
+            data: { user: { id: ACTOR_ID, app_metadata: { role: 'admin' } } },
+            error: null,
+          }),
+        },
+      },
+    }
+
+    const result = await marketingApprovePost(
+      { client: client as any },
+      {
+        tenantId: TENANT_ID,
+        postId: POST_ID,
+        confirm: true,
+        confirmTenantId: TENANT_ID,
+        dryRun: false,
+        actorUserId: ACTOR_ID,
+      },
+    )
+
+    expect(result).toMatchObject({ dryRun: false, path: 'bypass', decision: 'approved' })
+    expect(db.social_posts[0]!.editorial_status).toBe('approved')
+    expect(db.social_posts[0]!.created_by).toBe(authorId)
+    expect(db.social_posts[0]!.approval_bypassed_by).toBe(ACTOR_ID)
+  })
+
+  it('approvePost execute as random user without membership is 403', async () => {
+    const { createFakeDomainClient } = await import('./helpers/fake-supabase-domain')
+    const authorId = '66666666-6666-6666-6666-666666666666'
+    const db = {
+      social_posts: [{
+        id: POST_ID,
+        title: 'Rascunho',
+        content: 'Oi',
+        tenant_id: TENANT_ID,
+        editorial_status: 'draft',
+        created_by: authorId,
+        deleted_at: null,
+        approval_bypassed: false,
+      }],
+      approval_requests: [],
+      content_versions: [],
+      organization_memberships: [],
+      organization_tenants: [{ organization_id: '77777777-7777-7777-7777-777777777777', tenant_id: TENANT_ID, is_active: true }],
+      organization_member_tenants: [],
+    }
+    const domain = createFakeDomainClient(db)
+    const client = {
+      ...domain,
+      auth: {
+        admin: {
+          getUserById: async () => ({
+            data: { user: { id: ACTOR_ID, app_metadata: { role: 'cliente' }, user_metadata: { role: 'admin' } } },
+            error: null,
+          }),
+        },
+      },
+    }
+
+    await expect(
+      marketingApprovePost(
+        { client: client as any },
+        {
+          tenantId: TENANT_ID,
+          postId: POST_ID,
+          confirm: true,
+          confirmTenantId: TENANT_ID,
+          dryRun: false,
+          actorUserId: ACTOR_ID,
+        },
+      ),
+    ).rejects.toMatchObject({ code: 'FORBIDDEN', statusCode: 403 })
+    expect(db.social_posts[0]!.editorial_status).toBe('draft')
+  })
 })

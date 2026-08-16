@@ -1,6 +1,7 @@
 import { z } from 'zod'
-import { isStaffRole } from '~/constants/roles'
+import { isGlobalStaffFromJwt } from '~/constants/roles'
 import { ALL_WORKSPACE_CAPABILITIES, holdsCapability } from '~/constants/workspace'
+import { createBlimberServiceRoleClient } from '~/server/utils/blimber-service-client'
 import { resolveEffectiveCapabilities } from '~/server/utils/resolve-capabilities'
 import {
   bypassApproval,
@@ -8,7 +9,6 @@ import {
   submitApprovalDecision,
   type DecisionValue,
 } from '~/server/utils/social-approval-domain'
-import { resolveGlobalRole } from '~/server/utils/tenant-role'
 import { resolveMcpActorUserId } from './auth'
 import { BlimberMcpError } from './errors'
 import type { BlimberMcpToolContext } from './types'
@@ -156,6 +156,73 @@ export function planEditorialPath(input: {
   )
 }
 
+type McpAuthUser = {
+  id: string
+  app_metadata?: { role?: string, tenant_roles?: Record<string, string> }
+  user_metadata?: { role?: string }
+}
+
+/**
+ * Hub platform staff for MCP writes: `app_metadata.role` is `admin` or
+ * `funcionario` (Superadministrador / Funcionário). Never `user_metadata`
+ * (user-editable) and never tenant `cliente` (Administrador da empresa).
+ */
+export function mcpActorIsPlatformStaff(user: McpAuthUser | null | undefined): boolean {
+  if (!user)
+    return false
+  return isGlobalStaffFromJwt(user)
+}
+
+async function readAuthUserById(
+  getUserById: (id: string) => Promise<{ data?: { user?: McpAuthUser | null } | null, error?: { message?: string } | null }>,
+  userId: string,
+): Promise<McpAuthUser> {
+  const { data, error } = await getUserById(userId)
+  if (error || !data?.user?.id) {
+    throw new BlimberMcpError(
+      'ACTOR_NOT_FOUND',
+      'actorUserId / BLIMBER_MCP_ACTOR_USER_ID não existe em auth.users.',
+      400,
+    )
+  }
+  return data.user
+}
+
+/**
+ * Live Auth Admin user (fresh app_metadata, not a session JWT).
+ * Retries with the dedicated service-role client when the MCP client has no
+ * working `auth.admin` (Nuxt service role + missing fetch on Vercel).
+ */
+export async function loadMcpActorAuthUser(
+  ctx: BlimberMcpToolContext,
+  userId: string,
+): Promise<McpAuthUser | null> {
+  const primary = ctx.client.auth?.admin?.getUserById
+  if (typeof primary === 'function') {
+    try {
+      return await readAuthUserById(primary.bind(ctx.client.auth.admin), userId)
+    }
+    catch (error) {
+      if (error instanceof BlimberMcpError)
+        throw error
+    }
+  }
+
+  const fallback = createBlimberServiceRoleClient()
+  const fallbackGet = fallback?.auth?.admin?.getUserById
+  if (typeof fallbackGet === 'function') {
+    try {
+      return await readAuthUserById(fallbackGet.bind(fallback.auth.admin), userId)
+    }
+    catch (error) {
+      if (error instanceof BlimberMcpError)
+        throw error
+    }
+  }
+
+  return null
+}
+
 export async function resolveMcpEditorialActor(
   ctx: BlimberMcpToolContext,
   tenantId: string,
@@ -177,29 +244,8 @@ export async function resolveMcpEditorialActor(
     )
   }
 
-  let globalRole: string | null = null
-  const getUserById = ctx.client.auth?.admin?.getUserById
-  if (typeof getUserById === 'function') {
-    try {
-      const { data, error } = await getUserById(userId)
-      if (error || !data?.user?.id) {
-        throw new BlimberMcpError(
-          'ACTOR_NOT_FOUND',
-          'actorUserId / BLIMBER_MCP_ACTOR_USER_ID não existe em auth.users.',
-          400,
-        )
-      }
-      globalRole = resolveGlobalRole(data.user)
-    }
-    catch (error) {
-      if (error instanceof BlimberMcpError)
-        throw error
-      // Auth Admin unavailable — fall through to org membership.
-    }
-  }
-
-  const isPlatformStaff = isStaffRole(globalRole)
-  if (isPlatformStaff) {
+  const authUser = await loadMcpActorAuthUser(ctx, userId)
+  if (mcpActorIsPlatformStaff(authUser)) {
     return {
       userId,
       isPlatformStaff: true,
@@ -265,7 +311,7 @@ export async function resolveMcpEditorialActor(
     organizationId: String(reaching.organization_id),
     organizationRoleId: reaching.role_id ? String(reaching.role_id) : null,
     tenantId,
-    globalRole,
+    globalRole: authUser?.app_metadata?.role ?? null,
     isPlatformStaff: false,
     legacyRole: reaching.role ? String(reaching.role) : null,
   })

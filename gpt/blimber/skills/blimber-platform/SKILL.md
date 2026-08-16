@@ -59,7 +59,7 @@ description: >-
 }
 ```
 
-`BLIMBER_MCP_ACTOR_USER_ID` deve ser o UUID do superadmin (ou usuário com `marketing.social.approval.bypass`). Equivalente no Hub: bypass de aprovação — **não** um UPDATE solto em `editorial_status`. Alternativa: `updatePost` com `editorialStatus: "approved"` (mesmo domínio).
+`BLIMBER_MCP_ACTOR_USER_ID` deve ser UUID de Superadministrador (`auth.users.app_metadata.role=admin`, staff do Hub — não `cliente`). Esse ator **não precisa ser membro da org do cliente** nem autor do post. Qualquer usuário com esse papel funciona como actor; UUID sem esse papel ainda exige membership + caps. Equivalente no Hub: bypass de aprovação — **não** um UPDATE solto em `editorial_status`. Alternativa: `updatePost` com `editorialStatus: "approved"` (mesmo domínio).
 
 `changes_requested` / `rejected` exigem `approval_request` pendente + `comment`. `decision: draft` cancela a fila (`cancelApprovalRun`).
 

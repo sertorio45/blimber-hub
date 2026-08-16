@@ -34,7 +34,7 @@ lib/meta-ads/                # Graph write/read (reutilizado)
 
 - Única chave: **`BLIMBER_MCP_API_KEY`** (Bearer; fallback legado `MARKETING_WORKER_SECRET`)
 - Gate compartilhado: `assertMetaGptApiKey` / `assertBlimberMcpApiKey`
-- Escrita marketing: preview (`dryRun=true`) não exige actor; execute (`dryRun=false`) exige UUID em `auth.users` → `actorUserId` **ou** `BLIMBER_MCP_ACTOR_USER_ID`
+- Escrita marketing: preview (`dryRun=true`) não exige actor; execute (`dryRun=false`) exige UUID em `auth.users` → `actorUserId` **ou** `BLIMBER_MCP_ACTOR_USER_ID` (para aprovar em qualquer tenant sem membership: `app_metadata.role=admin`)
 - Mutações: `confirm` + `confirmTenantId` + `dryRun` default `true` (mesmo espírito do Meta)
 
 ### Tenant-aware

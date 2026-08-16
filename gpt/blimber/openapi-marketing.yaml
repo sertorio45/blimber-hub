@@ -605,6 +605,7 @@ paths:
                   description: >
                     Ciclo editorial (social_posts.editorial_status) via domínio
                     Hub. approved em rascunho = bypassApproval (superadmin/bypass).
+                    Superadmin não precisa ser membro da org do cliente.
                     Em fila = submitApprovalDecision. draft = cancelApprovalRun.
                 status:
                   type: string
@@ -645,9 +646,10 @@ paths:
       description: >
         Avança o ciclo editorial (não publica). dryRun default true.
         Rascunho → approved usa bypassApproval (superadmin ou cap bypass),
-        igual ao painel. Se houver approval_request pendente, registra
-        submitApprovalDecision. decision também aceita changes_requested,
-        rejected e draft (cancelar fila).
+        igual ao painel. Superadmin (app_metadata.role=admin, staff do Hub)
+        não precisa ser membro da org do cliente nem autor do post.
+        Se houver approval_request pendente, registra submitApprovalDecision.
+        decision também aceita changes_requested, rejected e draft (cancelar fila).
       parameters:
         - name: postId
           in: path

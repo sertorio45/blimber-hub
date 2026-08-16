@@ -588,7 +588,7 @@ export const MARKETING_TOOL_DESCRIPTIONS: Record<MarketingToolName, string> = {
   marketing_get_post: 'Detalhe de um post editorial por postId.',
   marketing_create_post: 'Cria rascunho editorial. assetIds = biblioteca (publicar); sourceUrls/sourceBase64 = upload no mesmo call; referenceAssetIds = só referência. dryRun default true.',
   marketing_update_post: 'Atualiza draft (copy/mídia) e/ou editorialStatus (draft|approved|changes_requested|rejected) via domínio Hub. dryRun default true.',
-  marketing_approve_post: 'Avança editorial: draft→approved (bypass/superadmin), ou decide approval_request (approved/changes_requested/rejected). dryRun default true.',
+  marketing_approve_post: 'Avança editorial: draft→approved (bypass/superadmin), ou decide approval_request. Superadmin (app_metadata.role=admin) não precisa ser membro da org do cliente. dryRun default true.',
   marketing_delete_post: 'Soft-delete de 1 post editorial (dryRun default true). Isolado por tenant; sem exclusão em massa nem remota.',
   marketing_delete_asset: 'Remove 1 mídia da Biblioteca (storage + DB). dryRun default true. Bloqueia se vinculada a posts.',
   marketing_upload_asset: 'Upload na Biblioteca (HTTPS URL preferencial ou base64). Compressão/storage iguais ao Hub. dryRun default true.',
