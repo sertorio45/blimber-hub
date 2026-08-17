@@ -163,3 +163,70 @@ export async function ensurePrimaryScheduleFromLegacy(
 
   await syncPostNextScheduledAt(client, input.tenantId, input.postId)
 }
+
+/**
+ * Calendar feed reads marketing_post_schedules, not publication_jobs.
+ * Enqueue (Hub schedule + MCP schedulePost) must upsert a queued slot so the
+ * post appears on /marketing calendar.
+ */
+export async function ensureQueuedCalendarSlot(
+  client: SupabaseClientLike,
+  input: {
+    tenantId: string
+    postId: string
+    scheduledAt: string
+    timezone?: string | null
+    userId?: string | null
+    publicationJobId?: string | null
+  },
+) {
+  const scheduledAt = toIso(input.scheduledAt)
+  const timezone = input.timezone || 'America/Sao_Paulo'
+  const now = new Date().toISOString()
+
+  const { data: nextSlot, error: lookupError } = await client
+    .from('marketing_post_schedules')
+    .select('id')
+    .eq('tenant_id', input.tenantId)
+    .eq('post_id', input.postId)
+    .in('status', ['planned', 'queued', 'failed'])
+    .order('scheduled_at', { ascending: true })
+    .limit(1)
+    .maybeSingle()
+
+  if (lookupError)
+    throw createError({ statusCode: 400, statusMessage: lookupError.message })
+
+  if (nextSlot?.id) {
+    const { error } = await client
+      .from('marketing_post_schedules')
+      .update({
+        scheduled_at: scheduledAt,
+        timezone,
+        status: 'queued',
+        publication_job_id: input.publicationJobId || null,
+        updated_at: now,
+      })
+      .eq('id', nextSlot.id)
+      .eq('tenant_id', input.tenantId)
+    if (error)
+      throw createError({ statusCode: 400, statusMessage: error.message })
+    return
+  }
+
+  const { error } = await client
+    .from('marketing_post_schedules')
+    .insert({
+      tenant_id: input.tenantId,
+      post_id: input.postId,
+      scheduled_at: scheduledAt,
+      timezone,
+      status: 'queued',
+      publication_job_id: input.publicationJobId || null,
+      created_by: input.userId || null,
+      updated_at: now,
+    })
+
+  if (error)
+    throw createError({ statusCode: 400, statusMessage: error.message })
+}

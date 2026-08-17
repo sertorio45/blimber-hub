@@ -436,6 +436,37 @@ describe('social approval domain', () => {
     expect(jobs[0].version_id).toBe(versionId)
     expect(jobs[0].idempotency_key).toContain(versionId)
     expect(post(db).publication_status).toBe('scheduled')
+    expect(db.marketing_post_schedules).toHaveLength(1)
+    expect(db.marketing_post_schedules![0]!.status).toBe('queued')
+    expect(db.marketing_post_schedules![0]!.scheduled_at).toBe(post(db).scheduled_at)
+    expect(db.marketing_post_schedules![0]!.publication_job_id).toBe(jobs[0].id)
+  })
+
+  it('11b. enqueue reuses the existing calendar slot instead of duplicating', async () => {
+    const versionId = '00000000-0000-4000-8000-00000000ver1'
+    const nextAt = new Date(Date.now() + 2 * 86_400_000).toISOString()
+    db = makeDb({ editorial_status: 'approved', approved_version_id: versionId, current_version: 1 })
+    db.content_versions = [{ id: versionId, tenant_id: ids.tenant, post_id: ids.post, version: 1 }]
+    db.marketing_post_schedules = [{
+      id: 'slot-existing',
+      tenant_id: ids.tenant,
+      post_id: ids.post,
+      status: 'planned',
+      scheduled_at: post(db).scheduled_at,
+    }]
+    client = createFakeDomainClient(db)
+
+    await enqueueApprovedPost(client, {
+      tenantId: ids.tenant,
+      postId: ids.post,
+      scheduledAt: nextAt,
+      capabilities: ['marketing.social.schedule'],
+    })
+
+    expect(db.marketing_post_schedules).toHaveLength(1)
+    expect(db.marketing_post_schedules![0]!.id).toBe('slot-existing')
+    expect(db.marketing_post_schedules![0]!.status).toBe('queued')
+    expect(db.marketing_post_schedules![0]!.scheduled_at).toBe(nextAt)
   })
 
   it('12. self-serve release auto-approves a draft before enqueue', async () => {

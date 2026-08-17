@@ -1319,6 +1319,9 @@ describe('blimber marketing schedule/publish (mocked)', () => {
     expect(db.publication_jobs).toHaveLength(1)
     expect(db.publication_jobs[0]!.status).toBe('pending')
     expect(String(db.publication_jobs[0]!.scheduled_at)).toContain('2026-08-17T19:00:00')
+    expect(db.marketing_post_schedules).toHaveLength(1)
+    expect(db.marketing_post_schedules[0]!.status).toBe('queued')
+    expect(new Date(String(db.marketing_post_schedules[0]!.scheduled_at)).toISOString()).toBe('2026-08-17T22:00:00.000Z')
   })
 
   it('schedulePost on draft returns NOT_APPROVED without mutating', async () => {

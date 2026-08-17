@@ -228,7 +228,7 @@ export async function applyPostRelease(
       ]
     : input.action.type === 'schedule'
       ? [
-          'Usa enqueueApprovedPost — cria/atualiza publication_jobs e publication_status=scheduled.',
+          'Usa enqueueApprovedPost — cria/atualiza publication_jobs, slot em marketing_post_schedules (calendário) e publication_status=scheduled.',
           'Não grava só a data. ISO com offset; Hub tz America/Sao_Paulo (BRT UTC-3).',
         ]
       : [

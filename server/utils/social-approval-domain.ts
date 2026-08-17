@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { createError } from 'h3'
 
 import { holdsCapability } from '~/constants/workspace'
+import { ensureQueuedCalendarSlot } from '~/server/utils/marketing-schedules'
 import { canDecideApprovalRequest } from '~/server/utils/social-approval-ux'
 import { createSocialNotification } from '~/server/utils/social-audit'
 
@@ -1342,7 +1343,7 @@ export async function enqueueApprovedPost(
 
   const { data: post, error: postError } = await client
     .from('social_posts')
-    .select('id, approved_version_id, scheduled_at')
+    .select('id, approved_version_id, scheduled_at, timezone')
     .eq('tenant_id', input.tenantId)
     .eq('id', input.postId)
     .maybeSingle()
@@ -1434,6 +1435,15 @@ export async function enqueueApprovedPost(
     .update({ publication_status: 'scheduled', scheduled_at: scheduledAt })
     .eq('tenant_id', input.tenantId)
     .eq('id', input.postId)
+
+  await ensureQueuedCalendarSlot(client, {
+    tenantId: input.tenantId,
+    postId: input.postId,
+    scheduledAt,
+    timezone: post.timezone,
+    userId: input.userId,
+    publicationJobId: jobs[0]?.id || null,
+  })
 
   return jobs
 }

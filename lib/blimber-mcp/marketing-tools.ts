@@ -606,7 +606,7 @@ export const MARKETING_TOOL_DESCRIPTIONS: Record<MarketingToolName, string> = {
   marketing_create_post: 'Cria rascunho editorial. assetIds = biblioteca (publicar); sourceUrls/sourceBase64 = upload no mesmo call; referenceAssetIds = só referência. dryRun default true.',
   marketing_update_post: 'Atualiza draft e/ou editorialStatus. scheduledAt ou publicationStatus scheduled/published/not_scheduled enfileira de verdade (enqueueApprovedPost). dryRun default true.',
   marketing_approve_post: 'Avança editorial: draft→approved (bypass/superadmin), ou decide approval_request. Superadmin (app_metadata.role=admin) não precisa ser membro da org do cliente. dryRun default true.',
-  marketing_schedule_post: 'Agenda de verdade: enqueueApprovedPost + publication_status=scheduled. ISO com offset (BRT: 2026-08-17T19:00:00-03:00). Exige aprovado. dryRun default true.',
+  marketing_schedule_post: 'Agenda de verdade: enqueueApprovedPost + publication_jobs + slot no calendário editorial (marketing_post_schedules) + publication_status=scheduled. ISO com offset (BRT: 2026-08-17T19:00:00-03:00). Exige aprovado. dryRun default true.',
   marketing_publish_post: 'Publica agora (enqueueApprovedPost publishNow). Worker pega na hora. Exige aprovado. Superadmin sem membership. dryRun default true.',
   marketing_unschedule_post: 'Cancela jobs pending e volta publication_status=not_scheduled. Não remove das redes. dryRun default true.',
   marketing_delete_post: 'Soft-delete de 1 post editorial (dryRun default true). Isolado por tenant; sem exclusão em massa nem remota.',
