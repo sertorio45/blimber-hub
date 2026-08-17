@@ -1133,6 +1133,7 @@ export function resultActionPriorityForMetaTemplate(templateId: MetaReportTempla
     'lead',
     'onsite_conversion.lead',
     'offsite_conversion.fb_pixel_lead',
+    'onsite_conversion.lead_grouped',
     'complete_registration',
     'submit_application',
   ]
