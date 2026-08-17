@@ -31,16 +31,17 @@ description: >-
 5. Mutações: dryRun → confirmar → `dryRun: false` + `confirm` + `confirmTenantId`.
 6. Respostas em **PT-BR**.
 
-## Tools — Ação Marketing (20, host app.*)
+## Tools — Ação Marketing (27, host app.*)
 
 | Tool / operationId | Uso |
 |--------------------|-----|
 | `searchTenants` | nome → tenantId |
 | `listBlimberTools` | catálogo unificado |
-| `listPosts` / `getPost` / `createPost` / `updatePost` / `approvePost` / `schedulePost` / `publishPost` / `unschedulePost` | editorial; createPost aceita assetIds + sourceUrls; approvePost move draft→approved; schedulePost enfileira de verdade |
+| `listPosts` / `getPost` / `createPost` / `updatePost` / `submitPost` / `approvePost` / `schedulePost` / `publishPost` / `unschedulePost` | editorial; submitPost envia ao cliente; approvePost decide/bypass |
 | `listEditorialCampaigns` / `getEditorialCampaign` / `createEditorialCampaign` / `updateEditorialCampaign` | campanha mensal |
-| `getBrandContext` | Brand Center |
+| `getBrandContext` / `updateBrandContext` | Brand Center |
 | `listMediaAssets` / `uploadMediaAsset` / `listSocialAccounts` | biblioteca / contas |
+| `listApprovals` / `listApprovers` / `createReviewLink` / `listCalendar` / `invokeMarketingTool` | fila, aprovadores, link mágico, calendário, overflow |
 
 ### Draft → approved (MCP)
 
@@ -62,6 +63,25 @@ description: >-
 `BLIMBER_MCP_ACTOR_USER_ID` deve ser UUID de Superadministrador (`auth.users.app_metadata.role=admin`, staff do Hub — não `cliente`). Esse ator **não precisa ser membro da org do cliente** nem autor do post. Qualquer usuário com esse papel funciona como actor; UUID sem esse papel ainda exige membership + caps. Equivalente no Hub: bypass de aprovação — **não** um UPDATE solto em `editorial_status`. Alternativa: `updatePost` com `editorialStatus: "approved"` (mesmo domínio).
 
 `changes_requested` / `rejected` exigem `approval_request` pendente + `comment`. `decision: draft` cancela a fila (`cancelApprovalRun`).
+
+### Enviar ao cliente (MCP)
+
+1. `listApprovers` → `approverIds`
+2. Preview: `submitPost` `dryRun: true` (`stage: client` default)
+3. Execute:
+
+```json
+{
+  "tenantId": "<uuid>",
+  "confirmTenantId": "<mesmo uuid>",
+  "confirm": true,
+  "dryRun": false,
+  "approverIds": ["<uuid-do-aprovador>"],
+  "stage": "client"
+}
+```
+
+Abre `client_review` via `startApprovalWorkflow` (simple_client). Superadmin sem membership. Não use `approvePost` para enviar.
 
 ### Agendar / publicar (MCP)
 

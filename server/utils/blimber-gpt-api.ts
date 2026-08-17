@@ -16,6 +16,16 @@ import {
   queryRecord,
 } from '~/server/utils/meta-gpt-api'
 
+export function optionalStringArray(value: unknown): string[] | undefined {
+  if (value === undefined || value === null)
+    return undefined
+  if (Array.isArray(value))
+    return value.map(item => String(item))
+  if (typeof value === 'string' && value.trim())
+    return value.split(',').map(item => item.trim()).filter(Boolean)
+  return undefined
+}
+
 export { optionalBool, optionalInt, optionalString, queryRecord }
 
 /** Coerces confirm from JSON boolean or query string ("true"). */

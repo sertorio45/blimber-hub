@@ -170,7 +170,10 @@ const EXPECTED_ROUTE_FILES: Record<string, string[]> = {
   '/api/gpt/marketing/accounts': ['server/api/gpt/marketing/accounts.get.ts'],
   '/api/gpt/marketing/assets': ['server/api/gpt/marketing/assets.get.ts'],
   '/api/gpt/marketing/assets/upload': ['server/api/gpt/marketing/assets/upload.post.ts'],
-  '/api/gpt/marketing/brand-context': ['server/api/gpt/marketing/brand-context.get.ts'],
+  '/api/gpt/marketing/brand-context': [
+    'server/api/gpt/marketing/brand-context.get.ts',
+    'server/api/gpt/marketing/brand-context.put.ts',
+  ],
   '/api/gpt/brand/context': ['server/api/gpt/brand/context.get.ts'],
   '/api/gpt/marketing/posts': [
     'server/api/gpt/marketing/posts/index.get.ts',
@@ -183,6 +186,9 @@ const EXPECTED_ROUTE_FILES: Record<string, string[]> = {
   ],
   '/api/gpt/marketing/posts/{postId}/approve': [
     'server/api/gpt/marketing/posts/[postId]/approve.post.ts',
+  ],
+  '/api/gpt/marketing/posts/{postId}/submit': [
+    'server/api/gpt/marketing/posts/[postId]/submit.post.ts',
   ],
   '/api/gpt/marketing/posts/{postId}/schedule': [
     'server/api/gpt/marketing/posts/[postId]/schedule.post.ts',
@@ -204,6 +210,15 @@ const EXPECTED_ROUTE_FILES: Record<string, string[]> = {
     'server/api/gpt/marketing/campaigns/[campaignId].get.ts',
     'server/api/gpt/marketing/campaigns/[campaignId].put.ts',
   ],
+  '/api/gpt/marketing/approvals': [
+    'server/api/gpt/marketing/approvals/index.get.ts',
+  ],
+  '/api/gpt/marketing/approvals/{requestId}/review-link': [
+    'server/api/gpt/marketing/approvals/[requestId]/review-link.post.ts',
+  ],
+  '/api/gpt/marketing/approvers': ['server/api/gpt/marketing/approvers.get.ts'],
+  '/api/gpt/marketing/calendar': ['server/api/gpt/marketing/calendar.get.ts'],
+  '/api/gpt/marketing/invoke': ['server/api/gpt/marketing/invoke.post.ts'],
   '/api/gpt/ads/meta/tools': ['server/api/gpt/ads/meta/tools.get.ts'],
   '/api/gpt/ads/google/status': ['server/api/gpt/ads/google/status.get.ts'],
   '/api/gpt/meta/tenants': ['server/api/gpt/meta/tenants.get.ts'],
@@ -280,6 +295,10 @@ describe('blimber unified MCP registry + openapi', () => {
     expect(names).toContain('marketing_list_posts')
     expect(names).toContain('marketing_update_post')
     expect(names).toContain('marketing_approve_post')
+    expect(names).toContain('marketing_submit_post')
+    expect(names).toContain('marketing_list_approvals')
+    expect(names).toContain('marketing_list_calendar')
+    expect(names).toContain('marketing_update_brand')
     expect(names).toContain('marketing_schedule_post')
     expect(names).toContain('marketing_publish_post')
     expect(names).toContain('marketing_unschedule_post')
@@ -334,6 +353,13 @@ describe('blimber unified MCP registry + openapi', () => {
     expect(operationIds).toContain('getBrandContext')
     expect(operationIds).toContain('updatePost')
     expect(operationIds).toContain('approvePost')
+    expect(operationIds).toContain('submitPost')
+    expect(operationIds).toContain('listApprovals')
+    expect(operationIds).toContain('listApprovers')
+    expect(operationIds).toContain('listCalendar')
+    expect(operationIds).toContain('updateBrandContext')
+    expect(operationIds).toContain('createReviewLink')
+    expect(operationIds).toContain('invokeMarketingTool')
     expect(operationIds).toContain('schedulePost')
     expect(operationIds).toContain('publishPost')
     expect(operationIds).toContain('unschedulePost')
@@ -355,6 +381,7 @@ describe('blimber unified MCP registry + openapi', () => {
     expect(paths).toContain('/api/gpt/marketing/brand-context')
     expect(paths).toContain('/api/gpt/marketing/posts')
     expect(paths).toContain('/api/gpt/marketing/posts/{postId}/approve')
+    expect(paths).toContain('/api/gpt/marketing/posts/{postId}/submit')
     expect(paths).toContain('/api/gpt/marketing/posts/{postId}/schedule')
     expect(paths).toContain('/api/gpt/marketing/posts/{postId}/publish')
     expect(paths).toContain('/api/gpt/marketing/posts/{postId}/unschedule')
@@ -370,9 +397,11 @@ describe('blimber unified MCP registry + openapi', () => {
       ['/api/gpt/marketing/posts/{postId}/schedule', 'post'],
       ['/api/gpt/marketing/posts/{postId}/publish', 'post'],
       ['/api/gpt/marketing/posts/{postId}/unschedule', 'post'],
+      ['/api/gpt/marketing/posts/{postId}/submit', 'post'],
       ['/api/gpt/marketing/campaigns', 'post'],
       ['/api/gpt/marketing/campaigns/{campaignId}', 'put'],
       ['/api/gpt/marketing/assets/upload', 'post'],
+      ['/api/gpt/marketing/brand-context', 'put'],
     ] as const) {
       const props = pathsDoc[path]?.[method]?.requestBody?.content?.['application/json']?.schema?.properties
       expect(props?.actorUserId, `${method.toUpperCase()} ${path} actorUserId`).toBeTruthy()

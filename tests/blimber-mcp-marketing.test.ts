@@ -11,6 +11,14 @@ import {
   marketingUnschedulePost,
   marketingUpdatePost,
 } from '../lib/blimber-mcp'
+import { marketingSubmitPost } from '../lib/blimber-mcp/marketing-submit'
+import {
+  marketingCreateCalendarSlot,
+  marketingListApprovals,
+  marketingListCalendar,
+  marketingUpdateBrand,
+} from '../lib/blimber-mcp/marketing-ops'
+import { SYSTEM_WORKFLOW_IDS } from '../server/utils/social-approval-domain'
 
 const TENANT_ID = '11111111-1111-1111-1111-111111111111'
 const ACTOR_ID = '22222222-2222-2222-2222-222222222222'
@@ -1422,3 +1430,451 @@ describe('blimber marketing schedule/publish (mocked)', () => {
     expect(db.publication_jobs[0]!.status).toBe('cancelled')
   })
 })
+
+describe('marketing MCP hub ops (submit, approvals, calendar, brand)', () => {
+  const POST_ID = '33333333-3333-3333-3333-333333333333'
+  const CLIENT_ID = '77777777-7777-7777-7777-777777777777'
+  const VARIANT_ID = '88888888-8888-8888-8888-888888888888'
+  const ASSET_ID = '99999999-9999-9999-9999-999999999999'
+  const STAGE_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1'
+
+  function seedSubmitDb() {
+    return {
+      social_posts: [{
+        id: POST_ID,
+        tenant_id: TENANT_ID,
+        title: 'Peça para o cliente',
+        content: 'Copy',
+        created_by: ACTOR_ID,
+        editorial_status: 'draft',
+        publication_status: 'not_scheduled',
+        approval_policy: 'any',
+        minimum_approvals: 1,
+        current_version: 0,
+        approved_version_id: null,
+        approval_bypassed: false,
+        deleted_at: null,
+        campaign_id: null,
+        scheduled_at: null,
+        timezone: 'America/Sao_Paulo',
+      }],
+      social_post_variants: [{
+        id: VARIANT_ID,
+        tenant_id: TENANT_ID,
+        post_id: POST_ID,
+        platform: 'instagram',
+        format: 'static',
+        created_at: new Date().toISOString(),
+      }],
+      social_post_assets: [{
+        id: 'rel1',
+        tenant_id: TENANT_ID,
+        post_id: POST_ID,
+        variant_id: VARIANT_ID,
+        asset_id: ASSET_ID,
+        position: 0,
+      }],
+      media_assets: [{
+        id: ASSET_ID,
+        tenant_id: TENANT_ID,
+        status: 'ready',
+        object_path: 'p/x.png',
+        name: 'x.png',
+        mime_type: 'image/png',
+        purpose: 'publication',
+        bucket: 'marketing-assets',
+        metadata: {},
+      }],
+      social_approval_workflows: [
+        { id: SYSTEM_WORKFLOW_IDS.simpleClient, is_system: true, is_active: true, is_default: true, slug: 'simple_client', name: 'Aprovação simples', organization_id: null, tenant_id: null },
+        { id: SYSTEM_WORKFLOW_IDS.agencyInternalClient, is_system: true, is_active: true, is_default: false, slug: 'agency_internal_client', name: 'Agência', organization_id: null, tenant_id: null },
+      ],
+      social_approval_workflow_stages: [{
+        id: STAGE_ID,
+        workflow_id: SYSTEM_WORKFLOW_IDS.simpleClient,
+        position: 1,
+        name: 'Aprovação do cliente',
+        stage_type: 'client',
+        mode: 'any',
+        minimum_approvals: 1,
+        due_hours: null,
+        required_capability: 'marketing.social.approval.client',
+        allow_self_approval: false,
+        auto_advance: true,
+        require_comment_on_reject: true,
+        allow_rejection: true,
+      }],
+      social_approval_stage_assignees: [],
+      social_approval_settings: [],
+      organization_tenants: [],
+      organization_memberships: [],
+      organization_roles: [],
+      content_versions: [],
+      approval_requests: [],
+      approval_request_approvers: [],
+      approval_decisions: [],
+      notifications: [],
+      social_accounts: [],
+    }
+  }
+
+  async function staffClient(db: ReturnType<typeof seedSubmitDb>) {
+    const { createFakeDomainClient } = await import('./helpers/fake-supabase-domain')
+    const domain = createFakeDomainClient(db)
+    return {
+      ...domain,
+      auth: {
+        admin: {
+          getUserById: async () => ({
+            data: { user: { id: ACTOR_ID, app_metadata: { role: 'admin' } } },
+            error: null,
+          }),
+        },
+      },
+    }
+  }
+
+  it('submitPost dry-run on draft previews client stage', async () => {
+    const db = seedSubmitDb()
+    const client = await staffClient(db)
+
+    const result = await marketingSubmitPost(
+      { client: client as any },
+      {
+        tenantId: TENANT_ID,
+        postId: POST_ID,
+        approverIds: [CLIENT_ID],
+        confirm: true,
+        confirmTenantId: TENANT_ID,
+        dryRun: true,
+      },
+    )
+
+    expect(result).toMatchObject({
+      dryRun: true,
+      wouldMutate: true,
+      action: 'submit',
+      stage: 'client',
+      workflowId: SYSTEM_WORKFLOW_IDS.simpleClient,
+    })
+    expect(db.social_posts[0]!.editorial_status).toBe('draft')
+    expect(db.approval_requests).toHaveLength(0)
+  })
+
+  it('submitPost execute as platform admin opens client_review', async () => {
+    const db = seedSubmitDb()
+    const client = await staffClient(db)
+
+    const result = await marketingSubmitPost(
+      { client: client as any },
+      {
+        tenantId: TENANT_ID,
+        postId: POST_ID,
+        approverIds: [CLIENT_ID],
+        confirm: true,
+        confirmTenantId: TENANT_ID,
+        dryRun: false,
+        actorUserId: ACTOR_ID,
+      },
+    )
+
+    expect(result).toMatchObject({
+      dryRun: false,
+      action: 'submit',
+      stage: 'client',
+      mode: 'stage',
+    })
+    expect((result as any).requestId).toBeTruthy()
+    expect(db.social_posts[0]!.editorial_status).toBe('client_review')
+    expect(db.approval_requests).toHaveLength(1)
+    expect(db.approval_requests[0]!.stage).toBe('client')
+  })
+
+  it('submitPost execute without actor returns ACTOR_REQUIRED', async () => {
+    const previousActor = process.env.BLIMBER_MCP_ACTOR_USER_ID
+    delete process.env.BLIMBER_MCP_ACTOR_USER_ID
+    const db = seedSubmitDb()
+    const { createFakeDomainClient } = await import('./helpers/fake-supabase-domain')
+    const client = createFakeDomainClient(db)
+
+    try {
+      await expect(
+        marketingSubmitPost(
+          { client: client as any },
+          {
+            tenantId: TENANT_ID,
+            postId: POST_ID,
+            approverIds: [CLIENT_ID],
+            confirm: true,
+            confirmTenantId: TENANT_ID,
+            dryRun: false,
+          },
+        ),
+      ).rejects.toMatchObject({ code: 'ACTOR_REQUIRED', statusCode: 503 })
+    }
+    finally {
+      if (previousActor === undefined)
+        delete process.env.BLIMBER_MCP_ACTOR_USER_ID
+      else
+        process.env.BLIMBER_MCP_ACTOR_USER_ID = previousActor
+    }
+  })
+
+  it('submitPost rejects when already in client_review', async () => {
+    const db = seedSubmitDb()
+    db.social_posts[0]!.editorial_status = 'client_review'
+    const client = await staffClient(db)
+
+    await expect(
+      marketingSubmitPost(
+        { client: client as any },
+        {
+          tenantId: TENANT_ID,
+          postId: POST_ID,
+          approverIds: [CLIENT_ID],
+          confirm: true,
+          confirmTenantId: TENANT_ID,
+          dryRun: true,
+        },
+      ),
+    ).rejects.toMatchObject({ code: 'ALREADY_IN_REVIEW', statusCode: 409 })
+  })
+
+  it('listApprovals returns tenant-scoped pending requests', async () => {
+    const requestId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1'
+    const client = {
+      from(table: string) {
+        const chain: any = {
+          select: () => chain,
+          eq: () => chain,
+          in: () => chain,
+          order: () => chain,
+          limit: () => chain,
+          then: (resolve: any) => {
+            if (table === 'approval_requests') {
+              return resolve({
+                data: [{
+                  id: requestId,
+                  tenant_id: TENANT_ID,
+                  post_id: POST_ID,
+                  status: 'pending',
+                  run_status: 'pending',
+                  stage: 'client',
+                  due_at: null,
+                  created_at: '2026-08-17T12:00:00.000Z',
+                  requested_by: ACTOR_ID,
+                  version_id: null,
+                  workflow_id: SYSTEM_WORKFLOW_IDS.simpleClient,
+                }],
+                error: null,
+              })
+            }
+            if (table === 'social_posts') {
+              return resolve({
+                data: [{
+                  id: POST_ID,
+                  title: 'Peça',
+                  editorial_status: 'client_review',
+                  publication_status: 'not_scheduled',
+                  scheduled_at: null,
+                }],
+                error: null,
+              })
+            }
+            if (table === 'approval_request_approvers') {
+              return resolve({
+                data: [{ request_id: requestId, user_id: CLIENT_ID }],
+                error: null,
+              })
+            }
+            return resolve({ data: [], error: null })
+          },
+        }
+        return chain
+      },
+    }
+
+    const result = await marketingListApprovals(
+      { client: client as any },
+      { tenantId: TENANT_ID, stage: 'client' },
+    )
+
+    expect(result.approvals).toHaveLength(1)
+    expect(result.approvals[0]).toMatchObject({
+      id: requestId,
+      postId: POST_ID,
+      stage: 'client',
+      approverIds: [CLIENT_ID],
+    })
+  })
+
+  it('listCalendar returns occurrences in range', async () => {
+    const slotId = 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1'
+    const client = {
+      from(table: string) {
+        const chain: any = {
+          select: () => chain,
+          eq: () => chain,
+          neq: () => chain,
+          gte: () => chain,
+          lte: () => chain,
+          in: () => chain,
+          is: () => chain,
+          order: () => chain,
+          limit: () => chain,
+          then: (resolve: any) => {
+            if (table === 'marketing_post_schedules') {
+              return resolve({
+                data: [{
+                  id: slotId,
+                  post_id: POST_ID,
+                  variant_id: null,
+                  platform: 'instagram',
+                  format: 'static',
+                  scheduled_at: '2026-08-17T19:00:00.000Z',
+                  timezone: 'America/Sao_Paulo',
+                  status: 'queued',
+                  notes: null,
+                }],
+                error: null,
+              })
+            }
+            if (table === 'social_posts') {
+              return resolve({
+                data: [{
+                  id: POST_ID,
+                  title: 'Agendado MCP',
+                  editorial_status: 'approved',
+                  publication_status: 'scheduled',
+                  campaign_id: null,
+                  scheduled_at: '2026-08-17T19:00:00.000Z',
+                }],
+                error: null,
+              })
+            }
+            return resolve({ data: [], error: null })
+          },
+        }
+        return chain
+      },
+    }
+
+    const result = await marketingListCalendar(
+      { client: client as any },
+      {
+        tenantId: TENANT_ID,
+        start: '2026-08-01T00:00:00.000Z',
+        end: '2026-08-31T23:59:59.000Z',
+      },
+    )
+
+    expect(result.occurrences).toHaveLength(1)
+    expect(result.occurrences[0]).toMatchObject({
+      scheduleId: slotId,
+      postId: POST_ID,
+      title: 'Agendado MCP',
+      scheduleStatus: 'queued',
+    })
+  })
+
+  it('updateBrand dry-run does not upsert', async () => {
+    let upserted = false
+    const client = {
+      from(table: string) {
+        const chain: any = {
+          select: () => chain,
+          eq: () => chain,
+          in: () => chain,
+          maybeSingle: async () => {
+            if (table === 'social_brand_guides') {
+              return {
+                data: {
+                  tenant_id: TENANT_ID,
+                  tone_of_voice: 'Atual',
+                  audience: 'Clientes',
+                  allowed_words: [],
+                  forbidden_words: [],
+                  ctas: ['Saiba mais'],
+                  hashtags: [],
+                  colors: [],
+                  fonts: [],
+                  products: [],
+                  competitors: [],
+                  restrictions: '',
+                  legal_notes: '',
+                  logo_asset_ids: [],
+                  metadata: {},
+                },
+                error: null,
+              }
+            }
+            return { data: null, error: null }
+          },
+          upsert: () => {
+            upserted = true
+            return { select: () => ({ single: async () => ({ data: {}, error: null }) }) }
+          },
+        }
+        return chain
+      },
+      storage: {
+        from: () => ({
+          createSignedUrls: async () => ({ data: [] }),
+        }),
+      },
+    }
+
+    const result = await marketingUpdateBrand(
+      { client: client as any },
+      {
+        tenantId: TENANT_ID,
+        toneOfVoice: 'Direto e premium',
+        confirm: true,
+        confirmTenantId: TENANT_ID,
+        dryRun: true,
+      },
+    )
+
+    expect(result).toMatchObject({ dryRun: true, wouldMutate: true })
+    expect(upserted).toBe(false)
+  })
+
+  it('createCalendarSlot dry-run does not insert', async () => {
+    let inserted = false
+    const client = {
+      from(table: string) {
+        const chain: any = {
+          select: () => chain,
+          eq: () => chain,
+          is: () => chain,
+          maybeSingle: async () => {
+            if (table === 'social_posts')
+              return { data: { id: POST_ID, title: 'Peça' }, error: null }
+            return { data: null, error: null }
+          },
+          insert: () => {
+            inserted = true
+            return { select: () => ({ single: async () => ({ data: {}, error: null }) }) }
+          },
+        }
+        return chain
+      },
+    }
+
+    const result = await marketingCreateCalendarSlot(
+      { client: client as any },
+      {
+        tenantId: TENANT_ID,
+        postId: POST_ID,
+        scheduledAt: '2026-08-20T19:00:00-03:00',
+        confirm: true,
+        confirmTenantId: TENANT_ID,
+        dryRun: true,
+      },
+    )
+
+    expect(result).toMatchObject({ dryRun: true, wouldMutate: true })
+    expect(inserted).toBe(false)
+  })
+})
+

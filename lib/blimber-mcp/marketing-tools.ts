@@ -35,6 +35,16 @@ import {
   publicationReleaseEnum,
   resolveReleaseAction,
 } from './marketing-release'
+import {
+  MARKETING_HUB_OPS_DESCRIPTIONS,
+  MARKETING_HUB_OPS_HANDLERS,
+  MARKETING_HUB_OPS_SCHEMAS,
+  type MarketingHubOpsToolName,
+} from './marketing-ops'
+import {
+  marketingSubmitPost,
+  marketingSubmitPostSchema,
+} from './marketing-submit'
 import type { BlimberMcpToolContext } from './types'
 import {
   MARKETING_BRAND_URL,
@@ -586,6 +596,7 @@ export type MarketingToolName =
   | 'marketing_create_post'
   | 'marketing_update_post'
   | 'marketing_approve_post'
+  | 'marketing_submit_post'
   | 'marketing_schedule_post'
   | 'marketing_publish_post'
   | 'marketing_unschedule_post'
@@ -596,6 +607,7 @@ export type MarketingToolName =
   | 'marketing_get_campaign'
   | 'marketing_create_campaign'
   | 'marketing_update_campaign'
+  | MarketingHubOpsToolName
 
 export const MARKETING_TOOL_DESCRIPTIONS: Record<MarketingToolName, string> = {
   marketing_list_social_accounts: 'Lista contas sociais ativas do tenant (para variant/accountId).',
@@ -606,6 +618,7 @@ export const MARKETING_TOOL_DESCRIPTIONS: Record<MarketingToolName, string> = {
   marketing_create_post: 'Cria rascunho editorial. assetIds = biblioteca (publicar); sourceUrls/sourceBase64 = upload no mesmo call; referenceAssetIds = só referência. dryRun default true.',
   marketing_update_post: 'Atualiza draft e/ou editorialStatus. scheduledAt ou publicationStatus scheduled/published/not_scheduled enfileira de verdade (enqueueApprovedPost). dryRun default true.',
   marketing_approve_post: 'Avança editorial: draft→approved (bypass/superadmin), ou decide approval_request. Superadmin (app_metadata.role=admin) não precisa ser membro da org do cliente. dryRun default true.',
+  marketing_submit_post: 'Envia rascunho para aprovação do cliente (startApprovalWorkflow, stage client). approverIds via listApprovers. Superadmin sem membership. dryRun default true.',
   marketing_schedule_post: 'Agenda de verdade: enqueueApprovedPost + publication_jobs + slot no calendário editorial (marketing_post_schedules) + publication_status=scheduled. ISO com offset (BRT: 2026-08-17T19:00:00-03:00). Exige aprovado. dryRun default true.',
   marketing_publish_post: 'Publica agora (enqueueApprovedPost publishNow). Worker pega na hora. Exige aprovado. Superadmin sem membership. dryRun default true.',
   marketing_unschedule_post: 'Cancela jobs pending e volta publication_status=not_scheduled. Não remove das redes. dryRun default true.',
@@ -616,6 +629,7 @@ export const MARKETING_TOOL_DESCRIPTIONS: Record<MarketingToolName, string> = {
   marketing_get_campaign: 'Detalhe de campanha editorial + posts vinculados.',
   marketing_create_campaign: 'Cria campanha editorial (dryRun default true sem actor; execute exige actorUserId ou env).',
   marketing_update_campaign: 'Atualiza campanha editorial (nome, status, briefing, datas).',
+  ...MARKETING_HUB_OPS_DESCRIPTIONS,
 }
 
 export const MARKETING_TOOL_SCHEMAS = {
@@ -627,6 +641,7 @@ export const MARKETING_TOOL_SCHEMAS = {
   marketing_create_post: marketingCreatePostSchema,
   marketing_update_post: marketingUpdatePostSchema,
   marketing_approve_post: marketingApprovePostSchema,
+  marketing_submit_post: marketingSubmitPostSchema,
   marketing_schedule_post: marketingSchedulePostSchema,
   marketing_publish_post: marketingPublishPostSchema,
   marketing_unschedule_post: marketingUnschedulePostSchema,
@@ -637,6 +652,7 @@ export const MARKETING_TOOL_SCHEMAS = {
   marketing_get_campaign: marketingGetCampaignSchema,
   marketing_create_campaign: marketingCreateCampaignSchema,
   marketing_update_campaign: marketingUpdateCampaignSchema,
+  ...MARKETING_HUB_OPS_SCHEMAS,
 } as const
 
 // --- Handlers ---
@@ -2262,6 +2278,7 @@ export const MARKETING_TOOL_HANDLERS: Record<MarketingToolName, MarketingHandler
   marketing_create_post: marketingCreatePost,
   marketing_update_post: marketingUpdatePost,
   marketing_approve_post: marketingApprovePost,
+  marketing_submit_post: marketingSubmitPost,
   marketing_schedule_post: marketingSchedulePost,
   marketing_publish_post: marketingPublishPost,
   marketing_unschedule_post: marketingUnschedulePost,
@@ -2272,6 +2289,7 @@ export const MARKETING_TOOL_HANDLERS: Record<MarketingToolName, MarketingHandler
   marketing_get_campaign: marketingGetCampaign,
   marketing_create_campaign: marketingCreateCampaign,
   marketing_update_campaign: marketingUpdateCampaign,
+  ...MARKETING_HUB_OPS_HANDLERS,
 }
 
 export async function invokeMarketingTool(

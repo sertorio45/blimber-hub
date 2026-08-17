@@ -53,6 +53,7 @@ export function listMarketingToolDescriptors(): BlimberMcpToolDescriptor[] {
     marketing_create_post: { path: '/api/gpt/marketing/posts', method: 'POST' },
     marketing_update_post: { path: '/api/gpt/marketing/posts/{postId}', method: 'PUT' },
     marketing_approve_post: { path: '/api/gpt/marketing/posts/{postId}/approve', method: 'POST' },
+    marketing_submit_post: { path: '/api/gpt/marketing/posts/{postId}/submit', method: 'POST' },
     marketing_schedule_post: { path: '/api/gpt/marketing/posts/{postId}/schedule', method: 'POST' },
     marketing_publish_post: { path: '/api/gpt/marketing/posts/{postId}/publish', method: 'POST' },
     marketing_unschedule_post: { path: '/api/gpt/marketing/posts/{postId}/unschedule', method: 'POST' },
@@ -63,6 +64,11 @@ export function listMarketingToolDescriptors(): BlimberMcpToolDescriptor[] {
     marketing_get_campaign: { path: '/api/gpt/marketing/campaigns/{campaignId}', method: 'GET' },
     marketing_create_campaign: { path: '/api/gpt/marketing/campaigns', method: 'POST' },
     marketing_update_campaign: { path: '/api/gpt/marketing/campaigns/{campaignId}', method: 'PUT' },
+    marketing_list_approvals: { path: '/api/gpt/marketing/approvals', method: 'GET' },
+    marketing_list_approvers: { path: '/api/gpt/marketing/approvers', method: 'GET' },
+    marketing_list_calendar: { path: '/api/gpt/marketing/calendar', method: 'GET' },
+    marketing_update_brand: { path: '/api/gpt/marketing/brand-context', method: 'PUT' },
+    marketing_create_review_link: { path: '/api/gpt/marketing/approvals/{requestId}/review-link', method: 'POST' },
   }
 
   return (Object.keys(MARKETING_TOOL_DESCRIPTIONS) as MarketingToolName[]).map((name) => {

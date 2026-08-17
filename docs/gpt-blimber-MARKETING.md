@@ -24,11 +24,13 @@ Preview (`dryRun=true`, default) **não** exige actor. Execute (`dryRun=false`) 
 | GET | `/api/gpt/marketing/assets?tenantId=` | `listMediaAssets` |
 | POST | `/api/gpt/marketing/assets/upload` | `uploadMediaAsset` |
 | GET | `/api/gpt/marketing/brand-context?tenantId=` | `getBrandContext` |
+| PUT | `/api/gpt/marketing/brand-context` | `updateBrandContext` |
 | GET | `/api/gpt/marketing/posts?...` | `listPosts` |
 | POST | `/api/gpt/marketing/posts` | `createPost` |
 | GET | `/api/gpt/marketing/posts/{id}?tenantId=` | `getPost` |
 | PUT | `/api/gpt/marketing/posts/{id}` | `updatePost` |
 | POST | `/api/gpt/marketing/posts/{id}/approve` | `approvePost` |
+| POST | `/api/gpt/marketing/posts/{id}/submit` | `submitPost` |
 | POST | `/api/gpt/marketing/posts/{id}/schedule` | `schedulePost` |
 | POST | `/api/gpt/marketing/posts/{id}/publish` | `publishPost` |
 | POST | `/api/gpt/marketing/posts/{id}/unschedule` | `unschedulePost` |
@@ -37,6 +39,11 @@ Preview (`dryRun=true`, default) **não** exige actor. Execute (`dryRun=false`) 
 | POST | `/api/gpt/marketing/campaigns` | `createEditorialCampaign` |
 | GET | `/api/gpt/marketing/campaigns/{id}?tenantId=` | `getEditorialCampaign` |
 | PUT | `/api/gpt/marketing/campaigns/{id}` | `updateEditorialCampaign` |
+| GET | `/api/gpt/marketing/approvals` | `listApprovals` |
+| POST | `/api/gpt/marketing/approvals/{id}/review-link` | `createReviewLink` |
+| GET | `/api/gpt/marketing/approvers` | `listApprovers` |
+| GET | `/api/gpt/marketing/calendar` | `listCalendar` |
+| POST | `/api/gpt/marketing/invoke` | `invokeMarketingTool` |
 
 ## Fluxos sugeridos
 
@@ -71,6 +78,13 @@ Estático/story/vídeo = 1 arquivo; carrossel até 10. Tenant isolado. Agendar: 
 4. O ator (`BLIMBER_MCP_ACTOR_USER_ID`) precisa ser Superadministrador (`app_metadata.role=admin`, staff do Hub) **ou** ter membership na org + `marketing.social.approval.bypass` / caps de decisão. Superadmin **não** precisa ser membro da org do cliente nem autor do post. UUID que não for staff continua 403 sem membership. Usa `bypassApproval` / `submitApprovalDecision` — não atualiza `editorial_status` direto.
 
 Equivalente: `updatePost` com `editorialStatus: "approved"` (e `status: "approved"` só como alias). `changes_requested` / `rejected` exigem `approval_request` pendente + `comment`.
+
+### 3b2. Enviar para aprovação do cliente
+
+1. `listApprovers` → `userId`s
+2. `submitPost` `dryRun: true` (`stage: client` default, workflow simple_client)
+3. Confirme → `dryRun: false` com `approverIds`, `confirm: true`, `confirmTenantId === tenantId`
+4. Abre `client_review`. Decida depois com `approvePost` / `createReviewLink`.
 
 ### 3c. Agendar / publicar agora / cancelar agenda
 

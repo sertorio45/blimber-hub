@@ -65,6 +65,7 @@ export {
   marketingUpdateCampaign,
   marketingUpdatePost,
   marketingApprovePost,
+  marketingSubmitPost,
   type MarketingToolName,
 } from './marketing-tools'
 export {
@@ -73,10 +74,20 @@ export {
   marketingUnschedulePost,
 } from './marketing-release'
 export {
+  marketingListApprovals,
+  marketingListApprovers,
+  marketingListCalendar,
+  marketingUpdateBrand,
+  marketingCreateReviewLink,
+} from './marketing-ops'
+export {
   MARKETING_BRAND_URL,
   MARKETING_CAMPAIGNS_URL,
   MARKETING_CONTENT_URL,
   MARKETING_LIBRARY_URL,
+  MARKETING_APPROVALS_URL,
+  MARKETING_CALENDAR_URL,
+  MARKETING_BRIEFINGS_URL,
   type BlimberMcpDomain,
   type BlimberMcpNamespace,
   type BlimberMcpSupabaseLike,

@@ -5,7 +5,7 @@ info:
     Ação 1 (Marketing + platform + brand). Auth Bearer BLIMBER_MCP_API_KEY.
     Ads pagos: Ação 2 (openapi-ads.yaml, host ads.blimber.com.br). Não importe
     o índice openapi.yaml no mesmo GPT.
-  version: 0.4.6
+  version: 0.5.0
   contact:
     name: Blimber Hub
 servers:
@@ -288,6 +288,76 @@ paths:
       responses:
         "200":
           description: BrandContext
+        "401":
+          description: Não autorizado
+    put:
+      operationId: updateBrandContext
+      summary: Atualizar Brand Center
+      description: >
+        Atualiza tom/CTAs/restrições (social_brand_guides). dryRun default
+        true. Exige confirm + confirmTenantId. Superadmin sem membership.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tenantId, confirmTenantId, confirm]
+              properties:
+                tenantId:
+                  type: string
+                  format: uuid
+                toneOfVoice:
+                  type: string
+                  maxLength: 5000
+                audience:
+                  type: string
+                  maxLength: 5000
+                allowedWords:
+                  type: array
+                  maxItems: 100
+                  items:
+                    type: string
+                    maxLength: 80
+                forbiddenWords:
+                  type: array
+                  maxItems: 100
+                  items:
+                    type: string
+                    maxLength: 80
+                ctas:
+                  type: array
+                  maxItems: 50
+                  items:
+                    type: string
+                    maxLength: 200
+                hashtags:
+                  type: array
+                  maxItems: 100
+                  items:
+                    type: string
+                    maxLength: 80
+                restrictions:
+                  type: string
+                  maxLength: 5000
+                legalNotes:
+                  type: string
+                  maxLength: 5000
+                actorUserId:
+                  type: string
+                  format: uuid
+                confirmTenantId:
+                  type: string
+                  format: uuid
+                confirm:
+                  type: boolean
+                  enum: [true]
+                dryRun:
+                  type: boolean
+                  default: true
+      responses:
+        "200":
+          description: Preview ou marca atualizada
         "401":
           description: Não autorizado
 
@@ -716,6 +786,71 @@ paths:
         "409":
           description: Sem fila para changes_requested/rejected
 
+  /api/gpt/marketing/posts/{postId}/submit:
+    post:
+      operationId: submitPost
+      summary: Enviar post para aprovação do cliente
+      description: >
+        startApprovalWorkflow (stage client). dryRun default true.
+        approverIds via listApprovers. Superadmin sem membership.
+        Exige confirm + confirmTenantId.
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: ID do post.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tenantId, confirmTenantId, confirm]
+              properties:
+                tenantId:
+                  type: string
+                  format: uuid
+                approverIds:
+                  type: array
+                  maxItems: 100
+                  items:
+                    type: string
+                    format: uuid
+                  description: UUIDs de listApprovers (recomendado no fluxo cliente).
+                dueAt:
+                  type: string
+                  format: date-time
+                workflowId:
+                  type: string
+                  format: uuid
+                  description: Opcional. Default simple_client quando stage=client.
+                stage:
+                  type: string
+                  enum: [client, internal]
+                  default: client
+                actorUserId:
+                  type: string
+                  format: uuid
+                confirmTenantId:
+                  type: string
+                  format: uuid
+                confirm:
+                  type: boolean
+                  enum: [true]
+                dryRun:
+                  type: boolean
+                  default: true
+      responses:
+        "200":
+          description: Preview ou solicitação criada
+        "401":
+          description: Não autorizado
+        "409":
+          description: Já em aprovação ou já aprovado
+
   /api/gpt/marketing/posts/{postId}/schedule:
     post:
       operationId: schedulePost
@@ -1101,6 +1236,187 @@ paths:
         "401":
           description: Não autorizado
 
+  /api/gpt/marketing/approvals:
+    get:
+      operationId: listApprovals
+      summary: Listar solicitações de aprovação
+      description: >
+        Lista approval_requests do tenant. Decida com approvePost.
+        Envie rascunho com submitPost.
+      parameters:
+        - name: tenantId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: UUID do tenant (empresa). Nunca misture tenants.
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [pending, approved, changes_requested, rejected, cancelled, all]
+          description: Filtro de run_status.
+        - name: stage
+          in: query
+          schema:
+            type: string
+            enum: [internal, client]
+          description: Etapa do fluxo.
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+          description: Máximo de itens.
+      responses:
+        "200":
+          description: Solicitações
+        "401":
+          description: Não autorizado
+
+  /api/gpt/marketing/approvals/{requestId}/review-link:
+    post:
+      operationId: createReviewLink
+      summary: Gerar link mágico de aprovação
+      description: >
+        Cria /review/{token} para o cliente. dryRun default true.
+        Token só na resposta — nunca logar. Exige confirm.
+      parameters:
+        - name: requestId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: ID da approval_request pendente.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tenantId, confirmTenantId, confirm]
+              properties:
+                tenantId:
+                  type: string
+                  format: uuid
+                expiresInHours:
+                  type: integer
+                  minimum: 1
+                  maximum: 720
+                maxUses:
+                  type: integer
+                  minimum: 1
+                  maximum: 1000
+                afterDecision:
+                  type: string
+                  enum: [read_only, invalidate]
+                actorUserId:
+                  type: string
+                  format: uuid
+                confirmTenantId:
+                  type: string
+                  format: uuid
+                confirm:
+                  type: boolean
+                  enum: [true]
+                dryRun:
+                  type: boolean
+                  default: true
+      responses:
+        "200":
+          description: Preview ou link gerado
+        "401":
+          description: Não autorizado
+
+  /api/gpt/marketing/approvers:
+    get:
+      operationId: listApprovers
+      summary: Listar aprovadores elegíveis
+      description: Aprovadores do tenant para submitPost.approverIds. Sem tokens.
+      parameters:
+        - name: tenantId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: UUID do tenant (empresa). Nunca misture tenants.
+      responses:
+        "200":
+          description: Aprovadores
+        "401":
+          description: Não autorizado
+
+  /api/gpt/marketing/calendar:
+    get:
+      operationId: listCalendar
+      summary: Calendário editorial
+      description: >
+        Slots em marketing_post_schedules no intervalo start/end.
+        Mesmo feed do Hub. Slots CRUD via invokeMarketingTool.
+      parameters:
+        - name: tenantId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: UUID do tenant (empresa). Nunca misture tenants.
+        - name: start
+          in: query
+          required: true
+          schema:
+            type: string
+          description: ISO início (inclusive).
+        - name: end
+          in: query
+          required: true
+          schema:
+            type: string
+          description: ISO fim (inclusive).
+        - name: campaignId
+          in: query
+          schema:
+            type: string
+            format: uuid
+          description: Filtrar por campanha editorial.
+        - name: platform
+          in: query
+          schema:
+            type: string
+            enum: [facebook, instagram, linkedin]
+          description: Filtrar plataforma.
+      responses:
+        "200":
+          description: Ocorrências
+        "401":
+          description: Não autorizado
+
+  /api/gpt/marketing/invoke:
+    post:
+      operationId: invokeMarketingTool
+      summary: Invocação genérica (overflow)
+      description: >
+        Invoca tool pelo nome. Overflow (workflows, briefings, slots
+        do calendário). Writes: dryRun true + confirm. Limite ≤30 ops.
+      x-openai-isConsequential: true
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MarketingInvokeBody"
+      responses:
+        "200":
+          description: Resultado da tool
+        "401":
+          description: Não autorizado
+        "400":
+          description: Tool inválida
+
 components:
   securitySchemes:
     BearerAuth:
@@ -1139,3 +1455,44 @@ components:
               slug:
                 type: string
                 description: Slug público do tenant.
+    MarketingInvokeBody:
+      type: object
+      required: [tool, arguments]
+      properties:
+        tool:
+          type: string
+          description: Nome canônico da tool MCP. Overflow sem rota REST dedicada.
+          enum:
+            - marketing_list_social_accounts
+            - marketing_list_assets
+            - marketing_get_brand_context
+            - marketing_list_posts
+            - marketing_get_post
+            - marketing_create_post
+            - marketing_update_post
+            - marketing_approve_post
+            - marketing_submit_post
+            - marketing_schedule_post
+            - marketing_publish_post
+            - marketing_unschedule_post
+            - marketing_delete_post
+            - marketing_delete_asset
+            - marketing_upload_asset
+            - marketing_list_campaigns
+            - marketing_get_campaign
+            - marketing_create_campaign
+            - marketing_update_campaign
+            - marketing_list_approvals
+            - marketing_list_approvers
+            - marketing_list_calendar
+            - marketing_update_brand
+            - marketing_create_review_link
+            - marketing_list_briefings
+            - marketing_create_briefing_link
+            - marketing_list_workflows
+            - marketing_create_calendar_slot
+            - marketing_update_calendar_slot
+            - marketing_delete_calendar_slot
+        arguments:
+          type: object
+          description: Payload da tool (sempre tenantId; writes com confirm).

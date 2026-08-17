@@ -323,6 +323,18 @@ export async function resolveMcpEditorialActor(
   }
 }
 
+export function assertMcpCapability(
+  actor: McpEditorialActor,
+  capabilities: string[],
+  message: string,
+) {
+  if (actor.isPlatformStaff)
+    return
+  if (capabilities.some(cap => holdsCapability(actor.capabilities, cap)))
+    return
+  throw new BlimberMcpError('FORBIDDEN', message, 403)
+}
+
 function assertCanExecutePath(
   actor: McpEditorialActor,
   path: EditorialPath,

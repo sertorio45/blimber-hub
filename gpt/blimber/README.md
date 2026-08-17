@@ -6,7 +6,7 @@ O ChatGPT aceita **no máximo 30 operations por Ação** e **recusa o mesmo host
 
 | Artefato | Arquivo |
 |----------|---------|
-| OpenAPI Marketing (**importe**) | `openapi-marketing.yaml` → `https://app.blimber.com.br` (20 ops) |
+| OpenAPI Marketing (**importe**) | `openapi-marketing.yaml` → `https://app.blimber.com.br` (27 ops) |
 | OpenAPI Ads (**importe**) | `openapi-ads.yaml` → `https://ads.blimber.com.br` (26 ops) |
 | Índice (**não importe**) | `openapi.yaml` |
 | Instruções | `instructions.md` |
@@ -29,7 +29,7 @@ O ChatGPT aceita **no máximo 30 operations por Ação** e **recusa o mesmo host
 
 ### Opção B — Plugin MCP (Developer Mode)
 
-Uma conexão com **todas** as tools (~38), mesmo backend `/api/gpt/*`:
+Uma conexão com **todas** as tools (~50), mesmo backend `/api/gpt/*`:
 
 1. ChatGPT → Developer Mode → **Novo plugin**
 2. URL: `https://app.blimber.com.br/api/mcp`
@@ -42,7 +42,7 @@ Docs: `docs/mcp-blimber-platform.md`, `docs/gpt-blimber-MARKETING.md`, `docs/gpt
 
 ## Operations
 
-### Ação Marketing (20) — `app.blimber.com.br`
+### Ação Marketing (27) — `app.blimber.com.br`
 
 | operationId | Path |
 |-------------|------|
@@ -57,6 +57,7 @@ Docs: `docs/mcp-blimber-platform.md`, `docs/gpt-blimber-MARKETING.md`, `docs/gpt
 | `getPost` | `GET /api/gpt/marketing/posts/{postId}` |
 | `updatePost` | `PUT /api/gpt/marketing/posts/{postId}` |
 | `approvePost` | `POST /api/gpt/marketing/posts/{postId}/approve` |
+| `submitPost` | `POST /api/gpt/marketing/posts/{postId}/submit` |
 | `schedulePost` | `POST /api/gpt/marketing/posts/{postId}/schedule` |
 | `publishPost` | `POST /api/gpt/marketing/posts/{postId}/publish` |
 | `unschedulePost` | `POST /api/gpt/marketing/posts/{postId}/unschedule` |
@@ -66,6 +67,12 @@ Docs: `docs/mcp-blimber-platform.md`, `docs/gpt-blimber-MARKETING.md`, `docs/gpt
 | `createEditorialCampaign` | `POST /api/gpt/marketing/campaigns` |
 | `getEditorialCampaign` | `GET /api/gpt/marketing/campaigns/{campaignId}` |
 | `updateEditorialCampaign` | `PUT /api/gpt/marketing/campaigns/{campaignId}` |
+| `listApprovals` | `GET /api/gpt/marketing/approvals` |
+| `createReviewLink` | `POST /api/gpt/marketing/approvals/{requestId}/review-link` |
+| `listApprovers` | `GET /api/gpt/marketing/approvers` |
+| `listCalendar` | `GET /api/gpt/marketing/calendar` |
+| `updateBrandContext` | `PUT /api/gpt/marketing/brand-context` |
+| `invokeMarketingTool` | `POST /api/gpt/marketing/invoke` |
 
 ### Ação Ads (24) — `ads.blimber.com.br`
 

@@ -23,6 +23,10 @@ export const MARKETING_CONTENT_URL = 'https://app.blimber.com.br/marketing/conte
 export const MARKETING_CAMPAIGNS_URL = 'https://app.blimber.com.br/marketing/campaigns'
 export const MARKETING_LIBRARY_URL = 'https://app.blimber.com.br/marketing/media'
 export const MARKETING_BRAND_URL = 'https://app.blimber.com.br/marketing/brand'
+export const MARKETING_APPROVALS_URL = 'https://app.blimber.com.br/marketing/approvals'
+export const MARKETING_CALENDAR_URL = 'https://app.blimber.com.br/marketing/calendar'
+export const MARKETING_BRIEFINGS_URL = 'https://app.blimber.com.br/marketing/briefings'
+export const MARKETING_APP_ORIGIN = 'https://app.blimber.com.br'
 
 export interface BlimberMcpToolDescriptor {
   name: string
