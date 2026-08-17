@@ -1438,6 +1438,86 @@ export async function enqueueApprovedPost(
   return jobs
 }
 
+const UNSCHEDULE_BLOCKED = [
+  'publishing',
+  'published',
+  'partially_published',
+  'deletion_pending',
+  'deleted',
+] as const
+
+/**
+ * Cancel pending publication jobs and return publication_status to not_scheduled.
+ * Does not delete remote posts (Meta/LinkedIn). Matches Hub PUT job-cancel + calendar slot cancel.
+ */
+export async function unscheduleApprovedPost(
+  client: any,
+  input: {
+    tenantId: string
+    postId: string
+    capabilities?: string[]
+    isPlatformStaff?: boolean
+    clearScheduledAt?: boolean
+  },
+) {
+  const { data: post } = await client
+    .from('social_posts')
+    .select('id, publication_status, scheduled_at, deleted_at')
+    .eq('tenant_id', input.tenantId)
+    .eq('id', input.postId)
+    .maybeSingle()
+
+  if (!post)
+    throw createError({ statusCode: 404, statusMessage: 'Publicação não encontrada' })
+  if (post.deleted_at)
+    throw createError({ statusCode: 409, statusMessage: 'Publicação excluída não pode ser alterada' })
+
+  if (input.capabilities && !input.isPlatformStaff && !holdsAny(input.capabilities, [
+    'marketing.social.schedule',
+    'marketing.social.publish',
+  ])) {
+    throw createError({ statusCode: 403, statusMessage: 'Sem permissão para cancelar o agendamento' })
+  }
+
+  const publicationStatus = String(post.publication_status || 'not_scheduled')
+  if (UNSCHEDULE_BLOCKED.includes(publicationStatus as typeof UNSCHEDULE_BLOCKED[number])) {
+    throw createError({
+      statusCode: 409,
+      statusMessage: 'Não é possível cancelar o agendamento após publicação ou exclusão',
+    })
+  }
+
+  await client
+    .from('publication_jobs')
+    .update({ status: 'cancelled', locked_at: null, locked_by: null })
+    .eq('tenant_id', input.tenantId)
+    .eq('post_id', input.postId)
+    .in('status', ['pending', 'retrying', 'failed'])
+
+  await client
+    .from('marketing_post_schedules')
+    .update({ status: 'cancelled', updated_at: new Date().toISOString() })
+    .eq('tenant_id', input.tenantId)
+    .eq('post_id', input.postId)
+    .in('status', ['planned', 'queued', 'failed'])
+
+  await client
+    .from('social_posts')
+    .update({
+      publication_status: 'not_scheduled',
+      scheduled_at: input.clearScheduledAt ? null : post.scheduled_at,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('tenant_id', input.tenantId)
+    .eq('id', input.postId)
+
+  return {
+    cancelled: true,
+    publicationStatus: 'not_scheduled' as const,
+    scheduledAt: input.clearScheduledAt ? null : (post.scheduled_at ?? null),
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Bypass approval
 // ---------------------------------------------------------------------------

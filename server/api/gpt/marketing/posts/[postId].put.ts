@@ -19,6 +19,7 @@ export default defineEventHandler(async (event) => {
     campaignId: body.campaignId === null ? null : optionalString(body.campaignId),
     scheduledAt: body.scheduledAt === null ? null : optionalString(body.scheduledAt),
     timezone: optionalString(body.timezone),
+    publicationStatus: optionalString(body.publicationStatus),
     variants: Array.isArray(body.variants) ? body.variants : undefined,
     referenceAssetIds: Array.isArray(body.referenceAssetIds) ? body.referenceAssetIds : undefined,
     sourceUrls: Array.isArray(body.sourceUrls) ? body.sourceUrls : undefined,

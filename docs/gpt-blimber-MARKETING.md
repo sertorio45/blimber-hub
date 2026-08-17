@@ -29,7 +29,10 @@ Preview (`dryRun=true`, default) **não** exige actor. Execute (`dryRun=false`) 
 | GET | `/api/gpt/marketing/posts/{id}?tenantId=` | `getPost` |
 | PUT | `/api/gpt/marketing/posts/{id}` | `updatePost` |
 | POST | `/api/gpt/marketing/posts/{id}/approve` | `approvePost` |
-| DELETE | `/api/gpt/marketing/posts/{id}` | `deletePost` |
+| POST | `/api/gpt/marketing/posts/{id}/schedule` | `schedulePost` |
+| POST | `/api/gpt/marketing/posts/{id}/publish` | `publishPost` |
+| POST | `/api/gpt/marketing/posts/{id}/unschedule` | `unschedulePost` |
+| POST | `/api/gpt/marketing/posts/{id}/delete` | `deletePost` |
 | GET | `/api/gpt/marketing/campaigns?...` | `listEditorialCampaigns` |
 | POST | `/api/gpt/marketing/campaigns` | `createEditorialCampaign` |
 | GET | `/api/gpt/marketing/campaigns/{id}?tenantId=` | `getEditorialCampaign` |
@@ -52,7 +55,7 @@ Preview (`dryRun=true`, default) **não** exige actor. Execute (`dryRun=false`) 
 4. Referência de arte (não publicada): `referenceAssetIds` (`purpose=reference`)
 5. Só biblioteca, sem post: `uploadMediaAsset`
 
-Estático/story/vídeo = 1 arquivo; carrossel até 10. Tenant isolado. Agendar/publicar no Hub.
+Estático/story/vídeo = 1 arquivo; carrossel até 10. Tenant isolado. Agendar: `schedulePost` (após aprovado).
 
 ### 3. Editar rascunho
 
@@ -68,6 +71,18 @@ Estático/story/vídeo = 1 arquivo; carrossel até 10. Tenant isolado. Agendar/p
 4. O ator (`BLIMBER_MCP_ACTOR_USER_ID`) precisa ser Superadministrador (`app_metadata.role=admin`, staff do Hub) **ou** ter membership na org + `marketing.social.approval.bypass` / caps de decisão. Superadmin **não** precisa ser membro da org do cliente nem autor do post. UUID que não for staff continua 403 sem membership. Usa `bypassApproval` / `submitApprovalDecision` — não atualiza `editorial_status` direto.
 
 Equivalente: `updatePost` com `editorialStatus: "approved"` (e `status: "approved"` só como alias). `changes_requested` / `rejected` exigem `approval_request` pendente + `comment`.
+
+### 3c. Agendar / publicar agora / cancelar agenda
+
+O Hub agenda com `enqueueApprovedPost` (cria `publication_jobs` e `publication_status=scheduled`). Gravar só `scheduled_at` **não** agenda.
+
+1. `getPost` — `editorialStatus` precisa ser `approved` (senão `approvePost` primeiro)
+2. `schedulePost` `dryRun: true` → confirmar → `dryRun: false`
+3. `scheduledAt` em ISO com offset. Timezone do Hub: `America/Sao_Paulo` (BRT, UTC-3). Ex. 19:00 BRT: `"2026-08-17T19:00:00-03:00"`
+4. Publicar agora: `publishPost`. Cancelar: `unschedulePost` (não remove das redes)
+5. Equivalente: `updatePost` com `scheduledAt` ou `publicationStatus: "scheduled"|"published"|"not_scheduled"`
+
+Se o post não estiver aprovado, a tool retorna **409** `NOT_APPROVED` (aprove primeiro) em vez de deixar `not_scheduled`.
 
 ### 4. Remover duplicados de uma campanha
 

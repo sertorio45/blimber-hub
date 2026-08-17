@@ -24,6 +24,17 @@ import {
   previewEditorialTransition,
   resolveRequestedEditorial,
 } from './marketing-editorial'
+import {
+  applyPostRelease,
+  marketingPublishPost,
+  marketingPublishPostSchema,
+  marketingSchedulePost,
+  marketingSchedulePostSchema,
+  marketingUnschedulePost,
+  marketingUnschedulePostSchema,
+  publicationReleaseEnum,
+  resolveReleaseAction,
+} from './marketing-release'
 import type { BlimberMcpToolContext } from './types'
 import {
   MARKETING_BRAND_URL,
@@ -437,8 +448,11 @@ export const marketingUpdatePostSchema = z.object({
   cta: z.string().max(240).nullable().optional(),
   hashtags: z.array(z.string().max(100)).max(30).optional(),
   campaignId: uuid.nullable().optional(),
-  scheduledAt: z.string().datetime({ offset: true }).nullable().optional(),
+  scheduledAt: z.string().datetime({ offset: true }).nullable().optional()
+    .describe('ISO com offset (America/Sao_Paulo). Enfileira de verdade; não só grava a data. Exige aprovado.'),
   timezone: z.string().min(1).max(80).optional(),
+  /** Enfileira/cancela via domínio Hub (enqueueApprovedPost / unscheduleApprovedPost). */
+  publicationStatus: publicationReleaseEnum.optional(),
   /** Replaces all variants (social channels) linked to this post. */
   variants: z.array(variantInputSchema).max(10).optional(),
   /** Replaces post-level reference assets (variant_id null). Omit to leave unchanged. */
@@ -572,6 +586,9 @@ export type MarketingToolName =
   | 'marketing_create_post'
   | 'marketing_update_post'
   | 'marketing_approve_post'
+  | 'marketing_schedule_post'
+  | 'marketing_publish_post'
+  | 'marketing_unschedule_post'
   | 'marketing_delete_post'
   | 'marketing_delete_asset'
   | 'marketing_upload_asset'
@@ -587,8 +604,11 @@ export const MARKETING_TOOL_DESCRIPTIONS: Record<MarketingToolName, string> = {
   marketing_list_posts: 'Lista posts editoriais (social_posts) do tenant.',
   marketing_get_post: 'Detalhe de um post editorial por postId.',
   marketing_create_post: 'Cria rascunho editorial. assetIds = biblioteca (publicar); sourceUrls/sourceBase64 = upload no mesmo call; referenceAssetIds = só referência. dryRun default true.',
-  marketing_update_post: 'Atualiza draft (copy/mídia) e/ou editorialStatus (draft|approved|changes_requested|rejected) via domínio Hub. dryRun default true.',
+  marketing_update_post: 'Atualiza draft e/ou editorialStatus. scheduledAt ou publicationStatus scheduled/published/not_scheduled enfileira de verdade (enqueueApprovedPost). dryRun default true.',
   marketing_approve_post: 'Avança editorial: draft→approved (bypass/superadmin), ou decide approval_request. Superadmin (app_metadata.role=admin) não precisa ser membro da org do cliente. dryRun default true.',
+  marketing_schedule_post: 'Agenda de verdade: enqueueApprovedPost + publication_status=scheduled. ISO com offset (BRT: 2026-08-17T19:00:00-03:00). Exige aprovado. dryRun default true.',
+  marketing_publish_post: 'Publica agora (enqueueApprovedPost publishNow). Worker pega na hora. Exige aprovado. Superadmin sem membership. dryRun default true.',
+  marketing_unschedule_post: 'Cancela jobs pending e volta publication_status=not_scheduled. Não remove das redes. dryRun default true.',
   marketing_delete_post: 'Soft-delete de 1 post editorial (dryRun default true). Isolado por tenant; sem exclusão em massa nem remota.',
   marketing_delete_asset: 'Remove 1 mídia da Biblioteca (storage + DB). dryRun default true. Bloqueia se vinculada a posts.',
   marketing_upload_asset: 'Upload na Biblioteca (HTTPS URL preferencial ou base64). Compressão/storage iguais ao Hub. dryRun default true.',
@@ -607,6 +627,9 @@ export const MARKETING_TOOL_SCHEMAS = {
   marketing_create_post: marketingCreatePostSchema,
   marketing_update_post: marketingUpdatePostSchema,
   marketing_approve_post: marketingApprovePostSchema,
+  marketing_schedule_post: marketingSchedulePostSchema,
+  marketing_publish_post: marketingPublishPostSchema,
+  marketing_unschedule_post: marketingUnschedulePostSchema,
   marketing_delete_post: marketingDeletePostSchema,
   marketing_delete_asset: marketingDeleteAssetSchema,
   marketing_upload_asset: marketingUploadAssetSchema,
@@ -1053,7 +1076,6 @@ function hasContentPatch(input: z.infer<typeof marketingUpdatePostSchema>): bool
     || input.cta !== undefined
     || input.hashtags !== undefined
     || input.campaignId !== undefined
-    || input.scheduledAt !== undefined
     || input.timezone !== undefined
     || input.variants !== undefined
     || input.referenceAssetIds !== undefined
@@ -1113,6 +1135,40 @@ async function applyEditorialIfRequested(
     path: result.path,
     pendingRequestId: result.preview.pendingRequest?.id ?? null,
   }
+}
+
+function willApproveInSameCall(
+  existing: Record<string, any>,
+  editorial: { decision?: string, path?: string } | null,
+): boolean {
+  if (String(existing.editorial_status) === 'approved' || existing.approval_bypassed === true)
+    return true
+  return editorial?.decision === 'approved' && editorial?.path !== 'already'
+}
+
+async function applyReleaseIfRequested(
+  ctx: BlimberMcpToolContext,
+  input: {
+    tenantId: string
+    postId: string
+    action: ReturnType<typeof resolveReleaseAction>
+    actorUserId?: string
+    dryRun: boolean
+    timezone?: string
+    skipReleasableCheck?: boolean
+  },
+) {
+  if (!input.action)
+    return null
+  return applyPostRelease(ctx, {
+    tenantId: input.tenantId,
+    postId: input.postId,
+    action: input.action,
+    actorUserId: input.actorUserId,
+    dryRun: input.dryRun,
+    timezone: input.timezone,
+    skipReleasableCheck: input.skipReleasableCheck,
+  })
 }
 
 async function refetchMappedPost(
@@ -1196,10 +1252,14 @@ export async function marketingUpdatePost(
     editorialStatus: input.editorialStatus,
     status: input.status,
   })
-  if (!contentPatch && !editorialDecision) {
+  const releaseAction = resolveReleaseAction({
+    scheduledAt: input.scheduledAt,
+    publicationStatus: input.publicationStatus,
+  })
+  if (!contentPatch && !editorialDecision && !releaseAction) {
     throw new BlimberMcpError(
       'EMPTY_UPDATE',
-      'Informe campos de conteúdo e/ou editorialStatus (draft|approved|changes_requested|rejected).',
+      'Informe campos de conteúdo, editorialStatus (draft|approved|changes_requested|rejected) e/ou scheduledAt / publicationStatus (scheduled|published|not_scheduled).',
       400,
     )
   }
@@ -1235,21 +1295,36 @@ export async function marketingUpdatePost(
       actorUserId: input.actorUserId,
       dryRun,
     })
+    const release = await applyReleaseIfRequested(ctx, {
+      tenantId: input.tenantId,
+      postId: input.postId,
+      action: releaseAction,
+      actorUserId: input.actorUserId,
+      dryRun,
+      timezone: input.timezone,
+      skipReleasableCheck: dryRun && willApproveInSameCall(existing, editorial),
+    })
     if (dryRun) {
       return {
         dryRun: true as const,
-        wouldMutate: editorial?.path !== 'already',
+        wouldMutate: editorial?.path !== 'already' || Boolean(releaseAction),
         entity: 'social_post',
         kind: 'editorial' as const,
         before: mapPostRow(existing),
         editorial,
-        notes: editorial?.notes || ['Reenvie com dryRun=false após confirmação.'],
+        release,
+        notes: [
+          ...(editorial?.notes || []),
+          ...((release as any)?.notes || []),
+          ...(editorial?.notes || release ? [] : ['Reenvie com dryRun=false após confirmação.']),
+        ],
       }
     }
     return {
       dryRun: false as const,
       kind: 'editorial' as const,
       editorial,
+      release,
       post: await refetchMappedPost(ctx, input.tenantId, input.postId, existing),
     }
   }
@@ -1287,8 +1362,6 @@ export async function marketingUpdatePost(
     updatePayload.content = input.content
   if (input.campaignId !== undefined)
     updatePayload.campaign_id = input.campaignId
-  if (input.scheduledAt !== undefined)
-    updatePayload.scheduled_at = input.scheduledAt
   if (input.timezone !== undefined)
     updatePayload.timezone = input.timezone
 
@@ -1352,6 +1425,15 @@ export async function marketingUpdatePost(
           dryRun: true,
         })
       : null
+    const release = await applyReleaseIfRequested(ctx, {
+      tenantId: input.tenantId,
+      postId: input.postId,
+      action: releaseAction,
+      actorUserId: input.actorUserId,
+      dryRun: true,
+      timezone: input.timezone,
+      skipReleasableCheck: willApproveInSameCall(existing, editorial),
+    })
     return {
       dryRun: true as const,
       wouldMutate: true,
@@ -1360,6 +1442,7 @@ export async function marketingUpdatePost(
       before: mapPostRow(existing),
       afterPreview: updatePayload,
       editorial,
+      release,
       variantsPreview: input.variants ?? null,
       plannedAssets: {
         libraryPublicationIds: (input.variants || []).flatMap(v => v.assetIds),
@@ -1373,7 +1456,9 @@ export async function marketingUpdatePost(
       notes: [
         'Reenvie com dryRun=false após confirmação. Upload só no execute.',
         `Uploads inline entram no 1º canal. Ordem: ${PUBLICATION_ATTACH_ORDER}.`,
+        'scheduledAt/publicationStatus enfileiram publication_jobs (não só gravam a data).',
         ...(editorial?.notes || []),
+        ...((release as any)?.notes || []),
       ],
     }
   }
@@ -1524,13 +1609,23 @@ export async function marketingUpdatePost(
       })
     : null
 
+  const release = await applyReleaseIfRequested(ctx, {
+    tenantId: input.tenantId,
+    postId: input.postId,
+    action: releaseAction,
+    actorUserId: input.actorUserId,
+    dryRun: false,
+    timezone: input.timezone,
+  })
+
   return {
     dryRun: false as const,
     kind: 'editorial' as const,
-    post: editorial
+    post: (editorial || release)
       ? await refetchMappedPost(ctx, input.tenantId, input.postId, data)
       : mapPostRow(data),
     editorial,
+    release,
     uploadedAssetIds: uploaded.ids,
     referenceAssetIds: input.referenceAssetIds ?? undefined,
   }
@@ -2167,6 +2262,9 @@ export const MARKETING_TOOL_HANDLERS: Record<MarketingToolName, MarketingHandler
   marketing_create_post: marketingCreatePost,
   marketing_update_post: marketingUpdatePost,
   marketing_approve_post: marketingApprovePost,
+  marketing_schedule_post: marketingSchedulePost,
+  marketing_publish_post: marketingPublishPost,
+  marketing_unschedule_post: marketingUnschedulePost,
   marketing_delete_post: marketingDeletePost,
   marketing_delete_asset: marketingDeleteAsset,
   marketing_upload_asset: marketingUploadAsset,

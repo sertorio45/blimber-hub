@@ -5,7 +5,7 @@ info:
     Ação 1 (Marketing + platform + brand). Auth Bearer BLIMBER_MCP_API_KEY.
     Ads pagos: Ação 2 (openapi-ads.yaml, host ads.blimber.com.br). Não importe
     o índice openapi.yaml no mesmo GPT.
-  version: 0.4.5
+  version: 0.4.6
   contact:
     name: Blimber Hub
 servers:
@@ -385,7 +385,10 @@ paths:
                 scheduledAt:
                   type: string
                   format: date-time
-                  description: ISO-8601 com offset. Omitir se sem agenda.
+                  description: >
+                    ISO-8601 com offset. Só grava a data no rascunho (não
+                    enfileira). Depois de aprovado use schedulePost.
+                    Ex.: 2026-08-17T19:00:00-03:00 (America/Sao_Paulo).
                 timezone:
                   type: string
                   maxLength: 80
@@ -485,8 +488,9 @@ paths:
       operationId: updatePost
       summary: Atualizar post draft
       description: >
-        Atualiza copy/mídia e/ou editorialStatus (domínio Hub: bypass/decision/cancel).
-        dryRun default true. variants substitui canais. sourceUrls exigem variants.
+        Atualiza copy/mídia e/ou editorialStatus. scheduledAt ou
+        publicationStatus scheduled/published/not_scheduled enfileira de
+        verdade (enqueueApprovedPost). dryRun default true.
       parameters:
         - name: postId
           in: path
@@ -533,10 +537,18 @@ paths:
                 scheduledAt:
                   type: string
                   format: date-time
-                  description: ISO-8601 com offset. Omita se não alterar.
+                  description: >
+                    ISO com offset (America/Sao_Paulo). Enfileira publication_jobs,
+                    não só grava a data. Exige aprovado. Ex.: 2026-08-17T19:00:00-03:00.
                 timezone:
                   type: string
                   maxLength: 80
+                publicationStatus:
+                  type: string
+                  enum: [scheduled, published, not_scheduled]
+                  description: >
+                    scheduled=agendar, published=publicar agora,
+                    not_scheduled=cancelar agenda. Mesmo domínio do Hub.
                 variants:
                   type: array
                   maxItems: 10
@@ -645,11 +657,8 @@ paths:
       summary: Aprovar ou decidir editorial do post
       description: >
         Avança o ciclo editorial (não publica). dryRun default true.
-        Rascunho → approved usa bypassApproval (superadmin ou cap bypass),
-        igual ao painel. Superadmin (app_metadata.role=admin, staff do Hub)
-        não precisa ser membro da org do cliente nem autor do post.
-        Se houver approval_request pendente, registra submitApprovalDecision.
-        decision também aceita changes_requested, rejected e draft (cancelar fila).
+        Rascunho → approved = bypassApproval (superadmin sem membership).
+        Fila pendente = submitApprovalDecision. draft cancela a fila.
       parameters:
         - name: postId
           in: path
@@ -706,6 +715,158 @@ paths:
           description: Sem permissão / outro tenant
         "409":
           description: Sem fila para changes_requested/rejected
+
+  /api/gpt/marketing/posts/{postId}/schedule:
+    post:
+      operationId: schedulePost
+      summary: Agendar publicação (enqueue real)
+      description: >
+        Enfileira publication_jobs e marca publication_status=scheduled
+        (mesmo enqueueApprovedPost do Hub). Exige post aprovado. ISO com
+        offset; tz America/Sao_Paulo. Ex. 2026-08-17T19:00:00-03:00.
+        dryRun default true. Superadmin sem membership.
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: ID do post.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tenantId, confirmTenantId, confirm]
+              properties:
+                tenantId:
+                  type: string
+                  format: uuid
+                scheduledAt:
+                  type: string
+                  format: date-time
+                  description: ISO com offset. Se omitir, usa a data já gravada no post.
+                timezone:
+                  type: string
+                  maxLength: 80
+                  description: IANA. Default America/Sao_Paulo.
+                actorUserId:
+                  type: string
+                  format: uuid
+                confirmTenantId:
+                  type: string
+                  format: uuid
+                confirm:
+                  type: boolean
+                  enum: [true]
+                dryRun:
+                  type: boolean
+                  default: true
+      responses:
+        "200":
+          description: Preview ou post agendado com jobs
+        "401":
+          description: Não autorizado
+        "409":
+          description: Post não aprovado — use approvePost primeiro
+
+  /api/gpt/marketing/posts/{postId}/publish:
+    post:
+      operationId: publishPost
+      summary: Publicar agora
+      description: >
+        enqueueApprovedPost com publishNow. Worker publica na hora.
+        Exige aprovado. dryRun default true. Superadmin sem membership.
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: ID do post.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tenantId, confirmTenantId, confirm]
+              properties:
+                tenantId:
+                  type: string
+                  format: uuid
+                actorUserId:
+                  type: string
+                  format: uuid
+                confirmTenantId:
+                  type: string
+                  format: uuid
+                confirm:
+                  type: boolean
+                  enum: [true]
+                dryRun:
+                  type: boolean
+                  default: true
+      responses:
+        "200":
+          description: Preview ou jobs enfileirados para agora
+        "401":
+          description: Não autorizado
+        "409":
+          description: Post não aprovado — use approvePost primeiro
+
+  /api/gpt/marketing/posts/{postId}/unschedule:
+    post:
+      operationId: unschedulePost
+      summary: Cancelar agendamento
+      description: >
+        Cancela jobs pending/retrying e volta publication_status=not_scheduled.
+        Não remove o post das redes. dryRun default true.
+      parameters:
+        - name: postId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: ID do post.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tenantId, confirmTenantId, confirm]
+              properties:
+                tenantId:
+                  type: string
+                  format: uuid
+                clearScheduledAt:
+                  type: boolean
+                  default: false
+                  description: Se true, também zera social_posts.scheduled_at.
+                actorUserId:
+                  type: string
+                  format: uuid
+                confirmTenantId:
+                  type: string
+                  format: uuid
+                confirm:
+                  type: boolean
+                  enum: [true]
+                dryRun:
+                  type: boolean
+                  default: true
+      responses:
+        "200":
+          description: Preview ou agendamento cancelado
+        "401":
+          description: Não autorizado
+        "409":
+          description: Já publicado ou em exclusão
 
   /api/gpt/marketing/posts/{postId}/delete:
     post:

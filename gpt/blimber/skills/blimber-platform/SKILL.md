@@ -31,13 +31,13 @@ description: >-
 5. Mutações: dryRun → confirmar → `dryRun: false` + `confirm` + `confirmTenantId`.
 6. Respostas em **PT-BR**.
 
-## Tools — Ação Marketing (17, host app.*)
+## Tools — Ação Marketing (20, host app.*)
 
 | Tool / operationId | Uso |
 |--------------------|-----|
 | `searchTenants` | nome → tenantId |
 | `listBlimberTools` | catálogo unificado |
-| `listPosts` / `getPost` / `createPost` / `updatePost` / `approvePost` | editorial; createPost aceita assetIds + sourceUrls; approvePost (ou updatePost.editorialStatus) move draft→approved |
+| `listPosts` / `getPost` / `createPost` / `updatePost` / `approvePost` / `schedulePost` / `publishPost` / `unschedulePost` | editorial; createPost aceita assetIds + sourceUrls; approvePost move draft→approved; schedulePost enfileira de verdade |
 | `listEditorialCampaigns` / `getEditorialCampaign` / `createEditorialCampaign` / `updateEditorialCampaign` | campanha mensal |
 | `getBrandContext` | Brand Center |
 | `listMediaAssets` / `uploadMediaAsset` / `listSocialAccounts` | biblioteca / contas |
@@ -62,6 +62,27 @@ description: >-
 `BLIMBER_MCP_ACTOR_USER_ID` deve ser UUID de Superadministrador (`auth.users.app_metadata.role=admin`, staff do Hub — não `cliente`). Esse ator **não precisa ser membro da org do cliente** nem autor do post. Qualquer usuário com esse papel funciona como actor; UUID sem esse papel ainda exige membership + caps. Equivalente no Hub: bypass de aprovação — **não** um UPDATE solto em `editorial_status`. Alternativa: `updatePost` com `editorialStatus: "approved"` (mesmo domínio).
 
 `changes_requested` / `rejected` exigem `approval_request` pendente + `comment`. `decision: draft` cancela a fila (`cancelApprovalRun`).
+
+### Agendar / publicar (MCP)
+
+O Hub **não** agenda só com `scheduled_at`. Precisa `enqueueApprovedPost` (`publication_jobs` + `publication_status=scheduled`). Timezone: `America/Sao_Paulo` (BRT, UTC-3). Sempre ISO com offset.
+
+1. `getPost` — `editorialStatus` deve ser `approved` (senão `approvePost` primeiro; 409 `NOT_APPROVED`)
+2. Preview: `schedulePost` `dryRun: true`
+3. Execute:
+
+```json
+{
+  "tenantId": "<uuid>",
+  "confirmTenantId": "<mesmo uuid>",
+  "confirm": true,
+  "dryRun": false,
+  "scheduledAt": "2026-08-17T19:00:00-03:00",
+  "timezone": "America/Sao_Paulo"
+}
+```
+
+Publicar agora: `publishPost` (mesmo confirm/dryRun). Cancelar agenda: `unschedulePost`. Equivalente: `updatePost` com `scheduledAt` ou `publicationStatus: "scheduled"|"published"|"not_scheduled"`.
 
 
 ## Tools — Ação Ads (26, host ads.*)

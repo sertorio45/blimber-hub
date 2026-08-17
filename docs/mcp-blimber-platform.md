@@ -47,7 +47,7 @@ O ChatGPT **não permite** duas Ações com o mesmo `servers.url` e limita cada 
 
 | Ação | Spec | Host | Ops |
 |------|------|------|-----|
-| Marketing | `gpt/blimber/openapi-marketing.yaml` | `https://app.blimber.com.br` | 17 |
+| Marketing | `gpt/blimber/openapi-marketing.yaml` | `https://app.blimber.com.br` | 20 |
 | Ads (Meta) | `gpt/blimber/openapi-ads.yaml` | `https://ads.blimber.com.br` | 21 |
 
 `ads.blimber.com.br` é **alias** do mesmo projeto Vercel (não outro app). Setup: [`gpt-blimber-ACTIONS.md`](./gpt-blimber-ACTIONS.md).

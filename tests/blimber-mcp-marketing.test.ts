@@ -6,6 +6,9 @@ import {
   marketingCreatePost,
   marketingDeletePost,
   marketingListPosts,
+  marketingPublishPost,
+  marketingSchedulePost,
+  marketingUnschedulePost,
   marketingUpdatePost,
 } from '../lib/blimber-mcp'
 
@@ -1186,5 +1189,233 @@ describe('blimber marketing editorial approve (mocked)', () => {
       ),
     ).rejects.toMatchObject({ code: 'FORBIDDEN', statusCode: 403 })
     expect(db.social_posts[0]!.editorial_status).toBe('draft')
+  })
+})
+
+describe('blimber marketing schedule/publish (mocked)', () => {
+  const POST_ID = '33333333-3333-3333-3333-333333333333'
+  const VERSION_ID = '77777777-7777-7777-7777-777777777777'
+  const VARIANT_ID = '88888888-8888-8888-8888-888888888888'
+  const ACCOUNT_ID = '99999999-9999-9999-9999-999999999999'
+  const ASSET_ID = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
+  const SLOT = '2026-08-17T22:00:00.000Z'
+
+  function approvedDb(overrides: Record<string, unknown> = {}) {
+    return {
+      social_posts: [{
+        id: POST_ID,
+        title: 'Damilib 01',
+        content: 'Oi',
+        tenant_id: TENANT_ID,
+        editorial_status: 'approved',
+        publication_status: 'not_scheduled',
+        status: 'approved',
+        approved_version_id: VERSION_ID,
+        approval_bypassed: true,
+        scheduled_at: SLOT,
+        timezone: 'America/Sao_Paulo',
+        deleted_at: null,
+        created_by: ACTOR_ID,
+        metadata: {},
+        ...overrides,
+      }],
+      content_versions: [{
+        id: VERSION_ID,
+        tenant_id: TENANT_ID,
+        post_id: POST_ID,
+        version: 1,
+      }],
+      social_post_variants: [{
+        id: VARIANT_ID,
+        tenant_id: TENANT_ID,
+        post_id: POST_ID,
+        account_id: ACCOUNT_ID,
+        platform: 'instagram',
+        format: 'static',
+      }],
+      social_post_assets: [{
+        id: 'rel-1',
+        tenant_id: TENANT_ID,
+        post_id: POST_ID,
+        variant_id: VARIANT_ID,
+        asset_id: ASSET_ID,
+        position: 0,
+      }],
+      media_assets: [{
+        id: ASSET_ID,
+        tenant_id: TENANT_ID,
+        status: 'ready',
+      }],
+      social_accounts: [{
+        id: ACCOUNT_ID,
+        tenant_id: TENANT_ID,
+        is_active: true,
+      }],
+      publication_jobs: [] as Array<Record<string, unknown>>,
+      marketing_post_schedules: [] as Array<Record<string, unknown>>,
+      organization_memberships: [],
+      organization_tenants: [],
+      organization_member_tenants: [],
+    }
+  }
+
+  async function adminClient(db: ReturnType<typeof approvedDb>) {
+    const { createFakeDomainClient } = await import('./helpers/fake-supabase-domain')
+    const domain = createFakeDomainClient(db)
+    return {
+      ...domain,
+      auth: {
+        admin: {
+          getUserById: async () => ({
+            data: { user: { id: ACTOR_ID, app_metadata: { role: 'admin' } } },
+            error: null,
+          }),
+        },
+      },
+    }
+  }
+
+  it('schedulePost dry-run does not enqueue jobs', async () => {
+    const db = approvedDb()
+    const client = await adminClient(db)
+
+    const result = await marketingSchedulePost(
+      { client: client as any },
+      {
+        tenantId: TENANT_ID,
+        postId: POST_ID,
+        scheduledAt: '2026-08-17T19:00:00-03:00',
+        confirm: true,
+        confirmTenantId: TENANT_ID,
+        dryRun: true,
+      },
+    )
+
+    expect(result).toMatchObject({ dryRun: true, wouldMutate: true, action: 'schedule' })
+    expect(db.publication_jobs).toHaveLength(0)
+    expect(db.social_posts[0]!.publication_status).toBe('not_scheduled')
+  })
+
+  it('schedulePost execute enqueues jobs and sets publication_status scheduled', async () => {
+    const db = approvedDb()
+    const client = await adminClient(db)
+
+    const result = await marketingSchedulePost(
+      { client: client as any },
+      {
+        tenantId: TENANT_ID,
+        postId: POST_ID,
+        scheduledAt: '2026-08-17T19:00:00-03:00',
+        confirm: true,
+        confirmTenantId: TENANT_ID,
+        dryRun: false,
+        actorUserId: ACTOR_ID,
+      },
+    )
+
+    expect(result).toMatchObject({ dryRun: false, action: 'schedule' })
+    expect((result as any).post.publicationStatus).toBe('scheduled')
+    expect(db.social_posts[0]!.publication_status).toBe('scheduled')
+    expect(db.publication_jobs).toHaveLength(1)
+    expect(db.publication_jobs[0]!.status).toBe('pending')
+    expect(String(db.publication_jobs[0]!.scheduled_at)).toContain('2026-08-17T19:00:00')
+  })
+
+  it('schedulePost on draft returns NOT_APPROVED without mutating', async () => {
+    const db = approvedDb({
+      editorial_status: 'draft',
+      approved_version_id: null,
+      approval_bypassed: false,
+    })
+    db.content_versions = []
+    const client = await adminClient(db)
+
+    await expect(
+      marketingSchedulePost(
+        { client: client as any },
+        {
+          tenantId: TENANT_ID,
+          postId: POST_ID,
+          scheduledAt: '2026-08-17T19:00:00-03:00',
+          confirm: true,
+          confirmTenantId: TENANT_ID,
+          dryRun: true,
+        },
+      ),
+    ).rejects.toMatchObject({ code: 'NOT_APPROVED', statusCode: 409 })
+    expect(db.publication_jobs).toHaveLength(0)
+    expect(db.social_posts[0]!.publication_status).toBe('not_scheduled')
+  })
+
+  it('updatePost scheduledAt enqueues instead of only persisting the date', async () => {
+    const db = approvedDb()
+    const client = await adminClient(db)
+
+    const result = await marketingUpdatePost(
+      { client: client as any },
+      {
+        tenantId: TENANT_ID,
+        postId: POST_ID,
+        scheduledAt: '2026-08-17T19:00:00-03:00',
+        confirm: true,
+        confirmTenantId: TENANT_ID,
+        dryRun: false,
+        actorUserId: ACTOR_ID,
+      },
+    )
+
+    expect((result as any).release.action).toBe('schedule')
+    expect((result as any).post.publicationStatus).toBe('scheduled')
+    expect(db.publication_jobs).toHaveLength(1)
+  })
+
+  it('publishPost execute uses publishNow and superadmin without membership', async () => {
+    const db = approvedDb()
+    const client = await adminClient(db)
+
+    const result = await marketingPublishPost(
+      { client: client as any },
+      {
+        tenantId: TENANT_ID,
+        postId: POST_ID,
+        confirm: true,
+        confirmTenantId: TENANT_ID,
+        dryRun: false,
+        actorUserId: ACTOR_ID,
+      },
+    )
+
+    expect(result).toMatchObject({ dryRun: false, action: 'publish' })
+    expect(db.social_posts[0]!.publication_status).toBe('scheduled')
+    expect(db.publication_jobs).toHaveLength(1)
+  })
+
+  it('unschedulePost execute cancels pending jobs', async () => {
+    const db = approvedDb({ publication_status: 'scheduled' })
+    db.publication_jobs = [{
+      id: 'job-1',
+      tenant_id: TENANT_ID,
+      post_id: POST_ID,
+      variant_id: VARIANT_ID,
+      status: 'pending',
+      scheduled_at: SLOT,
+    }]
+    const client = await adminClient(db)
+
+    const result = await marketingUnschedulePost(
+      { client: client as any },
+      {
+        tenantId: TENANT_ID,
+        postId: POST_ID,
+        confirm: true,
+        confirmTenantId: TENANT_ID,
+        dryRun: false,
+        actorUserId: ACTOR_ID,
+      },
+    )
+
+    expect(result).toMatchObject({ dryRun: false, action: 'unschedule', cancelled: true })
+    expect(db.social_posts[0]!.publication_status).toBe('not_scheduled')
+    expect(db.publication_jobs[0]!.status).toBe('cancelled')
   })
 })

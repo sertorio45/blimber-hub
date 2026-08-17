@@ -56,7 +56,7 @@ export function mapLegacyStatusToEditorial(status: string | undefined): Editoria
     return status
   throw new BlimberMcpError(
     'PUBLICATION_STATUS_UNSUPPORTED',
-    'status só aceita draft ou approved (mapeados para editorial_status). Agendar/publicar continua no Hub.',
+    'status só aceita draft ou approved (mapeados para editorial_status). Para agendar use schedulePost / publicationStatus=scheduled; para publicar use publishPost.',
     400,
   )
 }

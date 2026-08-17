@@ -494,4 +494,41 @@ describe('social approval domain', () => {
     expect(isMaterialContentChange(base, { ...base, content: 'C' })).toBe(true)
     expect(isMaterialContentChange(base, { ...base, variants: [{ accountId: '1', caption: 'y' }] })).toBe(true)
   })
+
+  it('13. unschedule cancels pending jobs and returns not_scheduled', async () => {
+    const versionId = '00000000-0000-4000-8000-00000000ver1'
+    db = makeDb({ editorial_status: 'approved', approved_version_id: versionId, current_version: 1, publication_status: 'scheduled' })
+    db.content_versions = [{ id: versionId, tenant_id: ids.tenant, post_id: ids.post, version: 1 }]
+    db.publication_jobs = [{
+      id: 'job-1',
+      tenant_id: ids.tenant,
+      post_id: ids.post,
+      variant_id: ids.variant,
+      status: 'pending',
+      scheduled_at: post(db).scheduled_at,
+    }]
+    db.marketing_post_schedules = [{
+      id: 'slot-1',
+      tenant_id: ids.tenant,
+      post_id: ids.post,
+      status: 'planned',
+      scheduled_at: post(db).scheduled_at,
+    }]
+    client = createFakeDomainClient(db)
+
+    const { unscheduleApprovedPost } = await import('~/server/utils/social-approval-domain')
+    const result = await unscheduleApprovedPost(client, {
+      tenantId: ids.tenant,
+      postId: ids.post,
+      isPlatformStaff: true,
+      clearScheduledAt: true,
+    })
+
+    expect(result.cancelled).toBe(true)
+    expect(result.publicationStatus).toBe('not_scheduled')
+    expect(post(db).publication_status).toBe('not_scheduled')
+    expect(post(db).scheduled_at).toBeNull()
+    expect(db.publication_jobs![0]!.status).toBe('cancelled')
+    expect(db.marketing_post_schedules![0]!.status).toBe('cancelled')
+  })
 })

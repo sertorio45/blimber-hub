@@ -184,6 +184,15 @@ const EXPECTED_ROUTE_FILES: Record<string, string[]> = {
   '/api/gpt/marketing/posts/{postId}/approve': [
     'server/api/gpt/marketing/posts/[postId]/approve.post.ts',
   ],
+  '/api/gpt/marketing/posts/{postId}/schedule': [
+    'server/api/gpt/marketing/posts/[postId]/schedule.post.ts',
+  ],
+  '/api/gpt/marketing/posts/{postId}/publish': [
+    'server/api/gpt/marketing/posts/[postId]/publish.post.ts',
+  ],
+  '/api/gpt/marketing/posts/{postId}/unschedule': [
+    'server/api/gpt/marketing/posts/[postId]/unschedule.post.ts',
+  ],
   '/api/gpt/marketing/posts/{postId}/delete': [
     'server/api/gpt/marketing/posts/[postId]/delete.post.ts',
   ],
@@ -271,6 +280,9 @@ describe('blimber unified MCP registry + openapi', () => {
     expect(names).toContain('marketing_list_posts')
     expect(names).toContain('marketing_update_post')
     expect(names).toContain('marketing_approve_post')
+    expect(names).toContain('marketing_schedule_post')
+    expect(names).toContain('marketing_publish_post')
+    expect(names).toContain('marketing_unschedule_post')
     expect(names).toContain('marketing_delete_post')
     expect(names).toContain('marketing_delete_asset')
     expect(names).toContain('marketing_upload_asset')
@@ -322,6 +334,9 @@ describe('blimber unified MCP registry + openapi', () => {
     expect(operationIds).toContain('getBrandContext')
     expect(operationIds).toContain('updatePost')
     expect(operationIds).toContain('approvePost')
+    expect(operationIds).toContain('schedulePost')
+    expect(operationIds).toContain('publishPost')
+    expect(operationIds).toContain('unschedulePost')
     expect(operationIds).toContain('deletePost')
     expect(operationIds).toContain('deleteMediaAsset')
     expect(operationIds).toContain('uploadMediaAsset')
@@ -340,6 +355,9 @@ describe('blimber unified MCP registry + openapi', () => {
     expect(paths).toContain('/api/gpt/marketing/brand-context')
     expect(paths).toContain('/api/gpt/marketing/posts')
     expect(paths).toContain('/api/gpt/marketing/posts/{postId}/approve')
+    expect(paths).toContain('/api/gpt/marketing/posts/{postId}/schedule')
+    expect(paths).toContain('/api/gpt/marketing/posts/{postId}/publish')
+    expect(paths).toContain('/api/gpt/marketing/posts/{postId}/unschedule')
     expect(paths).toContain('/api/gpt/marketing/posts/{postId}/delete')
     expect(paths).toContain('/api/gpt/marketing/campaigns')
     expect(paths.some(p => p.startsWith('/api/gpt/meta/'))).toBe(false)
@@ -349,6 +367,9 @@ describe('blimber unified MCP registry + openapi', () => {
     for (const [path, method] of [
       ['/api/gpt/marketing/posts', 'post'],
       ['/api/gpt/marketing/posts/{postId}', 'put'],
+      ['/api/gpt/marketing/posts/{postId}/schedule', 'post'],
+      ['/api/gpt/marketing/posts/{postId}/publish', 'post'],
+      ['/api/gpt/marketing/posts/{postId}/unschedule', 'post'],
       ['/api/gpt/marketing/campaigns', 'post'],
       ['/api/gpt/marketing/campaigns/{campaignId}', 'put'],
       ['/api/gpt/marketing/assets/upload', 'post'],

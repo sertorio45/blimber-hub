@@ -6,7 +6,7 @@ Solução: **dois OpenAPI**, **dois hosts**, **um GPT**.
 
 | Ação | Arquivo | Host (`servers.url`) | Ops |
 |------|---------|----------------------|-----|
-| Marketing | [`gpt/blimber/openapi-marketing.yaml`](../gpt/blimber/openapi-marketing.yaml) | `https://app.blimber.com.br` | 13 |
+| Marketing | `gpt/blimber/openapi-marketing.yaml` | `https://app.blimber.com.br` | 20 |
 | Ads (Meta) | [`gpt/blimber/openapi-ads.yaml`](../gpt/blimber/openapi-ads.yaml) | `https://ads.blimber.com.br` | 21 |
 
 **Não importe** `gpt/blimber/openapi.yaml` (índice, não é spec).  

@@ -68,6 +68,11 @@ export {
   type MarketingToolName,
 } from './marketing-tools'
 export {
+  marketingSchedulePost,
+  marketingPublishPost,
+  marketingUnschedulePost,
+} from './marketing-release'
+export {
   MARKETING_BRAND_URL,
   MARKETING_CAMPAIGNS_URL,
   MARKETING_CONTENT_URL,
