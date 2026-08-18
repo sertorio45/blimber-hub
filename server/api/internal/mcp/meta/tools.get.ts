@@ -138,7 +138,7 @@ const TOOL_INPUT_HINTS: Record<MetaToolName, string[]> = {
     'headline?',
     'description?',
     'callToAction? (default LEARN_MORE)',
-    'imageUrl?|imageHash?',
+    'imageUrl?|imageHash?|assetId?',
     'creativeName?',
     'trackingSpecs? (type website|offline|crm ou actionType Graph) | pixelId? | offlineDatasetId?',
     'status? (default PAUSED)',
@@ -207,7 +207,7 @@ const TOOL_INPUT_HINTS: Record<MetaToolName, string[]> = {
   meta_get_capabilities: ['tenantId', 'adAccountId?'],
   meta_upload_image: [
     'tenantId',
-    'imageUrl|imageHash',
+    'imageUrl|imageHash|assetId',
     'confirmTenantId',
     'confirm (=true)',
     'dryRun? (default true)',

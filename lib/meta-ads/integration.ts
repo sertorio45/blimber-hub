@@ -11,6 +11,22 @@ export interface SupabaseLike {
   from: (table: string) => {
     select: (columns: string) => any
   }
+  /** Optional Storage (service role). Used to download library assets for Meta upload. */
+  storage?: {
+    from: (bucket: string) => {
+      download?: (path: string) => Promise<{
+        data: Blob | ArrayBuffer | Uint8Array | Buffer | null
+        error: { message?: string } | null
+      }>
+      createSignedUrl?: (
+        path: string,
+        expiresIn: number,
+      ) => Promise<{
+        data: { signedUrl?: string | null, signedURL?: string | null } | null
+        error?: { message?: string } | null
+      }>
+    }
+  }
 }
 
 function publicConfigFrom(config: Record<string, any> | null | undefined): MetaIntegrationPublicConfig {

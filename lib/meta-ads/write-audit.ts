@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import type { SupabaseLike } from './integration'
 
-const SENSITIVE_KEYS = /token|secret|password|authorization|credential|access_token|email|phone|\busers\b|payload/i
+const SENSITIVE_KEYS = /token|secret|password|authorization|credential|access_token|email|phone|\busers\b|payload|\bbytes\b/i
 
 /** Marker stored in audit payload — GPT has no Hub user (actor_id stays null). */
 export const META_GPT_AUDIT_ACTOR = 'gpt-meta' as const

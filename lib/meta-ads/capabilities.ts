@@ -34,6 +34,7 @@ export type MetaCapabilitiesReport = {
   }
   media: {
     uploadImageUrl: MetaCapabilityFlag
+    uploadImageLibraryAsset: MetaCapabilityFlag
     uploadVideoUrl: MetaCapabilityFlag
     reuseImageHash: MetaCapabilityFlag
     reuseVideoId: MetaCapabilityFlag
@@ -126,6 +127,10 @@ export function getMetaCapabilities(explicitVersion?: string | null): MetaCapabi
     },
     media: {
       uploadImageUrl: ok('POST act_{adAccountId}/adimages url= (SSRF-checked)'),
+      uploadImageLibraryAsset: ok(
+        'assetId da Biblioteca (media_assets, tenant-isolated) → download interno → POST adimages bytes=. '
+        + 'XOR imageUrl|imageHash. Vídeo via assetId não suportado.',
+      ),
       uploadVideoUrl: ok('POST act_{adAccountId}/advideos file_url= (SSRF-checked); status via getVideoStatus'),
       reuseImageHash: ok(),
       reuseVideoId: ok(),

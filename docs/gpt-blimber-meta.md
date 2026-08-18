@@ -115,7 +115,7 @@ Create/update adset sempre envia `targeting.targeting_automation.advantage_audie
 | Capacidade | Status | Notas |
 |------------|--------|-------|
 | IMAGE / VIDEO / CAROUSEL (misto) | ✅ | `object_story_spec`; CAROUSEL WEBSITE only |
-| Upload/reuse imagem | ✅ | `meta_upload_image` + createAd `imageUrl`\|`imageHash` |
+| Upload/reuse imagem | ✅ | `meta_upload_image` + createAd `imageUrl`\|`imageHash`\|`assetId` (biblioteca) |
 | Upload/reuse vídeo | ✅ | `meta_upload_video` + `meta_get_video_status` |
 | Ad a partir de `creativeId` | ✅ | XOR com campos de criativo novo |
 | Advantage+ Creative | ✅ | `degreesOfFreedomSpec` tipado (`pac_relaxation`, `text_optimizations`, …) |

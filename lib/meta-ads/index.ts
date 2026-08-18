@@ -127,6 +127,12 @@ export {
   uploadVideo,
 } from './media-service'
 export {
+  downloadLibraryImageBytes,
+  loadLibraryImageAsset,
+  MARKETING_ASSETS_BUCKET,
+  META_AD_IMAGE_MAX_BYTES,
+} from './library-asset'
+export {
   assertProductSetOwned,
   buildCatalogTemplateCreativeBody,
   listProductCatalogs,

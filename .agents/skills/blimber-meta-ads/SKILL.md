@@ -67,7 +67,7 @@ description: >-
 | `meta_update_ad_media` | IMAGE\|VIDEO\|CAROUSEL via novo creative |
 | `meta_update_ad_tracking` | Atualiza `tracking_specs` do Ad (merge default; `replaceTrackingSpecs` sobrescreve). dryRun true |
 | `meta_get_capabilities` | Matriz de capacidades vs Graph version |
-| `meta_upload_image` / `meta_upload_video` / `meta_get_video_status` | Upload/reuse mídia (SSRF) |
+| `meta_upload_image` / `meta_upload_video` / `meta_get_video_status` | Upload/reuse mídia. `meta_upload_image`: imageUrl XOR imageHash XOR assetId (Biblioteca → imageHash). SSRF em URL. Vídeo via assetId não suportado |
 | `meta_list_catalogs` / `meta_list_product_sets` | Catalogs + product sets (ownership) |
 | `meta_list_pixels` / `meta_list_datasets` | Pixels (`adspixels`) e Datasets (`offline_conversion_data_sets`) da ad account |
 | `meta_list_experiments` | Lista Ad Studies: `GET v26 /{user_id}/ad_studies` + `GET v26 /{business_id}/ad_studies` (`META_ADS_STUDIES_GRAPH_VERSION`, default v26.0) + `GET act_{id}/impacting_ad_studies` na versão Ads (v25). Dedupe por studyId; isolamento por tenant/ad account |
@@ -83,7 +83,7 @@ description: >-
 OpenAPI: `gpt/blimber/openapi-ads.yaml` (`createCampaign`, `createAdset`, `createAd`, `updateAdTracking`, `searchInterests`, `searchGeolocations`, `listCustomAudiences`, `createCustomAudience`, `updateAdsetStatus`, `updateAdsetBudget`, `updateAdCreativeCopy`, `previewBulkDelete`, `executeBulkDelete`, …; overflow via `invokeMetaTool`: capabilities, upload, catalogs, pixels, datasets, audience update/delete/usage/batch, experiments list/eligibility/create/get/stop)  
 Catálogo: `GET /api/gpt/meta/tools`
 
-`createAd.creativeType`: IMAGE (default) | VIDEO | CAROUSEL | DYNAMIC_CREATIVE_LEGACY | CATALOG — ou `creativeId` XOR. Upload HTTPS opcional (`imageUrl`/`videoUrl`) com SSRF; dryRun não faz upload.  
+`createAd.creativeType`: IMAGE (default) | VIDEO | CAROUSEL | DYNAMIC_CREATIVE_LEGACY | CATALOG — ou `creativeId` XOR. Upload HTTPS opcional (`imageUrl`/`videoUrl`) com SSRF; IMAGE também aceita `assetId` da Biblioteca (download interno → `imageHash`). dryRun não faz upload.  
 `createAd.destinationType`: WEBSITE | WHATSAPP | MESSENGER | INSTAGRAM_DIRECT. IMAGE/VIDEO/CAROUSEL em todos; DYNAMIC_CREATIVE_LEGACY e CATALOG só WEBSITE. Carousel WhatsApp usa CTA `WHATSAPP_MESSAGE` + `https://api.whatsapp.com/send` (nunca wa.me).  
 `createAd.trackingSpecs`: opcional. Graph `action.type`: `offsite_conversion` + `fbPixel` (Pixel de site); `offline_conversion` + `dataset` (Dataset offline); `leadgen_quality_conversion` + pixel ou dataset. Atalhos: `pixelId`, `offlineDatasetId`. Campo extra oficial: `conversionDomain`. Listar IDs: `meta_list_pixels` / `meta_list_datasets` (invoke). Ad existente: `updateAdTracking` / `meta_update_ad_tracking` (merge; `replaceTrackingSpecs` para overwrite). IDs só da ad account do tenant.  
 `createAdset.isDynamicCreative`: opcional → `is_dynamic_creative=true` (só WEBSITE; ads com DYNAMIC_CREATIVE_LEGACY).  
@@ -115,5 +115,6 @@ Catálogo: `GET /api/gpt/meta/tools`
 - Delete por nome/filtro sem lista de IDs
 - Brand Center / geração de imagem por IA
 - Campanhas orgânicas (`social_campaigns`) — ver Marketing `createPost` (format static|carousel|video|story)
+- `assetId` de **vídeo** em `meta_upload_image` / `createAd` (só JPG/PNG/GIF; vídeo continua `meta_upload_video` + `videoUrl`)
 - Meta CAPI (CRM)
 - WhatsApp Cloud API version (fica em v21 hardcoded)

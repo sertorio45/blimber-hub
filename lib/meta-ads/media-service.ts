@@ -1,7 +1,8 @@
 /**
  * Canonical MediaService for Meta Marketing API ad images / advideos.
- * Upload by HTTPS URL (Graph pulls) or reuse existing hash/video_id.
+ * Upload by HTTPS URL (Graph pulls), raw bytes (library download), or reuse hash/video_id.
  * dryRun callers must skip execute — this module never invents URLs.
+ * Never logs file bytes or access tokens.
  */
 
 import type { MetaGraphFetch } from './types'
@@ -19,8 +20,10 @@ export type MediaServiceContext = {
 export type UploadImageInput = {
   /** Existing image_hash — reuse without Graph upload. */
   imageHash?: string
-  /** HTTPS URL for Meta to fetch (SSRF-checked). XOR with imageHash. */
+  /** HTTPS URL for Meta to fetch (SSRF-checked). XOR with imageHash / bytes. */
   imageUrl?: string
+  /** Raw image bytes (library download). XOR with imageHash / imageUrl. Posted as Graph `bytes`. */
+  bytes?: Buffer | Uint8Array
   name?: string
 }
 
@@ -37,6 +40,8 @@ export type UploadImageResult = {
   imageHash: string
   reused: boolean
   dryRun?: boolean
+  width?: number | null
+  height?: number | null
 }
 
 export type UploadVideoResult = {
@@ -53,6 +58,14 @@ export type VideoStatusResult = {
   rawStatus: unknown
 }
 
+function isPresentString(value?: string): boolean {
+  return Boolean(value && String(value).trim())
+}
+
+function isPresentBytes(value?: Buffer | Uint8Array): boolean {
+  return Boolean(value && value.byteLength > 0)
+}
+
 function xorMedia(params: { a?: string, b?: string, code: string, message: string }) {
   const hasA = Boolean(params.a)
   const hasB = Boolean(params.b)
@@ -61,54 +74,13 @@ function xorMedia(params: { a?: string, b?: string, code: string, message: strin
   }
 }
 
-/**
- * Resolve image_hash: reuse hash or POST act_{id}/adimages with url.
- */
-export async function uploadImage(
-  ctx: MediaServiceContext,
-  input: UploadImageInput,
-  options?: { dryRun?: boolean },
-): Promise<UploadImageResult> {
-  xorMedia({
-    a: input.imageHash,
-    b: input.imageUrl,
-    code: 'IMAGE_MEDIA_XOR',
-    message: 'Informe imageHash OU imageUrl, não ambos nem nenhum.',
-  })
-
-  if (input.imageHash) {
-    return { imageHash: String(input.imageHash).trim(), reused: true, dryRun: options?.dryRun }
-  }
-
-  const safe = await assertSafeMediaUrl(input.imageUrl!, { resolveDns: true })
-  if (options?.dryRun) {
-    return { imageHash: '(dryRun — hash após upload)', reused: false, dryRun: true }
-  }
-
-  const path = `/${actPath(ctx.adAccountId)}/adimages`
-  const body: Record<string, unknown> = {
-    url: safe.toString(),
-  }
-  if (input.name)
-    body.name = input.name
-
-  try {
-    const res = await ctx.graph(metaGraphUrl(ctx.apiVersion, path), {
-      method: 'POST',
-      query: { access_token: ctx.accessToken },
-      body,
-    })
-    // Graph returns { images: { <filename>: { hash, url, ... } } } or { hash }
-    const images = res?.images && typeof res.images === 'object' ? res.images as Record<string, any> : null
-    if (images) {
-      const first = Object.values(images)[0]
-      const hash = first?.hash ? String(first.hash) : null
-      if (hash)
-        return { imageHash: hash, reused: false }
-    }
-    if (res?.hash)
-      return { imageHash: String(res.hash), reused: false }
-
+function parseAdImageGraphResult(res: any): UploadImageResult {
+  const images = res?.images && typeof res.images === 'object' ? res.images as Record<string, any> : null
+  const first = images ? Object.values(images)[0] : null
+  const hash = first?.hash
+    ? String(first.hash)
+    : (res?.hash ? String(res.hash) : null)
+  if (!hash) {
     throw new MetaAdsToolError(
       'META_UPLOAD_IMAGE_FAILED',
       'Meta não retornou image_hash no upload.',
@@ -116,8 +88,75 @@ export async function uploadImage(
       { responseKeys: res && typeof res === 'object' ? Object.keys(res) : [] },
     )
   }
+  const width = typeof first?.width === 'number'
+    ? first.width
+    : (typeof res?.width === 'number' ? res.width : null)
+  const height = typeof first?.height === 'number'
+    ? first.height
+    : (typeof res?.height === 'number' ? res.height : null)
+  return { imageHash: hash, reused: false, width, height }
+}
+
+function redactUploadBody(body: Record<string, unknown>): Record<string, unknown> {
+  if (!('bytes' in body))
+    return body
+  return { ...body, bytes: '[omitted]' }
+}
+
+/**
+ * Resolve image_hash: reuse hash, POST act_{id}/adimages with url, or POST bytes (form).
+ * Ads Management user token only — callers must not pass a page token.
+ */
+export async function uploadImage(
+  ctx: MediaServiceContext,
+  input: UploadImageInput,
+  options?: { dryRun?: boolean },
+): Promise<UploadImageResult> {
+  const hasHash = isPresentString(input.imageHash)
+  const hasUrl = isPresentString(input.imageUrl)
+  const hasBytes = isPresentBytes(input.bytes)
+  const sourceCount = [hasHash, hasUrl, hasBytes].filter(Boolean).length
+  if (sourceCount !== 1) {
+    throw new MetaAdsToolError(
+      'IMAGE_MEDIA_XOR',
+      'Informe imageHash OU imageUrl OU bytes (biblioteca), não combine nem omita.',
+      400,
+    )
+  }
+
+  if (hasHash) {
+    return { imageHash: String(input.imageHash).trim(), reused: true, dryRun: options?.dryRun }
+  }
+
+  let safeUrl: string | undefined
+  if (hasUrl)
+    safeUrl = (await assertSafeMediaUrl(input.imageUrl!, { resolveDns: true })).toString()
+
+  if (options?.dryRun) {
+    return { imageHash: '(dryRun — hash após upload)', reused: false, dryRun: true }
+  }
+
+  const path = `/${actPath(ctx.adAccountId)}/adimages`
+  const body: Record<string, unknown> = {}
+  if (input.name)
+    body.name = input.name
+
+  if (hasBytes)
+    body.bytes = Buffer.from(input.bytes!).toString('base64')
+  else
+    body.url = safeUrl
+
+  try {
+    const res = await ctx.graph(metaGraphUrl(ctx.apiVersion, path), {
+      method: 'POST',
+      query: { access_token: ctx.accessToken },
+      body,
+      ...(hasBytes ? { bodyEncoding: 'form' as const } : {}),
+    })
+    return parseAdImageGraphResult(res)
+  }
   catch (err) {
-    enrichMetaGraphWriteError(err, body)
+    enrichMetaGraphWriteError(err, redactUploadBody(body))
   }
 }
 

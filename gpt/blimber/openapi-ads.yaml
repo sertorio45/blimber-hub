@@ -632,7 +632,8 @@ paths:
       summary: Criar anúncio + criativo
       description: >
         Cria AdCreative+Ad. creativeType IMAGE|VIDEO|CAROUSEL|DYNAMIC_CREATIVE_LEGACY|CATALOG
-        ou creativeId (XOR). trackingSpecs/pixelId/offlineDatasetId opcionais.
+        ou creativeId (XOR). IMAGE aceita imageUrl|imageHash|assetId (biblioteca).
+        trackingSpecs/pixelId/offlineDatasetId opcionais.
         Advantage+ via degreesOfFreedomSpec. PAUSED+dryRun. Pixels: invoke meta_list_pixels.
       x-openai-isConsequential: true
       requestBody:
@@ -872,6 +873,7 @@ paths:
       description: >
         Invoca tool pelo nome. Overflow (capabilities, upload, catalogs, pixels,
         datasets, tracking, experiments) usa este endpoint. Limite ChatGPT: ≤30 ops.
+        meta_upload_image: imageUrl XOR imageHash XOR assetId (biblioteca → imageHash).
         Experiments: studyOwner AUTO|USER|BUSINESS (default AUTO = USER v26 → BUSINESS v26).
       x-openai-isConsequential: true
       requestBody:
@@ -1496,10 +1498,17 @@ components:
         imageUrl:
           type: string
           format: uri
-          description: URL https de imagem (upload SSRF no execute). XOR imageHash. Nunca inventar.
+          description: URL https de imagem (upload SSRF no execute). XOR imageHash|assetId. Nunca inventar.
         imageHash:
           type: string
-          description: image_hash já na conta (XOR imageUrl).
+          description: image_hash já na conta (XOR imageUrl|assetId).
+        assetId:
+          type: string
+          format: uuid
+          description: >
+            UUID do arquivo na Biblioteca de mídia (media_assets) do tenant.
+            Servidor baixa internamente e envia à Meta (adimages) → imageHash.
+            XOR imageUrl|imageHash. Só IMAGE (JPG/PNG/GIF). Vídeo não suportado.
         videoId:
           type: string
           description: video_id já na biblioteca Meta (VIDEO). XOR videoUrl.
@@ -2052,4 +2061,6 @@ components:
             - meta_stop_experiment
         arguments:
           type: object
-          description: Payload da tool (sempre com tenantId; campos livres).
+          description: >
+            Payload da tool (sempre com tenantId).
+            meta_upload_image: imageUrl XOR imageHash XOR assetId (UUID da Biblioteca).

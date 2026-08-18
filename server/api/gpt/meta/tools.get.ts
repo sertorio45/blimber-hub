@@ -135,7 +135,7 @@ const TOOL_INPUT_HINTS: Record<MetaToolName, string[]> = {
     'destinationType? (WEBSITE|WHATSAPP)',
     'linkUrl? (WEBSITE)',
     'message?',
-    'imageUrl?|imageHash?|videoId?|videoUrl?|childAttachments?|assetFeed?|productSetId+catalogId?',
+    'imageUrl?|imageHash?|assetId?|videoId?|videoUrl?|childAttachments?|assetFeed?|productSetId+catalogId?',
     'degreesOfFreedomSpec? (Advantage+ / pac_relaxation)',
     'trackingSpecs? (type website|offline|crm ou actionType Graph) | pixelId? | offlineDatasetId? | conversionDomain?',
     'confirmTenantId (=tenantId)',
@@ -208,7 +208,7 @@ const TOOL_INPUT_HINTS: Record<MetaToolName, string[]> = {
   meta_get_capabilities: ['tenantId', 'adAccountId?'],
   meta_upload_image: [
     'tenantId',
-    'imageUrl|imageHash',
+    'imageUrl|imageHash|assetId',
     'confirmTenantId',
     'confirm (=true)',
     'dryRun? (default true)',

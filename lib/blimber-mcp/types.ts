@@ -72,6 +72,10 @@ export interface BlimberMcpSupabaseLike {
         data: { signedUrl?: string | null, signedURL?: string | null } | null
         error?: { message?: string } | null
       }>
+      download?: (path: string) => Promise<{
+        data: Blob | ArrayBuffer | Uint8Array | Buffer | null
+        error: { message?: string } | null
+      }>
       upload?: (
         path: string,
         body: Buffer | Uint8Array,

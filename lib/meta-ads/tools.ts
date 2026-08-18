@@ -82,6 +82,11 @@ import {
   uploadVideo,
 } from './media-service'
 import {
+  downloadLibraryImageBytes,
+  loadLibraryImageAsset,
+  type LibraryImageAsset,
+} from './library-asset'
+import {
   META_ADSET_BILLING_EVENTS,
   META_ADSET_OPTIMIZATION_GOALS,
   META_ADSET_TARGETING_TEMPLATE_IDS,
@@ -541,8 +546,9 @@ const metaDegreesOfFreedomSchema = z.object({
 /**
  * Create ad + creative on the tenant ad account.
  * creativeId XOR creative fields: reuse existing AdCreative OR build IMAGE|VIDEO|CAROUSEL|DYNAMIC_CREATIVE_LEGACY|CATALOG.
- * Optional Advantage+ degreesOfFreedomSpec. Optional upload via imageUrl/videoUrl (SSRF) when not dryRun.
- * dryRun default true. Status default PAUSED. Requires page_id + page token (exceto creativeId-only).
+ * Optional Advantage+ degreesOfFreedomSpec. Optional upload via imageUrl/videoUrl (SSRF)
+ * or library assetId (IMAGE, tenant-isolated download). dryRun default true.
+ * Status default PAUSED. Requires page_id + page token (exceto creativeId-only).
  */
 export const metaCreateAdSchema = tenantContextSchema
   .extend({
@@ -586,8 +592,13 @@ export const metaCreateAdSchema = tenantContextSchema
       .max(1000)
       .optional()
       .describe('Destinos de mensagem (IMAGE|VIDEO|CAROUSEL): page_welcome_message.'),
-    imageUrl: z.string().url().optional().describe('URL HTTPS imagem (upload ou picture). XOR imageHash.'),
-    imageHash: z.string().min(1).max(128).optional().describe('image_hash existente. XOR imageUrl.'),
+    imageUrl: z.string().url().optional().describe('URL HTTPS imagem (upload ou picture). XOR imageHash|assetId.'),
+    imageHash: z.string().min(1).max(128).optional().describe('image_hash existente. XOR imageUrl|assetId.'),
+    assetId: z
+      .string()
+      .uuid()
+      .optional()
+      .describe('UUID do media_asset da Biblioteca (tenant). Download interno → imageHash. XOR imageUrl|imageHash. Só IMAGE.'),
     videoId: z.string().min(1).optional().describe('video_id existente (VIDEO). XOR videoUrl.'),
     videoUrl: z.string().url().optional().describe('HTTPS para upload Advideo (não dryRun). XOR videoId.'),
     childAttachments: z
@@ -617,6 +628,7 @@ export const metaCreateAdSchema = tenantContextSchema
         data.linkUrl,
         data.imageUrl,
         data.imageHash,
+        data.assetId,
         data.videoId,
         data.videoUrl,
         data.childAttachments,
@@ -821,11 +833,19 @@ export const metaCreateAdSchema = tenantContextSchema
       }
     }
 
-    if (data.imageUrl && data.imageHash) {
+    const imageSources = [data.imageUrl, data.imageHash, data.assetId].filter(Boolean).length
+    if (imageSources > 1) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'Informe imageUrl OU imageHash, não ambos.',
-        path: ['imageUrl'],
+        message: 'Informe imageUrl OU imageHash OU assetId, não combine.',
+        path: ['assetId'],
+      })
+    }
+    if (data.assetId && creativeType !== 'IMAGE') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'assetId só é válido em creativeType=IMAGE (vídeo da biblioteca não é suportado).',
+        path: ['assetId'],
       })
     }
   })
@@ -1050,16 +1070,30 @@ export const metaUploadImageSchema = tenantContextSchema
   .extend({
     imageUrl: z.string().url().optional(),
     imageHash: z.string().min(1).max(128).optional(),
+    assetId: z
+      .string()
+      .uuid()
+      .optional()
+      .describe('UUID do media_asset da Biblioteca (tenant). XOR imageUrl|imageHash. Só imagem JPG/PNG/GIF.'),
     name: z.string().min(1).max(255).optional(),
     ...metaWriteConfirmationFields,
     ...metaWriteDryRunField,
   })
   .superRefine((data, ctx) => {
-    if (!data.imageUrl && !data.imageHash) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Informe imageUrl ou imageHash.', path: ['imageUrl'] })
+    const sources = [data.imageUrl, data.imageHash, data.assetId].filter(Boolean).length
+    if (sources === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Informe imageUrl, imageHash ou assetId (biblioteca).',
+        path: ['assetId'],
+      })
     }
-    if (data.imageUrl && data.imageHash) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'imageUrl OU imageHash.', path: ['imageUrl'] })
+    if (sources > 1) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Informe imageUrl OU imageHash OU assetId, não combine.',
+        path: ['assetId'],
+      })
     }
   })
 
@@ -2485,6 +2519,10 @@ export async function metaCreateAd(
     graph,
   }
 
+  let libraryAsset: LibraryImageAsset | null = null
+  if (input.assetId)
+    libraryAsset = await loadLibraryImageAsset(ctx.client, input.tenantId, input.assetId)
+
   const tokenCtx = await resolveMetaAccessToken(ctx.client, input.tenantId)
   const pageToken = decryptSecret(tokenCtx.config.page_access_token_enc)
   let pageId: string | null = null
@@ -2536,8 +2574,14 @@ export async function metaCreateAd(
 
   let creativeBody: Record<string, unknown> | null = null
   if (!reuseCreativeId && pageId && creativeType) {
-    // On dryRun, keep picture/url fields; uploads skipped.
-    if (!dryRun && creativeType === 'IMAGE' && input.imageUrl && !input.imageHash) {
+    // On dryRun, keep picture/url fields; uploads skipped. assetId already tenant-checked.
+    if (!dryRun && creativeType === 'IMAGE' && libraryAsset && !input.imageHash) {
+      const bytes = await downloadLibraryImageBytes(ctx.client, libraryAsset)
+      const uploaded = await uploadImage(mediaCtx, { bytes, name: libraryAsset.name }, { dryRun: false })
+      resolvedImageHash = uploaded.imageHash
+      resolvedImageUrl = null
+    }
+    else if (!dryRun && creativeType === 'IMAGE' && input.imageUrl && !input.imageHash) {
       const uploaded = await uploadImage(mediaCtx, { imageUrl: input.imageUrl }, { dryRun: false })
       resolvedImageHash = uploaded.imageHash
       resolvedImageUrl = null
@@ -2696,6 +2740,8 @@ export async function metaCreateAd(
     mediaNotes.push(`mídia: catalog product_set=${input.productSetId}`)
   else if (resolvedImageHash)
     mediaNotes.push(`mídia: image_hash=${resolvedImageHash}`)
+  else if (libraryAsset)
+    mediaNotes.push(`mídia: biblioteca assetId=${libraryAsset.id} (${libraryAsset.name}; upload ${dryRun ? 'adiado — dryRun' : 'no execute'})`)
   else if (resolvedImageUrl)
     mediaNotes.push(`mídia: imageUrl=${resolvedImageUrl}`)
   if (degreesOfFreedom)
@@ -2824,6 +2870,7 @@ export async function metaCreateAd(
         welcomeMessage: input.welcomeMessage ?? null,
         imageUrl: resolvedImageUrl,
         imageHash: resolvedImageHash,
+        assetId: input.assetId ?? null,
         videoId: resolvedVideoId,
         childAttachmentsCount: input.childAttachments?.length ?? null,
         productSetId: input.productSetId ?? null,
@@ -2882,6 +2929,7 @@ export async function metaCreateAd(
       welcomeMessage: input.welcomeMessage ?? null,
       imageUrl: resolvedImageUrl,
       imageHash: resolvedImageHash,
+      assetId: input.assetId ?? null,
       videoId: resolvedVideoId,
       childAttachmentsCount: input.childAttachments?.length ?? null,
       productSetId: input.productSetId ?? null,
@@ -2923,6 +2971,7 @@ export async function metaCreateAd(
         callToAction: result.callToAction,
         imageUrl: result.imageUrl,
         imageHash: result.imageHash,
+        assetId: result.assetId,
         videoId: result.videoId,
         adAccountId: creds.adAccountId,
         trackingSpecs: result.trackingSpecs,
@@ -3723,15 +3772,59 @@ export async function metaUploadImage(ctx: MetaToolContext, raw: unknown) {
   const dryRun = resolveDryRun(input.dryRun, true)
   const creds = await withCreds(ctx, input.tenantId, input.adAccountId)
   const graph = fetchGraph(ctx)
+  const mediaCtx = {
+    apiVersion: creds.apiVersion,
+    accessToken: creds.accessToken,
+    adAccountId: creds.adAccountId,
+    graph,
+  }
+
+  let libraryAsset: LibraryImageAsset | null = null
+  let bytes: Buffer | undefined
+  if (input.assetId) {
+    libraryAsset = await loadLibraryImageAsset(ctx.client, input.tenantId, input.assetId)
+    if (!dryRun)
+      bytes = await downloadLibraryImageBytes(ctx.client, libraryAsset)
+  }
+
+  if (dryRun && libraryAsset) {
+    return {
+      tenantId: input.tenantId,
+      adAccountId: creds.adAccountId,
+      imageHash: '(dryRun — hash após upload)',
+      reused: false,
+      dryRun: true as const,
+      width: libraryAsset.width,
+      height: libraryAsset.height,
+      assetId: input.assetId,
+      name: input.name || libraryAsset.name,
+      success: true as const,
+      warning: 'Dry-run: nenhum upload. Reenvie dryRun:false para executar.',
+    }
+  }
+
   const result = await uploadImage(
-    { apiVersion: creds.apiVersion, accessToken: creds.accessToken, adAccountId: creds.adAccountId, graph },
-    { imageUrl: input.imageUrl, imageHash: input.imageHash, name: input.name },
+    mediaCtx,
+    {
+      imageUrl: input.imageUrl,
+      imageHash: input.imageHash,
+      bytes,
+      name: input.name || libraryAsset?.name,
+    },
     { dryRun },
   )
+  const width = result.width ?? libraryAsset?.width ?? null
+  const height = result.height ?? libraryAsset?.height ?? null
   return {
     tenantId: input.tenantId,
     adAccountId: creds.adAccountId,
-    ...result,
+    imageHash: result.imageHash,
+    reused: result.reused,
+    dryRun: result.dryRun,
+    width,
+    height,
+    assetId: input.assetId ?? null,
+    name: input.name || libraryAsset?.name || null,
     success: true as const,
     warning: dryRun
       ? 'Dry-run: nenhum upload. Reenvie dryRun:false para executar.'
@@ -4921,7 +5014,7 @@ export const META_TOOL_DESCRIPTIONS: Record<MetaToolName, string> = {
   meta_create_adset:
     'Cria adset (BR_* ou targeting custom). PAUSED+dryRun. destinationType WEBSITE|WHATSAPP|MESSENGER|INSTAGRAM_DIRECT. isDynamicCreative opcional (DYNAMIC_CREATIVE_LEGACY, só WEBSITE). Exige confirm+budget+campaignId.',
   meta_create_ad:
-    'Cria Ad+Creative. creativeId XOR creativeType IMAGE|VIDEO|CAROUSEL|DYNAMIC_CREATIVE_LEGACY|CATALOG. Destinos WEBSITE|WHATSAPP|MESSENGER|INSTAGRAM_DIRECT. trackingSpecs/pixelId/offlineDatasetId/conversionDomain opcionais (Graph tracking_specs). Advantage+ degreesOfFreedomSpec. Upload imageUrl/videoUrl (SSRF). PAUSED+dryRun.',
+    'Cria Ad+Creative. creativeId XOR creativeType IMAGE|VIDEO|CAROUSEL|DYNAMIC_CREATIVE_LEGACY|CATALOG. IMAGE: imageUrl|imageHash|assetId (biblioteca). Destinos WEBSITE|WHATSAPP|MESSENGER|INSTAGRAM_DIRECT. trackingSpecs/pixelId/offlineDatasetId/conversionDomain opcionais. Advantage+ degreesOfFreedomSpec. Upload imageUrl/videoUrl (SSRF) ou assetId. PAUSED+dryRun.',
   meta_update_adset_budget:
     'Atualiza budget do adset (daily|lifetime). dryRun default true. Teto META_GPT_BUDGET_* + confirmBudgetIncrease se aumento % alto.',
   meta_update_adset_targeting:
@@ -4937,7 +5030,7 @@ export const META_TOOL_DESCRIPTIONS: Record<MetaToolName, string> = {
   meta_get_capabilities:
     'Retorna matriz de capacidades Meta Ads (criativos, mídia, catálogo, experiments, Flexible Media) para a Graph version do tenant.',
   meta_upload_image:
-    'Upload/reuse imagem na ad account (imageUrl HTTPS com SSRF ou imageHash). dryRun default true.',
+    'Upload/reuse imagem na ad account (imageUrl HTTPS com SSRF, imageHash existente, ou assetId da Biblioteca). dryRun default true. Vídeo via assetId não suportado.',
   meta_upload_video:
     'Upload/reuse vídeo (videoUrl HTTPS file_url com SSRF ou videoId). dryRun default true. Depois use meta_get_video_status.',
   meta_get_video_status:
