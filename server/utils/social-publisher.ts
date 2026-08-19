@@ -81,8 +81,29 @@ export async function processPublicationJob(
   }
 
   const snapshot = version?.snapshot || {}
-  const variant = (snapshot.variants || []).find((row: any) => row.id === claimed.variant_id)
-  const assets = mediaAssetsForVariant(snapshot, claimed.variant_id)
+  let variant = (snapshot.variants || []).find((row: any) => row.id === claimed.variant_id)
+  let assets = mediaAssetsForVariant(snapshot, claimed.variant_id)
+
+  // Fallback: variant IDs may have changed after the snapshot was created.
+  // Fetch live data from DB to avoid invalid_snapshot failures.
+  if (!variant && account) {
+    const { data: liveVariant } = await client
+      .from('social_post_variants')
+      .select('*')
+      .eq('id', claimed.variant_id)
+      .eq('tenant_id', claimed.tenant_id)
+      .maybeSingle()
+    if (liveVariant) {
+      variant = liveVariant
+      const { data: liveAssets } = await client
+        .from('social_post_assets')
+        .select('id, variant_id, asset_id, position, media_assets!social_post_assets_asset_id_fkey(id, name, bucket, object_path, mime_type, purpose, metadata)')
+        .eq('variant_id', claimed.variant_id)
+        .eq('tenant_id', claimed.tenant_id)
+        .order('position')
+      assets = (liveAssets || []).map((row: any) => row.media_assets).filter(Boolean)
+    }
+  }
 
   if (!variant || !account) {
     const message = 'Snapshot, variante ou conta social não encontrado'
