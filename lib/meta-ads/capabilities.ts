@@ -95,7 +95,7 @@ export function getMetaCapabilities(explicitVersion?: string | null): MetaCapabi
       ),
       INSTAGRAM_DIRECT: ok(
         'destination_type=INSTAGRAM_DIRECT + CTA INSTAGRAM_MESSAGE; IMAGE|VIDEO|CAROUSEL. '
-        + 'Exige page_id + instagram_business_account_id (instagram_actor_id).',
+        + 'Exige page_id + instagram_business_account_id (instagram_user_id).',
       ),
     },
     creativeTypes: {

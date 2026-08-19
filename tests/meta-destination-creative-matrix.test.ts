@@ -24,7 +24,7 @@ function sampleBody(creativeType: string, destinationType: string) {
     pageId: 'page_1',
     creativeType: creativeType as any,
     destinationType: destinationType as any,
-    instagramActorId: destinationType === 'INSTAGRAM_DIRECT' ? 'ig_1' : undefined,
+    instagramUserId: destinationType === 'INSTAGRAM_DIRECT' ? 'ig_1' : undefined,
     website: destinationType === 'WEBSITE'
       ? {
           message: 'Hi',

@@ -469,8 +469,8 @@ export type BuildCreativeGraphBodyInput = {
   degreesOfFreedom?: DegreesOfFreedomSpecInput
   /** CATALOG only */
   productSetId?: string
-  /** INSTAGRAM_DIRECT — instagram_actor_id (Page-connected IG). */
-  instagramActorId?: string
+  /** INSTAGRAM_DIRECT — instagram_user_id (Page-connected IG). */
+  instagramUserId?: string
 }
 
 /**
@@ -485,14 +485,14 @@ export function buildMetaCreateAdCreativeBodyByType(
 
   const objectStoryBase: Record<string, unknown> = { page_id: pageId }
   if (destinationType === 'INSTAGRAM_DIRECT') {
-    if (!params.instagramActorId) {
+    if (!params.instagramUserId) {
       throw new MetaAdsToolError(
         'META_INSTAGRAM_ACTOR_REQUIRED',
-        'destinationType=INSTAGRAM_DIRECT exige instagram_business_account_id na integração (instagram_actor_id).',
+        'destinationType=INSTAGRAM_DIRECT exige instagram_business_account_id na integração (instagram_user_id).',
         400,
       )
     }
-    objectStoryBase.instagram_actor_id = params.instagramActorId
+    objectStoryBase.instagram_user_id = params.instagramUserId
   }
 
   let body: Record<string, unknown>

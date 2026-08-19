@@ -59,7 +59,7 @@ export {
   metaUpdateAdsetTargeting,
   metaUpdateAdCreativeCopy,
   metaUpdateAdMedia,
-  resolveInstagramActorIdForCreativeUpdate,
+  resolveInstagramUserIdForCreativeUpdate,
   metaPreviewBulkDelete,
   metaExecuteBulkDelete,
   metaGetCapabilities,

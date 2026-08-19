@@ -389,8 +389,8 @@ export function buildAdObjectStorySpec(params: {
   destinationType: MetaAdDestinationType
   website?: BuildWebsiteLinkDataInput
   whatsapp?: BuildWhatsAppLinkDataInput
-  instagramActorId?: string
-}): { page_id: string, link_data: Record<string, unknown>, instagram_actor_id?: string } {
+  instagramUserId?: string
+}): { page_id: string, link_data: Record<string, unknown>, instagram_user_id?: string } {
   if (isMessagingDestination(params.destinationType)) {
     if (!params.whatsapp) {
       throw new MetaAdsToolError(
@@ -399,19 +399,19 @@ export function buildAdObjectStorySpec(params: {
         400,
       )
     }
-    const spec: { page_id: string, link_data: Record<string, unknown>, instagram_actor_id?: string } = {
+    const spec: { page_id: string, link_data: Record<string, unknown>, instagram_user_id?: string } = {
       page_id: params.pageId,
       link_data: buildMessagingLinkData(params.destinationType, params.whatsapp),
     }
     if (params.destinationType === 'INSTAGRAM_DIRECT') {
-      if (!params.instagramActorId) {
+      if (!params.instagramUserId) {
         throw new MetaAdsToolError(
           'META_INSTAGRAM_ACTOR_REQUIRED',
-          'destinationType=INSTAGRAM_DIRECT exige instagram_business_account_id na integração (instagram_actor_id).',
+          'destinationType=INSTAGRAM_DIRECT exige instagram_business_account_id na integração (instagram_user_id).',
           400,
         )
       }
-      spec.instagram_actor_id = params.instagramActorId
+      spec.instagram_user_id = params.instagramUserId
     }
     return spec
   }
@@ -434,7 +434,7 @@ export function buildMetaCreateAdCreativeBody(params: {
   destinationType: MetaAdDestinationType
   website?: BuildWebsiteLinkDataInput
   whatsapp?: BuildWhatsAppLinkDataInput
-  instagramActorId?: string
+  instagramUserId?: string
 }): Record<string, unknown> {
   return {
     name: params.creativeName,
@@ -443,7 +443,7 @@ export function buildMetaCreateAdCreativeBody(params: {
       destinationType: params.destinationType,
       website: params.website,
       whatsapp: params.whatsapp,
-      instagramActorId: params.instagramActorId,
+      instagramUserId: params.instagramUserId,
     }),
   }
 }

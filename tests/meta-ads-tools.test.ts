@@ -17,7 +17,7 @@ import {
   metaSearchInterests,
   metaUpdateAdCreativeCopy,
   metaUpdateAdMedia,
-  resolveInstagramActorIdForCreativeUpdate,
+  resolveInstagramUserIdForCreativeUpdate,
   metaUpdateAdTracking,
   metaUpdateAdsetBudget,
   metaUpdateAdsetStatus,
@@ -2377,7 +2377,7 @@ describe('meta-ads MCP tools', () => {
     })
   })
 
-  it('update ad media preserves instagram_actor_id from previous creative', async () => {
+  it('update ad media preserves instagram_user_id from previous creative', async () => {
     const client = createIntegrationClient({
       access_token_enc: encryptSecret('tok'),
       page_access_token_enc: encryptSecret('page-tok'),
@@ -2396,10 +2396,10 @@ describe('meta-ads MCP tools', () => {
         account_id: '555',
         creative: {
           id: 'cr_old',
-          instagram_actor_id: 'ig_from_creative',
+          instagram_user_id: 'ig_from_creative',
           object_story_spec: {
             page_id: 'page_99',
-            instagram_actor_id: 'ig_from_creative',
+            instagram_user_id: 'ig_from_creative',
             link_data: {
               message: 'Keep',
               link: 'https://example.com',
@@ -2426,7 +2426,60 @@ describe('meta-ads MCP tools', () => {
     const creativePost = graphFetch.mock.calls.find(
       ([url, init]) => init?.method === 'POST' && String(url).includes('/adcreatives'),
     )
-    expect(creativePost![1]?.body?.object_story_spec?.instagram_actor_id).toBe('ig_from_creative')
+    expect(creativePost![1]?.body?.object_story_spec?.instagram_user_id).toBe('ig_from_creative')
+    expect(creativePost![1]?.body?.object_story_spec?.instagram_actor_id).toBeUndefined()
+  })
+
+  it('update ad media falls back to legacy instagram_actor_id when reading previous creative', async () => {
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret('tok'),
+      page_access_token_enc: encryptSecret('page-tok'),
+      ad_account_id: '555',
+      page_id: 'page_99',
+      instagram_business_account_id: 'ig_from_integration',
+    })
+    const graphFetch = vi.fn(async (url: string, init?: any) => {
+      if (init?.method === 'POST') {
+        if (String(url).includes('/adcreatives'))
+          return { id: 'cr_media_ig' }
+        return { success: true }
+      }
+      return {
+        id: 'ad_1',
+        account_id: '555',
+        creative: {
+          id: 'cr_old',
+          instagram_actor_id: 'ig_legacy_creative',
+          object_story_spec: {
+            page_id: 'page_99',
+            instagram_actor_id: 'ig_legacy_creative',
+            link_data: {
+              message: 'Keep',
+              link: 'https://example.com',
+              call_to_action: { type: 'SHOP_NOW', value: { link: 'https://example.com' } },
+              image_hash: 'old_hash',
+            },
+          },
+        },
+      }
+    })
+
+    await metaUpdateAdMedia(
+      { client, graphFetch },
+      {
+        tenantId: 'tenant-1',
+        adId: 'ad_1',
+        imageHash: 'new_hash',
+        confirmTenantId: 'tenant-1',
+        confirm: true,
+        dryRun: false,
+      },
+    )
+
+    const creativePost = graphFetch.mock.calls.find(
+      ([url, init]) => init?.method === 'POST' && String(url).includes('/adcreatives'),
+    )
+    expect(creativePost![1]?.body?.object_story_spec?.instagram_user_id).toBe('ig_legacy_creative')
   })
 
   it('update ad media uses instagram_business_account_id from integration when creative lacks IG identity', async () => {
@@ -2476,7 +2529,7 @@ describe('meta-ads MCP tools', () => {
     const creativePost = graphFetch.mock.calls.find(
       ([url, init]) => init?.method === 'POST' && String(url).includes('/adcreatives'),
     )
-    expect(creativePost![1]?.body?.object_story_spec?.instagram_actor_id).toBe('ig_from_integration')
+    expect(creativePost![1]?.body?.object_story_spec?.instagram_user_id).toBe('ig_from_integration')
   })
 
   it('update ad media placementAssets preserves instagram identity and asset customization', async () => {
@@ -2500,7 +2553,7 @@ describe('meta-ads MCP tools', () => {
           id: 'cr_old',
           object_story_spec: {
             page_id: 'page_99',
-            instagram_actor_id: 'ig_placement',
+            instagram_user_id: 'ig_placement',
             link_data: {
               message: 'Keep',
               link: 'https://example.com',
@@ -2537,27 +2590,27 @@ describe('meta-ads MCP tools', () => {
       ([url, init]) => init?.method === 'POST' && String(url).includes('/adcreatives'),
     )
     const body = creativePost![1]?.body
-    expect(body?.object_story_spec?.instagram_actor_id).toBe('ig_placement')
+    expect(body?.object_story_spec?.instagram_user_id).toBe('ig_placement')
     expect(body?.object_story_spec?.page_id).toBe('page_99')
     expect(body?.asset_feed_spec?.asset_customization_rules).toHaveLength(2)
     expect(body?.asset_feed_spec?.images).toHaveLength(2)
   })
 
-  it('resolveInstagramActorIdForCreativeUpdate prefers creative over integration', () => {
-    expect(resolveInstagramActorIdForCreativeUpdate({
-      creativeInstagramActorId: 'ig_creative',
+  it('resolveInstagramUserIdForCreativeUpdate prefers creative over integration', () => {
+    expect(resolveInstagramUserIdForCreativeUpdate({
+      creativeInstagramUserId: 'ig_creative',
       integrationInstagramBusinessAccountId: 'ig_integration',
     })).toBe('ig_creative')
-    expect(resolveInstagramActorIdForCreativeUpdate({
-      creativeInstagramActorId: null,
+    expect(resolveInstagramUserIdForCreativeUpdate({
+      creativeInstagramUserId: null,
       integrationInstagramBusinessAccountId: 'ig_integration',
     })).toBe('ig_integration')
-    expect(resolveInstagramActorIdForCreativeUpdate({
-      creativeInstagramActorId: '',
+    expect(resolveInstagramUserIdForCreativeUpdate({
+      creativeInstagramUserId: '',
       integrationInstagramBusinessAccountId: '  ig_integration  ',
     })).toBe('ig_integration')
-    expect(resolveInstagramActorIdForCreativeUpdate({
-      creativeInstagramActorId: null,
+    expect(resolveInstagramUserIdForCreativeUpdate({
+      creativeInstagramUserId: null,
       integrationInstagramBusinessAccountId: null,
     })).toBeNull()
   })

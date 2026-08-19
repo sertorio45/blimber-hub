@@ -297,18 +297,18 @@ describe('meta CTWA / destination payloads', () => {
     expect((body.object_story_spec as any).link_data.page_welcome_message).toBeTruthy()
   })
 
-  it('builds INSTAGRAM_DIRECT IMAGE with instagram_actor_id and INSTAGRAM_MESSAGE', () => {
+  it('builds INSTAGRAM_DIRECT IMAGE with instagram_user_id and INSTAGRAM_MESSAGE', () => {
     const body = buildMetaCreateAdCreativeBodyByType({
       creativeName: 'IG',
       pageId: 'page_1',
       creativeType: 'IMAGE',
       destinationType: 'INSTAGRAM_DIRECT',
-      instagramActorId: 'ig_99',
+      instagramUserId: 'ig_99',
       whatsapp: { message: 'DM no Instagram', imageHash: 'h1' },
     })
     expect(body.object_story_spec).toMatchObject({
       page_id: 'page_1',
-      instagram_actor_id: 'ig_99',
+      instagram_user_id: 'ig_99',
       link_data: {
         message: 'DM no Instagram',
         image_hash: 'h1',

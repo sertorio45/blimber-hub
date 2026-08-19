@@ -2141,7 +2141,7 @@ export async function metaListAds(
 }
 
 /** Standard AdCreative fields — creative_asset_groups_spec omitted (Flexible Ad: meta_get_flexible_ad_structure). */
-const META_CREATIVE_FIELDS = 'id,name,object_story_spec,asset_feed_spec,degrees_of_freedom_spec,object_story_id,effective_object_story_id,instagram_actor_id,thumbnail_url,image_url,video_id,url_tags'
+const META_CREATIVE_FIELDS = 'id,name,object_story_spec,asset_feed_spec,degrees_of_freedom_spec,object_story_id,effective_object_story_id,instagram_user_id,instagram_actor_id,thumbnail_url,image_url,video_id,url_tags'
 
 const META_AD_WITH_CREATIVE_FIELDS
   = `id,name,status,configured_status,effective_status,creative{${META_CREATIVE_FIELDS}},tracking_specs,conversion_domain,issues_info,recommendations,ad_review_feedback,adset_id,campaign_id`
@@ -3023,12 +3023,12 @@ export async function metaCreateAd(
   )
   const creativeName = input.creativeName || `${input.name} Creative`
   const message = input.message ?? ''
-  const instagramActorId = destinationType === 'INSTAGRAM_DIRECT'
+  const instagramUserId = destinationType === 'INSTAGRAM_DIRECT'
     ? (tokenCtx.publicConfig.instagram_business_account_id
       ? String(tokenCtx.publicConfig.instagram_business_account_id).trim()
       : '')
     : undefined
-  if (destinationType === 'INSTAGRAM_DIRECT' && !reuseCreativeId && !instagramActorId) {
+  if (destinationType === 'INSTAGRAM_DIRECT' && !reuseCreativeId && !instagramUserId) {
     throw new MetaAdsToolError(
       'META_INSTAGRAM_ACTOR_REQUIRED',
       'destinationType=INSTAGRAM_DIRECT exige instagram_business_account_id na integração Meta.',
@@ -3113,6 +3113,9 @@ export async function metaCreateAd(
       object_story_spec: { page_id: pageId },
       asset_feed_spec: assetFeedSpec,
     }
+    if (destinationType === 'INSTAGRAM_DIRECT') {
+      creativeBody = applyInstagramUserIdToCreativeBody(creativeBody, instagramUserId ?? null)
+    }
   }
   else if (!reuseCreativeId && pageId && creativeType) {
     if (!dryRun && creativeType === 'IMAGE' && libraryAsset && !input.imageHash) {
@@ -3173,7 +3176,7 @@ export async function metaCreateAd(
       assetFeed,
       degreesOfFreedom,
       productSetId: input.productSetId,
-      instagramActorId,
+      instagramUserId,
     })
   }
 
@@ -3541,7 +3544,7 @@ type LinkCreativeSnapshot = {
   creativeId: string | null
   creativeName: string | null
   pageId: string | null
-  instagramActorId: string | null
+  instagramUserId: string | null
   message: string | null
   headline: string | null
   description: string | null
@@ -3551,27 +3554,27 @@ type LinkCreativeSnapshot = {
   imageUrl: string | null
 }
 
-function trimInstagramActorId(value: unknown): string | null {
+function trimInstagramUserId(value: unknown): string | null {
   if (value == null)
     return null
   const trimmed = String(value).trim()
   return trimmed || null
 }
 
-/** Prefer creative instagram_actor_id; fallback to integration instagram_business_account_id. */
-export function resolveInstagramActorIdForCreativeUpdate(params: {
-  creativeInstagramActorId?: string | null
+/** Prefer creative instagram_user_id; fallback to integration instagram_business_account_id. */
+export function resolveInstagramUserIdForCreativeUpdate(params: {
+  creativeInstagramUserId?: string | null
   integrationInstagramBusinessAccountId?: string | null
 }): string | null {
-  return trimInstagramActorId(params.creativeInstagramActorId)
-    ?? trimInstagramActorId(params.integrationInstagramBusinessAccountId)
+  return trimInstagramUserId(params.creativeInstagramUserId)
+    ?? trimInstagramUserId(params.integrationInstagramBusinessAccountId)
 }
 
-function applyInstagramActorIdToCreativeBody(
+function applyInstagramUserIdToCreativeBody(
   body: Record<string, unknown>,
-  instagramActorId: string | null,
+  instagramUserId: string | null,
 ): Record<string, unknown> {
-  if (!instagramActorId)
+  if (!instagramUserId)
     return body
   const spec = body.object_story_spec
   if (!spec || typeof spec !== 'object')
@@ -3580,9 +3583,19 @@ function applyInstagramActorIdToCreativeBody(
     ...body,
     object_story_spec: {
       ...(spec as Record<string, unknown>),
-      instagram_actor_id: instagramActorId,
+      instagram_user_id: instagramUserId,
     },
   }
+}
+
+function extractInstagramUserIdFromCreative(creative: Record<string, unknown>): string | null {
+  const spec = (creative?.object_story_spec && typeof creative.object_story_spec === 'object')
+    ? creative.object_story_spec as Record<string, unknown>
+    : {}
+  return trimInstagramUserId(spec.instagram_user_id)
+    ?? trimInstagramUserId(creative.instagram_user_id)
+    ?? trimInstagramUserId(spec.instagram_actor_id)
+    ?? trimInstagramUserId(creative.instagram_actor_id)
 }
 
 function extractLinkCreativeSnapshot(ad: any): LinkCreativeSnapshot {
@@ -3590,13 +3603,12 @@ function extractLinkCreativeSnapshot(ad: any): LinkCreativeSnapshot {
   const spec = creative?.object_story_spec || {}
   const linkData = spec?.link_data || {}
   const cta = linkData?.call_to_action
-  const instagramActorId = trimInstagramActorId(spec?.instagram_actor_id)
-    ?? trimInstagramActorId(creative?.instagram_actor_id)
+  const instagramUserId = extractInstagramUserIdFromCreative(creative)
   return {
     creativeId: creative?.id ? String(creative.id) : null,
     creativeName: creative?.name ? String(creative.name) : null,
     pageId: spec?.page_id ? String(spec.page_id) : null,
-    instagramActorId,
+    instagramUserId,
     message: linkData?.message != null ? String(linkData.message) : null,
     headline: linkData?.name != null ? String(linkData.name) : null,
     description: linkData?.description != null ? String(linkData.description) : null,
@@ -3615,7 +3627,7 @@ async function fetchOwnedAdWithCreative(
   const graph = fetchGraph(ctx)
   const ad = await graph(metaGraphUrl(creds.apiVersion, `/${params.adId}`), {
     query: {
-      fields: 'id,name,status,effective_status,account_id,campaign_id,adset_id,creative{id,name,instagram_actor_id,object_story_spec,thumbnail_url}',
+      fields: 'id,name,status,effective_status,account_id,campaign_id,adset_id,creative{id,name,instagram_user_id,instagram_actor_id,object_story_spec,thumbnail_url}',
       access_token: creds.accessToken,
     },
   })
@@ -4175,8 +4187,8 @@ export async function metaUpdateAdMedia(
   const callToAction = before.callToAction || 'LEARN_MORE'
   const creativeName = input.creativeName
     || `${ad?.name || input.adId} Creative media ${Date.now()}`
-  const instagramActorId = resolveInstagramActorIdForCreativeUpdate({
-    creativeInstagramActorId: before.instagramActorId,
+  const instagramUserId = resolveInstagramUserIdForCreativeUpdate({
+    creativeInstagramUserId: before.instagramUserId,
     integrationInstagramBusinessAccountId: tokenCtx.publicConfig.instagram_business_account_id,
   })
 
@@ -4273,14 +4285,14 @@ export async function metaUpdateAdMedia(
     })
   }
 
-  creativeBody = applyInstagramActorIdToCreativeBody(creativeBody, instagramActorId)
+  creativeBody = applyInstagramUserIdToCreativeBody(creativeBody, instagramUserId)
 
   const afterMedia = updatePlacementAssets
-    ? { ...before, pageId, instagramActorId, creativeType, placementAssets: true }
+    ? { ...before, pageId, instagramUserId, creativeType, placementAssets: true }
     : {
         ...before,
         pageId,
-        instagramActorId,
+        instagramUserId,
         imageHash: creativeType === 'IMAGE' ? (input.imageHash ?? null) : before.imageHash,
         imageUrl: creativeType === 'IMAGE' ? (input.imageUrl ?? null) : before.imageUrl,
         videoId: creativeType === 'VIDEO' ? (input.videoId ?? null) : null,
