@@ -9,8 +9,8 @@
  * - Advantage+ Creative: degrees_of_freedom_spec.creative_features_spec
  * - Ads Manager "Mídia flexível" = pac_relaxation (NOT Dynamic Creative / NOT Flexible Ad Format)
  *
- * NOT implemented here:
- * - Flexible Ad Format (creative_asset_groups_spec) — capability gated (docs exemplify ≥ v25)
+ * NOT implemented here (uses separate tools):
+ * - Flexible Ad Format (creative_asset_groups_spec) → meta_create_flexible_ad (separate module)
  * - Collection / Instant Experience canvas
  */
 

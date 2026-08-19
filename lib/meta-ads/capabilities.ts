@@ -116,10 +116,11 @@ export function getMetaCapabilities(explicitVersion?: string | null): MetaCapabi
       COLLECTION: no(
         'Collection / Instant Experience exige canvas/storefront path não implementado no Blimber; use CAROUSEL ou CATALOG.',
       ),
-      FLEXIBLE_AD_FORMAT: no(
-        'creative_asset_groups_spec (Flexible Ad Format) não implementado no Blimber. '
-        + `Graph atual=${graphVersion} (default v25.0; META_ADS_GRAPH_VERSION / META_GRAPH_VERSION sobem a versão sem habilitar o campo). `
-        + 'Mesmo com Graph ≥ v25, capability permanece false até o Blimber modelar o campo — não inventar payloads.',
+      FLEXIBLE_AD_FORMAT: ok(
+        'creative_asset_groups_spec implementado via meta_create_flexible_ad / meta_get_flexible_ad_structure. '
+        + 'Apenas OUTCOME_SALES e OUTCOME_APP_PROMOTION. '
+        + 'Removido do Ads Manager UI (mar/2026) mas API Graph v25 funcional. '
+        + 'SEPARADO de asset_feed_spec (DCO), degrees_of_freedom_spec (Advantage+), e carousel.',
       ),
       FLEXIBLE_MEDIA_PAC_RELAXATION: ok(
         'Ads Manager "Mídia flexível" = Advantage+ pac_relaxation em degrees_of_freedom_spec (não é Dynamic Creative).',

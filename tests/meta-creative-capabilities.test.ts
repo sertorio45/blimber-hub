@@ -13,11 +13,11 @@ import {
 } from '~/lib/meta-ads'
 
 describe('meta capabilities + media SSRF + experiments builders', () => {
-  it('reports Flexible Ad Format unsupported on v20 while pac_relaxation is supported', () => {
+  it('reports Flexible Ad Format supported on v20+ while pac_relaxation is supported', () => {
     const caps = getMetaCapabilities('v20.0')
     expect(caps.graphVersion).toBe('v20.0')
     expect(caps.studiesGraphVersion).toBe('v26.0')
-    expect(caps.creativeTypes.FLEXIBLE_AD_FORMAT.supported).toBe(false)
+    expect(caps.creativeTypes.FLEXIBLE_AD_FORMAT.supported).toBe(true)
     expect(caps.creativeTypes.FLEXIBLE_MEDIA_PAC_RELAXATION.supported).toBe(true)
     expect(caps.creativeTypes.COLLECTION.supported).toBe(false)
     expect(caps.catalog.listProductSets.supported).toBe(true)
@@ -29,13 +29,14 @@ describe('meta capabilities + media SSRF + experiments builders', () => {
     expect(caps.experiments.splitTestV2Creative.defaultOwnerStrategy).toBe('AUTO')
     expect(caps.experiments.splitTestV2Creative.ownerStrategies).toEqual(['AUTO', 'USER', 'BUSINESS'])
     expect(caps.experiments.splitTestV2Creative.studiesGraphVersion).toBe('v26.0')
-    expect(caps.creativeTypes.FLEXIBLE_AD_FORMAT.reason).toMatch(/META_ADS_GRAPH_VERSION|META_GRAPH_VERSION|não implementado/i)
+    expect(caps.creativeTypes.FLEXIBLE_AD_FORMAT.notes).toMatch(/creative_asset_groups_spec/)
   })
 
-  it('keeps Flexible Ad Format false even if graph version string is higher', () => {
+  it('keeps Flexible Ad Format true on v25', () => {
     const caps = getMetaCapabilities('v25.0')
     expect(caps.graphVersion).toBe('v25.0')
-    expect(caps.creativeTypes.FLEXIBLE_AD_FORMAT.supported).toBe(false)
+    expect(caps.creativeTypes.FLEXIBLE_AD_FORMAT.supported).toBe(true)
+    expect(caps.creativeTypes.FLEXIBLE_AD_FORMAT.notes).toMatch(/creative_asset_groups_spec/)
   })
 
   it('blocks private media URLs (SSRF)', async () => {

@@ -1293,7 +1293,7 @@ describe('meta-ads MCP tools', () => {
       { tenantId: 'tenant-1' },
     )
     expect((result as any).capabilities.graphVersion).toBe('v20.0')
-    expect((result as any).capabilities.creativeTypes.FLEXIBLE_AD_FORMAT.supported).toBe(false)
+    expect((result as any).capabilities.creativeTypes.FLEXIBLE_AD_FORMAT.supported).toBe(true)
     expect((result as any).capabilities.creativeTypes.FLEXIBLE_MEDIA_PAC_RELAXATION.supported).toBe(true)
     expect((result as any).capabilities.creativeTypes.DYNAMIC_CREATIVE_LEGACY.supported).toBe(true)
     expect((result as any).capabilities.catalog.listProductSets.supported).toBe(true)
