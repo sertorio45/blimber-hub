@@ -4,6 +4,7 @@ import { buildPlacementAssetFeedSpec } from '~/lib/meta-ads/placement-assets'
 import {
   buildCreativeAssetGroupsSpec,
   checkFlexibleAdEligibility,
+  META_ADSET_DETAIL_FIELDS,
   metaCopyAdset,
   metaGetAd,
   metaGetAdset,
@@ -130,7 +131,26 @@ describe('meta_get_adset / meta_copy_adset', () => {
     )).rejects.toMatchObject({ code: 'ADSET_TENANT_MISMATCH', statusCode: 403 })
   })
 
-  it('4. meta_get_adset retorna targeting', async () => {
+  it('4. meta_get_adset não solicita targeting_automation top-level', async () => {
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret('tok'),
+      ad_account_id: '555',
+    })
+    const graphFetch = vi.fn(async () => ({ ...SOURCE_ADSET }))
+
+    await metaGetAdset(
+      { client, graphFetch },
+      { tenantId: 'tenant-1', adsetId: 'adset_src' },
+    )
+
+    const [, init] = graphFetch.mock.calls[0]!
+    const fields = String(init?.query?.fields)
+    expect(fields).toContain('targeting')
+    expect(fields).not.toMatch(/(^|,)targeting_automation(,|$)/)
+    expect(META_ADSET_DETAIL_FIELDS).not.toMatch(/(^|,)targeting_automation(,|$)/)
+  })
+
+  it('4b. meta_get_adset retorna targeting', async () => {
     const client = createIntegrationClient({
       access_token_enc: encryptSecret('tok'),
       ad_account_id: '555',
@@ -166,7 +186,20 @@ describe('meta_get_adset / meta_copy_adset', () => {
     })
   })
 
-  it('6. custom audiences preservadas no fallback sanitize', () => {
+  it('6. sanitize remove targeting_automation top-level (fica em targeting)', () => {
+    const body = sanitizeAdsetForCreate({
+      ...SOURCE_ADSET,
+      targeting_automation: { advantage_audience: 1 },
+      targeting: {
+        ...(SOURCE_ADSET.targeting as object),
+        targeting_automation: { advantage_audience: 1 },
+      },
+    } as Record<string, unknown>)
+    expect(body).not.toHaveProperty('targeting_automation')
+    expect((body.targeting as any).targeting_automation).toEqual({ advantage_audience: 1 })
+  })
+
+  it('6b. custom audiences preservadas no fallback sanitize', () => {
     const body = sanitizeAdsetForCreate(SOURCE_ADSET as Record<string, unknown>)
     expect((body.targeting as any).custom_audiences).toHaveLength(1)
     expect((body.targeting as any).custom_audiences[0].id).toBe('aud_1')
@@ -404,6 +437,31 @@ describe('meta_get_adset / meta_copy_adset', () => {
     expect(postCallsSafe(graphFetch)).toBe(0)
   })
 
+  it('meta_copy_adset pré-leitura não solicita targeting_automation top-level', async () => {
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret('tok'),
+      ad_account_id: '555',
+    })
+    const graphFetch = vi.fn(async () => ({ ...SOURCE_ADSET }))
+
+    await metaCopyAdset(
+      { client, graphFetch },
+      {
+        tenantId: 'tenant-1',
+        sourceAdsetId: 'adset_src',
+        name: 'Cópia Fields',
+        confirmTenantId: 'tenant-1',
+        confirm: true,
+        dryRun: true,
+      },
+    )
+
+    const [, init] = graphFetch.mock.calls[0]!
+    const fields = String(init?.query?.fields)
+    expect(fields).toContain('targeting')
+    expect(fields).not.toMatch(/(^|,)targeting_automation(,|$)/)
+  })
+
   it('meta_list_adsets detailLevel=full inclui targeting no fields', async () => {
     const client = createIntegrationClient({
       access_token_enc: encryptSecret('tok'),
@@ -419,8 +477,10 @@ describe('meta_get_adset / meta_copy_adset', () => {
     )
 
     const [, init] = graphFetch.mock.calls[0]!
-    expect(String(init?.query?.fields)).toContain('targeting')
-    expect(String(init?.query?.fields)).toContain('promoted_object')
+    const fields = String(init?.query?.fields)
+    expect(fields).toContain('targeting')
+    expect(fields).toContain('promoted_object')
+    expect(fields).not.toMatch(/(^|,)targeting_automation(,|$)/)
   })
 })
 

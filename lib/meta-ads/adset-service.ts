@@ -18,7 +18,6 @@ export const META_ADSET_DETAIL_FIELDS = [
   'effective_status',
   'configured_status',
   'targeting',
-  'targeting_automation',
   'promoted_object',
   'destination_type',
   'optimization_goal',
@@ -116,6 +115,8 @@ const ADSET_READ_ONLY_FIELDS = new Set([
   'learning_stage_info',
   'last_budget_toggling_time',
   'placements',
+  // Graph v25 nests this under targeting, not as a top-level AdSet field.
+  'targeting_automation',
 ])
 
 /**
