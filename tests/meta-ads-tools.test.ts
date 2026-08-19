@@ -2630,7 +2630,6 @@ describe('meta-ads MCP tools', () => {
           status: 'PAUSED',
           effective_status: 'PAUSED',
           account_id: '555',
-          daily_budget: null,
         }
       }
       return {
@@ -2654,9 +2653,91 @@ describe('meta-ads MCP tools', () => {
     expect((result as any).previewToken).toMatch(/^\d+\.[a-f0-9]{64}$/)
     expect((result as any).items).toHaveLength(2)
     expect((result as any).items[0].name).toBe('Ad teste')
+    expect((result as any).items[0].dailyBudget).toBeNull()
+    expect((result as any).items[0].lifetimeBudget).toBeNull()
+    for (const [, init] of graphFetch.mock.calls) {
+      const fields = (init as any)?.query?.fields as string | undefined
+      expect(fields).toBeDefined()
+      expect(fields).not.toContain('daily_budget')
+      expect(fields).not.toContain('lifetime_budget')
+      expect(fields).toContain('creative')
+    }
     const postCalls = graphFetch.mock.calls.filter(([, init]) => init?.method === 'POST')
     expect(postCalls).toHaveLength(0)
     expect(audits.some((a: any) => a.action === 'meta.gpt.bulk.delete.preview' && a.dryRun === true)).toBe(true)
+  })
+
+  it('bulk delete preview ad level rejects Graph invalid field errors for budget', async () => {
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret('tok'),
+      ad_account_id: '555',
+    })
+    const graphFetch = vi.fn(async (_url: string, init?: { query?: { fields?: string } }) => {
+      const fields = init?.query?.fields ?? ''
+      if (fields.includes('daily_budget') || fields.includes('lifetime_budget')) {
+        throw new Error('(#100) Tried accessing nonexisting field (daily_budget) on node type (Ad)')
+      }
+      return {
+        id: '120251791293570163',
+        name: 'Anúncio real',
+        status: 'PAUSED',
+        effective_status: 'PAUSED',
+        account_id: '555',
+        campaign_id: 'cmp_1',
+        adset_id: 'adset_1',
+        creative: { id: 'cr_1' },
+      }
+    })
+
+    const result = await metaPreviewBulkDelete(
+      { client, graphFetch },
+      {
+        tenantId: 'tenant-1',
+        level: 'ad',
+        ids: ['120251791293570163'],
+      },
+    )
+
+    expect((result as any).deletableIds).toEqual(['120251791293570163'])
+    expect((result as any).items[0]).toMatchObject({
+      id: '120251791293570163',
+      name: 'Anúncio real',
+      status: 'PAUSED',
+      dailyBudget: null,
+      lifetimeBudget: null,
+      campaignId: 'cmp_1',
+      adsetId: 'adset_1',
+    })
+  })
+
+  it('bulk delete preview adset level still requests budget fields', async () => {
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret('tok'),
+      ad_account_id: '555',
+    })
+    const graphFetch = vi.fn(async () => ({
+      id: 'adset_1',
+      name: 'Adset',
+      status: 'PAUSED',
+      account_id: '555',
+      campaign_id: 'cmp_1',
+      daily_budget: '5000',
+      lifetime_budget: null,
+    }))
+
+    const result = await metaPreviewBulkDelete(
+      { client, graphFetch },
+      {
+        tenantId: 'tenant-1',
+        level: 'adset',
+        ids: ['adset_1'],
+      },
+    )
+
+    const fields = (graphFetch.mock.calls[0]?.[1] as any)?.query?.fields as string
+    expect(fields).toContain('daily_budget')
+    expect(fields).toContain('lifetime_budget')
+    expect((result as any).items[0].dailyBudget).toBe(5000)
   })
 
   it('bulk delete preview enforces META_GPT_BULK_MAX', async () => {

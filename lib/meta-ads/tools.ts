@@ -5376,6 +5376,13 @@ const BULK_DELETE_LEVEL_META: Record<BulkDeleteLevel, {
   },
 }
 
+/** Graph fields per bulk-delete level — budget fields exist only on Campaign/AdSet, not Ad. */
+const BULK_DELETE_GRAPH_FIELDS: Record<BulkDeleteLevel, string> = {
+  campaign: 'id,name,status,effective_status,account_id,daily_budget,lifetime_budget',
+  adset: 'id,name,status,effective_status,account_id,campaign_id,daily_budget,lifetime_budget',
+  ad: 'id,name,status,effective_status,account_id,campaign_id,adset_id,creative',
+}
+
 function parseOptionalBudget(value: unknown): number | null {
   if (value == null || value === '')
     return null
@@ -5407,11 +5414,13 @@ async function loadBulkDeleteCandidates(
   }> = []
   const failed: Array<{ id: string; code: string; message: string }> = []
 
+  const graphFields = BULK_DELETE_GRAPH_FIELDS[params.level]
+
   for (const id of params.ids) {
     try {
       const object = await graph(metaGraphUrl(creds.apiVersion, `/${id}`), {
         query: {
-          fields: 'id,name,status,effective_status,account_id,campaign_id,adset_id,daily_budget,lifetime_budget',
+          fields: graphFields,
           access_token: creds.accessToken,
         },
       })
@@ -5426,8 +5435,8 @@ async function loadBulkDeleteCandidates(
         name: object?.name != null ? String(object.name) : null,
         status: object?.status != null ? String(object.status) : null,
         effectiveStatus: object?.effective_status != null ? String(object.effective_status) : null,
-        dailyBudget: parseOptionalBudget(object?.daily_budget),
-        lifetimeBudget: parseOptionalBudget(object?.lifetime_budget),
+        dailyBudget: params.level === 'ad' ? null : parseOptionalBudget(object?.daily_budget),
+        lifetimeBudget: params.level === 'ad' ? null : parseOptionalBudget(object?.lifetime_budget),
         campaignId: object?.campaign_id != null ? String(object.campaign_id) : null,
         adsetId: object?.adset_id != null ? String(object.adset_id) : null,
       })
