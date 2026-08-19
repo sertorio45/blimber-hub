@@ -8,16 +8,20 @@
 type SharpModule = typeof import('sharp')
 
 let sharpModulePromise: Promise<SharpModule> | null = null
+let sharpUnavailable = false
 
-async function loadSharp(): Promise<SharpModule['default']> {
+async function loadSharp(): Promise<SharpModule['default'] | null> {
+  if (sharpUnavailable) return null
   if (!sharpModulePromise) {
     sharpModulePromise = import('sharp').catch((error) => {
       sharpModulePromise = null
-      throw error
+      sharpUnavailable = true
+      console.warn('[normalize-image] Sharp unavailable, images will be sent without processing:', error?.message || error)
+      return null
     })
   }
   const mod = await sharpModulePromise
-  return mod.default
+  return mod?.default ?? null
 }
 
 export const META_IMAGE_RECOMMENDED_MAX_BYTES = 8 * 1024 * 1024
@@ -39,6 +43,7 @@ export interface NormalizedImageResult {
  */
 async function probeImage(buffer: Buffer) {
   const sharp = await loadSharp()
+  if (!sharp) return null
   const metadata = await sharp(buffer).metadata()
   if (!metadata.width || !metadata.height)
     throw new Error('Cannot read image dimensions')
@@ -63,7 +68,25 @@ export async function normalizeImageForMeta(
     maxHeight?: number
   },
 ): Promise<NormalizedImageResult> {
-  const { sharp, metadata } = await probeImage(buffer)
+  const probe = await probeImage(buffer)
+
+  // Fallback: Sharp unavailable (e.g. native binary missing in prod) — pass through raw bytes
+  if (!probe) {
+    const mime = options.originalMimeType.toLowerCase()
+    const outputMime: NormalizedImageResult['mimeType']
+      = mime === 'image/png' ? 'image/png' : mime === 'image/gif' ? 'image/gif' : 'image/jpeg'
+    return {
+      data: buffer,
+      mimeType: outputMime,
+      width: 0,
+      height: 0,
+      normalized: false,
+      originalMimeType: mime,
+      convertedToJpeg: false,
+    }
+  }
+
+  const { sharp, metadata } = probe
 
   const inputMime = options.originalMimeType.toLowerCase()
   const isGif = inputMime === 'image/gif'
@@ -154,7 +177,9 @@ export async function shouldNormalizeForMeta(
   mimeType: string,
 ): Promise<{ needsNormalization: boolean, width: number, height: number, reason: string | null }> {
   try {
-    const { metadata } = await probeImage(buffer)
+    const probe = await probeImage(buffer)
+    if (!probe) return { needsNormalization: false, width: 0, height: 0, reason: 'sharp_unavailable' }
+    const { metadata } = probe
     const mime = mimeType.toLowerCase()
     const reasons: string[] = []
 
