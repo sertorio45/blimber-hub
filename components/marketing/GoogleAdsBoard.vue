@@ -8,7 +8,6 @@ import type {
 } from '~/types/marketing-reports'
 
 import GoogleAdsBrandIcon from '@/components/brand/GoogleAdsBrandIcon.vue'
-import GoogleAdsTestTokenNotice from '@/components/marketing/GoogleAdsTestTokenNotice.vue'
 import ReportInsightTable from '@/components/marketing/ReportInsightTable.vue'
 import ReportKpiCard from '@/components/marketing/ReportKpiCard.vue'
 import ReportTrendChart from '@/components/marketing/ReportTrendChart.vue'
@@ -17,7 +16,6 @@ import {
   periodLabelPt,
   readMetricBag,
 } from '~/composables/marketing/useMarketingReportMetrics'
-import { isGoogleAdsTestTokenUserMessage } from '~/constants/google-ads'
 import {
   detailMetricsOf,
   getReportTemplate,
@@ -46,12 +44,8 @@ const deltas = computed(() =>
   selectedCampaignId.value === 'all' ? (props.google?.deltas || null) : null,
 )
 
-const isTestTokenError = computed(() =>
-  isGoogleAdsTestTokenUserMessage(props.google?.error),
-)
-
 const userFacingError = computed(() => {
-  if (!props.google?.error || isTestTokenError.value)
+  if (!props.google?.error)
     return ''
   return toUserFacingReportError(props.google.error)
 })
@@ -257,16 +251,10 @@ watch(activeCampaignsOnly, () => {
             Conta {{ google.customer_id }}
           </p>
           <p
-            v-if="google?.error && !isTestTokenError"
+            v-if="google?.error"
             class="mt-2 text-xs text-destructive"
           >
             {{ userFacingError }}
-          </p>
-          <p
-            v-else-if="isTestTokenError"
-            class="mt-2 text-xs text-amber-700 dark:text-amber-400"
-          >
-            Token da plataforma em modo teste — veja o aviso abaixo.
           </p>
           <p
             v-else-if="google && !google.connected"
@@ -332,13 +320,7 @@ watch(activeCampaignsOnly, () => {
 
       <template v-else>
         <div
-          v-if="google?.error && isTestTokenError"
-          class="px-4 py-6 sm:px-6"
-        >
-          <GoogleAdsTestTokenNotice :message="google.error || undefined" />
-        </div>
-        <div
-          v-else-if="google?.error"
+          v-if="google?.error"
           class="px-4 py-8 text-center text-sm text-destructive sm:px-6"
         >
           {{ userFacingError }}

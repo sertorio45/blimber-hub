@@ -5,7 +5,6 @@ import type { MarketingProvider } from '~/types/marketing'
 import GoogleAdsBrandIcon from '@/components/brand/GoogleAdsBrandIcon.vue'
 import GoogleAnalyticsBrandIcon from '@/components/brand/GoogleAnalyticsBrandIcon.vue'
 import MetaBrandIcon from '@/components/brand/MetaBrandIcon.vue'
-import GoogleAdsTestTokenNotice from '@/components/marketing/GoogleAdsTestTokenNotice.vue'
 import MarketingPageSkeleton from '@/components/marketing/MarketingPageSkeleton.vue'
 import IntegrationStatusBadge from '@/components/settings/integrations/IntegrationStatusBadge.vue'
 import SocialProviderCard from '@/components/settings/integrations/SocialProviderCard.vue'
@@ -21,7 +20,6 @@ import {
 } from '@/components/ui/alert-dialog'
 import { useToast } from '@/components/ui/toast'
 import { resolveIntegrationConnectionStatus } from '~/composables/marketing/useIntegrationConnectionStatus'
-import { isGoogleAdsTestTokenUserMessage } from '~/constants/google-ads'
 
 type Provider = MarketingProvider
 
@@ -64,12 +62,6 @@ const disconnectDialogOpen = ref(false)
 const disconnectTarget = ref<Provider | null>(null)
 const oauthCallbackHandled = ref(false)
 
-const isGoogleAdsTestTokenWarning = computed(() =>
-  isGoogleAdsTestTokenUserMessage(googleAdsAccountsWarning.value),
-)
-const isGoogleAdsTestTokenError = computed(() =>
-  isGoogleAdsTestTokenUserMessage(lastError.value),
-)
 
 function formatGoogleAdsCustomerId(value?: string | null): string {
   const id = String(value || '').replace(/-/g, '').trim()
@@ -778,11 +770,7 @@ const fetchErrorMessage = computed(() => {
       </span>
     </div>
 
-    <GoogleAdsTestTokenNotice
-      v-if="!pending && lastError && isGoogleAdsTestTokenError"
-      :message="lastError"
-    />
-    <Alert v-else-if="!pending && lastError" variant="destructive">
+    <Alert v-if="!pending && lastError" variant="destructive">
       <Icon name="lucide:triangle-alert" class="h-4 w-4" />
       <AlertTitle>Falha na integração</AlertTitle>
       <AlertDescription class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -962,11 +950,7 @@ const fetchErrorMessage = computed(() => {
             <Icon name="lucide:refresh-cw" class="mr-2 h-4 w-4" :class="accountsLoading === 'google_ads' ? 'animate-spin' : ''" />
             {{ accountsLoading === 'google_ads' ? 'Carregando...' : 'Atualizar contas' }}
           </Button>
-          <GoogleAdsTestTokenNotice
-            v-if="googleAdsAccountsWarning && isGoogleAdsTestTokenWarning"
-            :message="googleAdsAccountsWarning"
-          />
-          <Alert v-else-if="googleAdsAccountsWarning" class="text-left">
+          <Alert v-if="googleAdsAccountsWarning" class="text-left">
             <Icon name="lucide:info" class="h-4 w-4" />
             <AlertTitle>Nomes parciais</AlertTitle>
             <AlertDescription>{{ googleAdsAccountsWarning }}</AlertDescription>

@@ -1,11 +1,6 @@
 import process from 'node:process'
 
 import { createError } from 'h3'
-import {
-  GOOGLE_ADS_TEST_TOKEN_ACCOUNTS_WARNING,
-  GOOGLE_ADS_TEST_TOKEN_USER_MESSAGE,
-  isGoogleAdsTestAccessLimitation,
-} from '~/constants/google-ads'
 import { decryptSecret } from '~/server/utils/marketing'
 
 /**
@@ -118,8 +113,18 @@ function buildGoogleAdsHeaders(
   }
 }
 
+interface GoogleAdsErrorPayload {
+  statusCode?: number
+  status?: number
+  message?: string
+  data?: {
+    error?: { message?: string, details?: unknown }
+    message?: string
+  }
+}
+
 /** Flatten Google Ads API error payloads into a single diagnostic string. */
-function collectGoogleAdsErrorTexts(error: any): string {
+function collectGoogleAdsErrorTexts(error: GoogleAdsErrorPayload | null | undefined): string {
   const topMessage
     = error?.data?.error?.message
       || error?.data?.message
@@ -155,7 +160,7 @@ function collectGoogleAdsErrorTexts(error: any): string {
   return texts.join('; ')
 }
 
-export function extractGoogleAdsErrorMessage(error: any): string {
+export function extractGoogleAdsErrorMessage(error: GoogleAdsErrorPayload | null | undefined): string {
   const status = error?.statusCode || error?.status
   const raw = collectGoogleAdsErrorTexts(error)
 
@@ -166,9 +171,6 @@ export function extractGoogleAdsErrorMessage(error: any): string {
   ) {
     return `Versão da API do Google Ads indisponível (${GOOGLE_ADS_API_VERSION}). Atualize a integração ou tente novamente mais tarde.`
   }
-
-  if (isGoogleAdsTestAccessLimitation(raw))
-    return GOOGLE_ADS_TEST_TOKEN_USER_MESSAGE
 
   if (raw) {
     // Avoid dumping raw $fetch URL noise like: [GET] "https://...": 404 Not Found
@@ -248,15 +250,20 @@ async function mapWithConcurrency<T, R>(
   return results
 }
 
+interface GoogleAdsSearchResult {
+  customer?: Record<string, unknown>
+  [key: string]: unknown
+}
+
 async function searchGoogleAds(
   customerId: string,
   accessToken: string,
   developerToken: string,
   query: string,
-): Promise<{ results?: any[], errorMessage: string | null }> {
+): Promise<{ results?: GoogleAdsSearchResult[], errorMessage: string | null }> {
   const headers = buildGoogleAdsHeaders(accessToken, developerToken)
   try {
-    const response = await $fetch<{ results?: any[] }>(
+    const response = await $fetch<{ results?: GoogleAdsSearchResult[] }>(
       googleAdsApiUrl(`customers/${customerId}/googleAds:search`),
       {
         method: 'POST',
@@ -266,8 +273,8 @@ async function searchGoogleAds(
     )
     return { results: response?.results || [], errorMessage: null }
   }
-  catch (error: any) {
-    return { results: undefined, errorMessage: extractGoogleAdsErrorMessage(error) }
+  catch (error: unknown) {
+    return { results: undefined, errorMessage: extractGoogleAdsErrorMessage(error as GoogleAdsErrorPayload) }
   }
 }
 
@@ -333,19 +340,14 @@ export async function listGoogleAdsAccounts(
     )
     resourceNames = response.resourceNames || []
   }
-  catch (error: any) {
-    const message = extractGoogleAdsErrorMessage(error)
-    const status = error?.statusCode || error?.status || 502
+  catch (error: unknown) {
+    const err = error as GoogleAdsErrorPayload
+    const message = extractGoogleAdsErrorMessage(err)
+    const status = err?.statusCode || err?.status || 502
     if (status === 401 || /UNAUTHENTICATED|invalid.?authentication|access.?token/i.test(message)) {
       throw createError({
         statusCode: 401,
         statusMessage: 'Sessão Google expirada. Desconecte e conecte novamente o Google Ads.',
-      })
-    }
-    if (isGoogleAdsTestAccessLimitation(message)) {
-      throw createError({
-        statusCode: 403,
-        statusMessage: GOOGLE_ADS_TEST_TOKEN_USER_MESSAGE,
       })
     }
     if (/DEVELOPER_TOKEN|developer.?token|PERMISSION_DENIED/i.test(message)) {
@@ -417,10 +419,7 @@ export async function listGoogleAdsAccounts(
     const managerOnly = enrichmentErrors.some(isManagerOnlyAccessError)
       || isManagerOnlyAccessError(sample)
 
-    if (isGoogleAdsTestAccessLimitation(sample) || enrichmentErrors.some(isGoogleAdsTestAccessLimitation)) {
-      warning = GOOGLE_ADS_TEST_TOKEN_ACCOUNTS_WARNING
-    }
-    else if (managerOnly || unnamedCount === accounts.length) {
+    if (managerOnly || unnamedCount === accounts.length) {
       warning
         = 'Não foi possível obter o nome de algumas contas com acesso direto. '
           + 'Contas acessíveis apenas via conta gerente (MCC) não são suportadas neste fluxo — '
