@@ -83,6 +83,12 @@ import {
   uploadVideo,
 } from './media-service'
 import {
+  buildPlacementAssetFeedSpec,
+  placementAssetsSchema,
+  PLACEMENT_OPTIONS,
+  type PlacementAssetsInput,
+} from './placement-assets'
+import {
   downloadLibraryImageBytes,
   loadLibraryImageAsset,
   type LibraryImageAsset,
@@ -648,6 +654,7 @@ export const metaCreateAdSchema = tenantContextSchema
     catalogId: z.string().min(1).optional().describe('CATALOG: id do product catalog (ownership).'),
     productSetId: z.string().min(1).optional().describe('CATALOG: product_set_id.'),
     ...metaAdTrackingFieldsSchema.shape,
+    placementAssets: placementAssetsSchema.optional().describe('Placement Asset Customization: imagens/vídeos diferentes por posicionamento. Monta asset_feed_spec + asset_customization_rules.'),
     creativeName: z.string().min(1).max(400).optional(),
     status: z.enum(['ACTIVE', 'PAUSED']).optional().default('PAUSED'),
     confirmActive: z.literal(true).optional(),
@@ -774,7 +781,7 @@ export const metaCreateAdSchema = tenantContextSchema
       }
     }
 
-    if (creativeType === 'VIDEO') {
+    if (creativeType === 'VIDEO' && !data.placementAssets) {
       if (!data.videoId && !data.videoUrl) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
@@ -867,20 +874,22 @@ export const metaCreateAdSchema = tenantContextSchema
       }
     }
 
-    const imageSources = [data.imageUrl, data.imageHash, data.assetId].filter(Boolean).length
-    if (imageSources > 1) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Informe imageUrl OU imageHash OU assetId, não combine.',
-        path: ['assetId'],
-      })
-    }
-    if (data.assetId && creativeType !== 'IMAGE') {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'assetId só é válido em creativeType=IMAGE (vídeo da biblioteca não é suportado).',
-        path: ['assetId'],
-      })
+    if (!data.placementAssets) {
+      const imageSources = [data.imageUrl, data.imageHash, data.assetId].filter(Boolean).length
+      if (imageSources > 1) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Informe imageUrl OU imageHash OU assetId, não combine.',
+          path: ['assetId'],
+        })
+      }
+      if (data.assetId && creativeType !== 'IMAGE') {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'assetId só é válido em creativeType=IMAGE (vídeo da biblioteca não é suportado).',
+          path: ['assetId'],
+        })
+      }
     }
   })
 
@@ -1030,11 +1039,14 @@ export const metaUpdateAdMediaSchema = tenantContextSchema
       .optional()
       .describe('CAROUSEL: 2–10 cards.'),
     degreesOfFreedomSpec: metaDegreesOfFreedomSchema.optional(),
+    placementAssets: placementAssetsSchema.optional().describe('Placement Asset Customization como alternativa a imageHash/imageUrl simples.'),
     creativeName: z.string().min(1).max(400).optional(),
     ...metaWriteConfirmationFields,
     ...metaWriteDryRunField,
   })
   .superRefine((data, ctx) => {
+    if (data.placementAssets) return
+
     let creativeType: MetaAdCreativeType = 'IMAGE'
     try {
       creativeType = normalizeMetaAdCreativeType(data.creativeType)
@@ -1397,6 +1409,7 @@ export type MetaToolName =
   | 'meta_generate_ad_preview'
   | 'meta_generate_ad_previews_batch'
   | 'meta_validate_creative'
+  | 'meta_list_placement_options'
 
 export interface MetaToolContext {
   client: SupabaseLike
@@ -2713,8 +2726,64 @@ export async function metaCreateAd(
     : undefined
 
   let creativeBody: Record<string, unknown> | null = null
-  if (!reuseCreativeId && pageId && creativeType) {
-    // On dryRun, keep picture/url fields; uploads skipped. assetId already tenant-checked.
+  const placementAssets = input.placementAssets as PlacementAssetsInput | undefined
+  if (!reuseCreativeId && pageId && creativeType && placementAssets
+    && (creativeType === 'IMAGE' || creativeType === 'VIDEO')) {
+    const resolvedImages: Array<{ label: string, hash: string }> = []
+    const resolvedVideos: Array<{ label: string, videoId: string }> = []
+
+    for (const img of placementAssets.images) {
+      if (img.imageHash) {
+        resolvedImages.push({ label: img.label, hash: img.imageHash })
+      }
+      else if (!dryRun && img.imageUrl) {
+        const uploaded = await uploadImage(mediaCtx, { imageUrl: img.imageUrl }, { dryRun: false })
+        resolvedImages.push({ label: img.label, hash: uploaded.imageHash })
+      }
+      else if (!dryRun && img.assetId) {
+        const asset = await loadLibraryImageAsset(ctx.client, input.tenantId, img.assetId)
+        const bytes = await downloadLibraryImageBytes(ctx.client, asset)
+        const uploaded = await uploadImage(mediaCtx, { bytes, name: asset.name, mimeType: asset.mimeType }, { dryRun: false })
+        resolvedImages.push({ label: img.label, hash: uploaded.imageHash })
+      }
+      else {
+        resolvedImages.push({ label: img.label, hash: img.imageUrl ? `(dryRun — hash após upload de ${img.imageUrl})` : '(placeholder)' })
+      }
+    }
+
+    if (placementAssets.videos) {
+      for (const vid of placementAssets.videos) {
+        if (vid.videoId) {
+          resolvedVideos.push({ label: vid.label, videoId: vid.videoId })
+        }
+        else if (!dryRun && vid.videoUrl) {
+          const uploaded = await uploadVideo(mediaCtx, { videoUrl: vid.videoUrl }, { dryRun: false })
+          resolvedVideos.push({ label: vid.label, videoId: uploaded.videoId })
+        }
+        else {
+          resolvedVideos.push({ label: vid.label, videoId: vid.videoUrl ? `(dryRun — video_id após upload de ${vid.videoUrl})` : '(placeholder)' })
+        }
+      }
+    }
+
+    const assetFeedSpec = buildPlacementAssetFeedSpec({
+      resolvedImages,
+      resolvedVideos: resolvedVideos.length ? resolvedVideos : undefined,
+      rules: placementAssets.rules,
+      bodies: message ? [{ text: message }] : undefined,
+      titles: input.headline ? [{ text: input.headline }] : undefined,
+      descriptions: input.description ? [{ text: input.description }] : undefined,
+      linkUrls: input.linkUrl ? [{ websiteUrl: input.linkUrl }] : undefined,
+      callToActionTypes: callToAction ? [callToAction] : undefined,
+    })
+
+    creativeBody = {
+      name: creativeName,
+      object_story_spec: { page_id: pageId },
+      asset_feed_spec: assetFeedSpec,
+    }
+  }
+  else if (!reuseCreativeId && pageId && creativeType) {
     if (!dryRun && creativeType === 'IMAGE' && libraryAsset && !input.imageHash) {
       const bytes = await downloadLibraryImageBytes(ctx.client, libraryAsset)
       const uploaded = await uploadImage(mediaCtx, { bytes, name: libraryAsset.name, mimeType: libraryAsset.mimeType }, { dryRun: false })
@@ -3738,53 +3807,109 @@ export async function metaUpdateAdMedia(
   const creativeName = input.creativeName
     || `${ad?.name || input.adId} Creative media ${Date.now()}`
 
-  let resolvedImageHash = input.imageHash ?? null
-  let resolvedImageUrl = input.imageUrl ?? null
-  let resolvedVideoId = input.videoId ?? null
+  const updatePlacementAssets = input.placementAssets as PlacementAssetsInput | undefined
+  let creativeBody: Record<string, unknown>
 
-  if (!dryRun && creativeType === 'IMAGE' && input.imageUrl && !input.imageHash) {
-    const uploaded = await uploadImage(mediaCtx, { imageUrl: input.imageUrl }, { dryRun: false })
-    resolvedImageHash = uploaded.imageHash
-    resolvedImageUrl = null
+  if (updatePlacementAssets) {
+    const resolvedImages: Array<{ label: string, hash: string }> = []
+    const resolvedVideos: Array<{ label: string, videoId: string }> = []
+
+    for (const img of updatePlacementAssets.images) {
+      if (img.imageHash) {
+        resolvedImages.push({ label: img.label, hash: img.imageHash })
+      }
+      else if (!dryRun && img.imageUrl) {
+        const uploaded = await uploadImage(mediaCtx, { imageUrl: img.imageUrl }, { dryRun: false })
+        resolvedImages.push({ label: img.label, hash: uploaded.imageHash })
+      }
+      else {
+        resolvedImages.push({ label: img.label, hash: img.imageUrl ? `(dryRun — hash após upload de ${img.imageUrl})` : '(placeholder)' })
+      }
+    }
+
+    if (updatePlacementAssets.videos) {
+      for (const vid of updatePlacementAssets.videos) {
+        if (vid.videoId) {
+          resolvedVideos.push({ label: vid.label, videoId: vid.videoId })
+        }
+        else if (!dryRun && vid.videoUrl) {
+          const uploaded = await uploadVideo(mediaCtx, { videoUrl: vid.videoUrl }, { dryRun: false })
+          resolvedVideos.push({ label: vid.label, videoId: uploaded.videoId })
+        }
+        else {
+          resolvedVideos.push({ label: vid.label, videoId: vid.videoUrl ? `(dryRun — video_id após upload de ${vid.videoUrl})` : '(placeholder)' })
+        }
+      }
+    }
+
+    const assetFeedSpec = buildPlacementAssetFeedSpec({
+      resolvedImages,
+      resolvedVideos: resolvedVideos.length ? resolvedVideos : undefined,
+      rules: updatePlacementAssets.rules,
+      bodies: before.message ? [{ text: before.message }] : undefined,
+      titles: before.headline ? [{ text: before.headline }] : undefined,
+      descriptions: before.description ? [{ text: before.description }] : undefined,
+      linkUrls: before.linkUrl ? [{ websiteUrl: before.linkUrl }] : undefined,
+      callToActionTypes: callToAction ? [callToAction] : undefined,
+    })
+
+    creativeBody = {
+      name: creativeName,
+      object_story_spec: { page_id: pageId },
+      asset_feed_spec: assetFeedSpec,
+    }
   }
-  if (!dryRun && creativeType === 'VIDEO' && input.videoUrl && !input.videoId) {
-    const uploaded = await uploadVideo(mediaCtx, { videoUrl: input.videoUrl }, { dryRun: false })
-    resolvedVideoId = uploaded.videoId
+  else {
+    let resolvedImageHash = input.imageHash ?? null
+    let resolvedImageUrl = input.imageUrl ?? null
+    let resolvedVideoId = input.videoId ?? null
+
+    if (!dryRun && creativeType === 'IMAGE' && input.imageUrl && !input.imageHash) {
+      const uploaded = await uploadImage(mediaCtx, { imageUrl: input.imageUrl }, { dryRun: false })
+      resolvedImageHash = uploaded.imageHash
+      resolvedImageUrl = null
+    }
+    if (!dryRun && creativeType === 'VIDEO' && input.videoUrl && !input.videoId) {
+      const uploaded = await uploadVideo(mediaCtx, { videoUrl: input.videoUrl }, { dryRun: false })
+      resolvedVideoId = uploaded.videoId
+    }
+
+    const degreesOfFreedom: DegreesOfFreedomSpecInput | undefined = input.degreesOfFreedomSpec
+      ? { creativeFeaturesSpec: input.degreesOfFreedomSpec.creativeFeaturesSpec as DegreesOfFreedomSpecInput['creativeFeaturesSpec'] }
+      : undefined
+
+    creativeBody = buildMetaCreateAdCreativeBodyByType({
+      creativeName,
+      pageId,
+      creativeType: creativeType === 'VIDEO' || creativeType === 'CAROUSEL' ? creativeType : 'IMAGE',
+      destinationType: 'WEBSITE',
+      website: {
+        message: before.message,
+        linkUrl: before.linkUrl,
+        callToAction,
+        headline: before.headline ?? undefined,
+        description: before.description ?? undefined,
+        imageUrl: creativeType === 'IMAGE' ? (resolvedImageUrl ?? undefined) : undefined,
+        imageHash: creativeType === 'IMAGE' ? (resolvedImageHash ?? undefined) : undefined,
+      },
+      videoId: creativeType === 'VIDEO'
+        ? (resolvedVideoId ?? (dryRun && input.videoUrl ? '(dryRun — video_id após upload)' : undefined))
+        : undefined,
+      childAttachments: creativeType === 'CAROUSEL' ? input.childAttachments : undefined,
+      degreesOfFreedom,
+    })
   }
 
-  const degreesOfFreedom: DegreesOfFreedomSpecInput | undefined = input.degreesOfFreedomSpec
-    ? { creativeFeaturesSpec: input.degreesOfFreedomSpec.creativeFeaturesSpec as DegreesOfFreedomSpecInput['creativeFeaturesSpec'] }
-    : undefined
-
-  const creativeBody = buildMetaCreateAdCreativeBodyByType({
-    creativeName,
-    pageId,
-    creativeType: creativeType === 'VIDEO' || creativeType === 'CAROUSEL' ? creativeType : 'IMAGE',
-    destinationType: 'WEBSITE',
-    website: {
-      message: before.message,
-      linkUrl: before.linkUrl,
-      callToAction,
-      headline: before.headline ?? undefined,
-      description: before.description ?? undefined,
-      imageUrl: creativeType === 'IMAGE' ? (resolvedImageUrl ?? undefined) : undefined,
-      imageHash: creativeType === 'IMAGE' ? (resolvedImageHash ?? undefined) : undefined,
-    },
-    videoId: creativeType === 'VIDEO'
-      ? (resolvedVideoId ?? (dryRun && input.videoUrl ? '(dryRun — video_id após upload)' : undefined))
-      : undefined,
-    childAttachments: creativeType === 'CAROUSEL' ? input.childAttachments : undefined,
-    degreesOfFreedom,
-  })
-
-  const afterMedia = {
-    ...before,
-    pageId,
-    imageHash: creativeType === 'IMAGE' ? resolvedImageHash : before.imageHash,
-    imageUrl: creativeType === 'IMAGE' ? resolvedImageUrl : before.imageUrl,
-    videoId: creativeType === 'VIDEO' ? resolvedVideoId : null,
-    creativeType,
-  }
+  const afterMedia = updatePlacementAssets
+    ? { ...before, pageId, creativeType, placementAssets: true }
+    : {
+        ...before,
+        pageId,
+        imageHash: creativeType === 'IMAGE' ? (input.imageHash ?? null) : before.imageHash,
+        imageUrl: creativeType === 'IMAGE' ? (input.imageUrl ?? null) : before.imageUrl,
+        videoId: creativeType === 'VIDEO' ? (input.videoId ?? null) : null,
+        creativeType,
+      }
 
   const creativePath = `/${actPath(creds.adAccountId)}/adcreatives`
   const previewBody = {
@@ -3802,13 +3927,15 @@ export async function metaUpdateAdMedia(
         `Ad ${input.adId}${ad?.name ? ` (${ad.name})` : ''}`,
         `before creative: ${before.creativeId || '—'}`,
         `creativeType: ${creativeType}`,
-        creativeType === 'VIDEO'
-          ? `mídia: video=${resolvedVideoId || input.videoUrl}`
-          : creativeType === 'CAROUSEL'
-            ? `mídia: carousel ${input.childAttachments?.length ?? 0} cards`
-            : (resolvedImageHash
-                ? `mídia: image_hash=${resolvedImageHash}`
-                : `mídia: imageUrl=${resolvedImageUrl}`),
+        updatePlacementAssets
+          ? `mídia: placementAssets (${updatePlacementAssets.images.length} imgs, ${updatePlacementAssets.videos?.length ?? 0} vids)`
+          : creativeType === 'VIDEO'
+            ? `mídia: video=${input.videoId || input.videoUrl}`
+            : creativeType === 'CAROUSEL'
+              ? `mídia: carousel ${input.childAttachments?.length ?? 0} cards`
+              : (input.imageHash
+                  ? `mídia: image_hash=${input.imageHash}`
+                  : `mídia: imageUrl=${input.imageUrl}`),
         'Copy preservada do criativo atual.',
         dryRun
           ? 'dryRun=true (default): nenhuma mutação/upload enviada à Graph API.'
@@ -5489,6 +5616,13 @@ export const META_TOOL_HANDLERS: Record<MetaToolName, ToolHandler> = {
   meta_generate_ad_preview: metaGenerateAdPreview,
   meta_generate_ad_previews_batch: metaGenerateAdPreviewsBatch,
   meta_validate_creative: metaValidateCreative,
+  meta_list_placement_options: metaListPlacementOptions,
+}
+
+export const metaListPlacementOptionsSchema = z.object({})
+
+export async function metaListPlacementOptions(_ctx: MetaToolContext, _raw: unknown) {
+  return { ok: true, placementOptions: PLACEMENT_OPTIONS }
 }
 
 export const META_TOOL_SCHEMAS: Record<MetaToolName, z.ZodTypeAny> = {
@@ -5542,6 +5676,7 @@ export const META_TOOL_SCHEMAS: Record<MetaToolName, z.ZodTypeAny> = {
   meta_generate_ad_preview: metaGenerateAdPreviewSchema,
   meta_generate_ad_previews_batch: metaGenerateAdPreviewsBatchSchema,
   meta_validate_creative: metaValidateCreativeSchema,
+  meta_list_placement_options: metaListPlacementOptionsSchema,
 }
 
 export const META_TOOL_DESCRIPTIONS: Record<MetaToolName, string> = {
@@ -5645,6 +5780,8 @@ export const META_TOOL_DESCRIPTIONS: Record<MetaToolName, string> = {
     'Preview real em múltiplos posicionamentos (até 15). Retorna HTML/iframe + succeeded/failed por placement. adId | creativeId | creative spec.',
   meta_validate_creative:
     'Validação de criativo via Generate Previews API. Testa posicionamentos padrão, retorna placements_ok / placements_failed + summary. Sem HTML completo. adId | creativeId | creative spec.',
+  meta_list_placement_options:
+    'Lista plataformas e posicionamentos disponíveis para Placement Asset Customization (asset_feed_spec + asset_customization_rules). Dados estáticos.',
 }
 
 export async function invokeMetaTool(

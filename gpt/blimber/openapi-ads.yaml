@@ -1641,6 +1641,8 @@ components:
                   $ref: "#/components/schemas/AdvantageFeatureEnroll"
                 image_brightness_and_contrast:
                   $ref: "#/components/schemas/AdvantageFeatureEnroll"
+        placementAssets:
+          $ref: "#/components/schemas/PlacementAssets"
         catalogId:
           type: string
           description: CATALOG — product catalog id (via meta_list_catalogs / invoke).
@@ -1815,6 +1817,8 @@ components:
           description: HTTPS (XOR imageHash). Nunca inventar.
         imageHash:
           type: string
+        placementAssets:
+          $ref: "#/components/schemas/PlacementAssets"
         creativeName:
           type: string
           maxLength: 400
@@ -2006,6 +2010,76 @@ components:
           type: string
         dataset:
           type: string
+    PlacementAssets:
+      type: object
+      required: [images, rules]
+      description: >
+        Placement Asset Customization — imagens/vídeos diferentes por posicionamento.
+        Gera asset_feed_spec + asset_customization_rules no criativo.
+      properties:
+        images:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [label]
+            properties:
+              imageHash:
+                type: string
+              imageUrl:
+                type: string
+                format: uri
+              assetId:
+                type: string
+                format: uuid
+              label:
+                type: string
+                description: Rótulo único para vincular a imagem a regras de posicionamento.
+        videos:
+          type: array
+          items:
+            type: object
+            required: [label]
+            properties:
+              videoId:
+                type: string
+              videoUrl:
+                type: string
+                format: uri
+              label:
+                type: string
+                description: Rótulo único para vincular o vídeo a regras de posicionamento.
+        rules:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [label]
+            properties:
+              label:
+                type: string
+                description: Label do asset (imagem ou vídeo) que esta regra utiliza.
+              platforms:
+                type: array
+                items:
+                  type: string
+                  enum: [facebook, instagram, messenger, audience_network]
+              facebookPositions:
+                type: array
+                items:
+                  type: string
+              instagramPositions:
+                type: array
+                items:
+                  type: string
+              messengerPositions:
+                type: array
+                items:
+                  type: string
+              audienceNetworkPositions:
+                type: array
+                items:
+                  type: string
     InvokeBody:
       type: object
       required: [tool, arguments]
@@ -2058,6 +2132,7 @@ components:
             - meta_create_experiment
             - meta_get_experiment
             - meta_stop_experiment
+            - meta_list_placement_options
         arguments:
           type: object
           description: >
