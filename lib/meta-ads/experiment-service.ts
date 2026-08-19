@@ -96,10 +96,29 @@ export interface CreateExperimentInput {
 
 export interface ExperimentVariationInput {
   name?: string
+  /** Copy overlay fields */
   message?: string
   headline?: string
   description?: string
   linkUrl?: string
+  callToAction?: string
+  welcomeMessage?: string
+  /** Media fields — when set, a new AdCreative is built + swapped on the copied ad. */
+  creativeType?: 'IMAGE' | 'VIDEO' | 'CAROUSEL'
+  imageHash?: string
+  imageUrl?: string
+  assetId?: string
+  videoId?: string
+  videoUrl?: string
+  videoAssetId?: string
+  childAttachments?: Array<{
+    imageHash?: string
+    assetId?: string
+    videoId?: string
+    name?: string
+    description?: string
+    link?: string
+  }>
 }
 
 export interface StudyConflict {
@@ -328,6 +347,19 @@ export function variationHasCopyOverlay(variation: ExperimentVariationInput): bo
     || variation.headline
     || variation.description
     || variation.linkUrl,
+  )
+}
+
+/** True when the variation specifies its own media (image, video, or carousel). */
+export function variationHasMediaOverride(variation: ExperimentVariationInput): boolean {
+  return Boolean(
+    variation.imageHash
+    || variation.imageUrl
+    || variation.assetId
+    || variation.videoId
+    || variation.videoUrl
+    || variation.videoAssetId
+    || variation.childAttachments?.length,
   )
 }
 

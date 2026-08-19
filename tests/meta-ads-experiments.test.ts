@@ -429,3 +429,298 @@ describe('meta creative tests USER → BUSINESS', () => {
     expect(split.studiesGraphVersion).toBe('v26.0')
   })
 })
+
+describe('meta creative tests — media variations', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks()
+    vi.unstubAllEnvs()
+    setMetaWriteAuditSink(() => {})
+  })
+
+  it('variation with imageHash creates new creative + swaps on copied ad', async () => {
+    const graphFetch = vi.fn(async (url: string, init?: any) => {
+      const u = String(url)
+      if (/\/v26\.0\/me$/.test(u.split('?')[0]))
+        return { id: USER_ID, name: 'Ana' }
+      if (init?.method === 'POST' && u.includes('/ad_base/copies'))
+        return { copied_ad_id: 'ad_copy_1' }
+      if (init?.method === 'POST' && u.includes(`/${USER_ID}/ad_studies`))
+        return { id: 'study_media' }
+      if (init?.method === 'POST' && u.includes('/adcreatives'))
+        return { id: 'creative_new_1' }
+      if (init?.method === 'POST' && u.includes('/ad_copy_1') && init?.body?.creative)
+        return { success: true }
+      if (u.includes('/ad_copy_1'))
+        return adNode('ad_copy_1')
+      if (u.includes('/ad_base'))
+        return adNode('ad_base')
+      return { data: [] }
+    })
+
+    const result = await metaCreateExperiment(
+      { client: createBaseClient({ page_id: 'p', page_access_token_enc: encryptSecret('page-token') }), graphFetch },
+      {
+        ...createInput,
+        dryRun: false,
+        variations: [{
+          name: 'Image V2',
+          imageHash: 'abc123hash',
+        }],
+      },
+    ) as any
+
+    expect(result.success).toBe(true)
+    expect(result.studyId).toBe('study_media')
+
+    const creativePosts = graphFetch.mock.calls.filter(
+      ([url, init]) => init?.method === 'POST' && String(url).includes('/adcreatives'),
+    )
+    expect(creativePosts).toHaveLength(1)
+
+    const swapPosts = graphFetch.mock.calls.filter(
+      ([url, init]) => init?.method === 'POST' && String(url).includes('/ad_copy_1') && init?.body?.creative,
+    )
+    expect(swapPosts).toHaveLength(1)
+    expect(swapPosts[0][1].body.creative.creative_id).toBe('creative_new_1')
+  })
+
+  it('variation with imageUrl uploads image then creates creative', async () => {
+    let uploadedImageHash: string | null = null
+    const graphFetch = vi.fn(async (url: string, init?: any) => {
+      const u = String(url)
+      if (/\/v26\.0\/me$/.test(u.split('?')[0]))
+        return { id: USER_ID, name: 'Ana' }
+      if (init?.method === 'POST' && u.includes('/ad_base/copies'))
+        return { copied_ad_id: 'ad_copy_1' }
+      if (init?.method === 'POST' && u.includes('/adimages')) {
+        uploadedImageHash = 'uploaded_hash_xyz'
+        return { images: { img: { hash: 'uploaded_hash_xyz' } } }
+      }
+      if (init?.method === 'POST' && u.includes('/adcreatives'))
+        return { id: 'creative_uploaded' }
+      if (init?.method === 'POST' && u.includes('/ad_copy_1') && init?.body?.creative)
+        return { success: true }
+      if (init?.method === 'POST' && u.includes(`/${USER_ID}/ad_studies`))
+        return { id: 'study_url' }
+      if (u.includes('/ad_copy_1'))
+        return adNode('ad_copy_1')
+      if (u.includes('/ad_base'))
+        return adNode('ad_base')
+      return { data: [] }
+    })
+
+    const result = await metaCreateExperiment(
+      { client: createBaseClient({ page_id: 'p', page_access_token_enc: encryptSecret('page-token') }), graphFetch },
+      {
+        ...createInput,
+        dryRun: false,
+        variations: [{
+          name: 'URL Image',
+          imageUrl: 'https://example.com/image.jpg',
+        }],
+      },
+    ) as any
+
+    expect(result.success).toBe(true)
+    expect(uploadedImageHash).toBe('uploaded_hash_xyz')
+
+    const uploadPosts = graphFetch.mock.calls.filter(
+      ([url, init]) => init?.method === 'POST' && String(url).includes('/adimages'),
+    )
+    expect(uploadPosts).toHaveLength(1)
+  })
+
+  it('text-only variation still works (no creative create/swap)', async () => {
+    const graphFetch = vi.fn(async (url: string, init?: any) => {
+      const u = String(url)
+      if (/\/v26\.0\/me$/.test(u.split('?')[0]))
+        return { id: USER_ID, name: 'Ana' }
+      if (init?.method === 'POST' && u.includes('/ad_base/copies'))
+        return { copied_ad_id: 'ad_copy_1' }
+      if (init?.method === 'POST' && u.includes(`/${USER_ID}/ad_studies`))
+        return { id: 'study_text' }
+      if (u.includes('/ad_copy_1'))
+        return adNode('ad_copy_1')
+      if (u.includes('/ad_base'))
+        return adNode('ad_base')
+      return { data: [] }
+    })
+
+    const result = await metaCreateExperiment(
+      { client: createBaseClient(), graphFetch },
+      {
+        ...createInput,
+        dryRun: false,
+        variations: [{ name: 'V2', message: 'copy B' }],
+      },
+    ) as any
+
+    expect(result.success).toBe(true)
+    expect(result.studyId).toBe('study_text')
+
+    const creativePosts = graphFetch.mock.calls.filter(
+      ([url, init]) => init?.method === 'POST' && String(url).includes('/adcreatives'),
+    )
+    expect(creativePosts).toHaveLength(0)
+  })
+
+  it('variation with videoId creates VIDEO creative + swaps', async () => {
+    const graphFetch = vi.fn(async (url: string, init?: any) => {
+      const u = String(url)
+      if (/\/v26\.0\/me$/.test(u.split('?')[0]))
+        return { id: USER_ID, name: 'Ana' }
+      if (init?.method === 'POST' && u.includes('/ad_base/copies'))
+        return { copied_ad_id: 'ad_copy_1' }
+      if (init?.method === 'POST' && u.includes('/adcreatives'))
+        return { id: 'creative_video' }
+      if (init?.method === 'POST' && u.includes('/ad_copy_1') && init?.body?.creative)
+        return { success: true }
+      if (init?.method === 'POST' && u.includes(`/${USER_ID}/ad_studies`))
+        return { id: 'study_video' }
+      if (u.includes('/ad_copy_1'))
+        return adNode('ad_copy_1')
+      if (u.includes('/ad_base'))
+        return adNode('ad_base')
+      return { data: [] }
+    })
+
+    const result = await metaCreateExperiment(
+      { client: createBaseClient({ page_id: 'p', page_access_token_enc: encryptSecret('page-token') }), graphFetch },
+      {
+        ...createInput,
+        dryRun: false,
+        variations: [{
+          name: 'Video V2',
+          videoId: 'vid_123',
+        }],
+      },
+    ) as any
+
+    expect(result.success).toBe(true)
+    expect(result.studyId).toBe('study_video')
+
+    const creativePosts = graphFetch.mock.calls.filter(
+      ([url, init]) => init?.method === 'POST' && String(url).includes('/adcreatives'),
+    )
+    expect(creativePosts).toHaveLength(1)
+  })
+
+  it('dryRun with media variation does NOT upload/create/swap', async () => {
+    const graphFetch = vi.fn(async (url: string, init?: any) => {
+      const u = String(url)
+      if (/\/v26\.0\/me$/.test(u.split('?')[0]))
+        return { id: USER_ID, name: 'Ana' }
+      if (init?.method === 'POST')
+        throw new Error('No POST calls expected in dryRun')
+      if (u.includes('/ad_base'))
+        return adNode('ad_base')
+      return { data: [] }
+    })
+
+    const result = await metaCreateExperiment(
+      { client: createBaseClient({ page_id: 'p', page_access_token_enc: encryptSecret('page-token') }), graphFetch },
+      {
+        ...createInput,
+        dryRun: true,
+        variations: [{
+          name: 'Image V2',
+          imageHash: 'abc123hash',
+        }],
+      },
+    ) as any
+
+    expect(result.dryRun).toBe(true)
+    expect(result.success).toBe(true)
+    expect(result.studyId).toBeNull()
+  })
+
+  it('mixed text + media variations: only media ones get creative swap', async () => {
+    let copyCount = 0
+    const graphFetch = vi.fn(async (url: string, init?: any) => {
+      const u = String(url)
+      if (/\/v26\.0\/me$/.test(u.split('?')[0]))
+        return { id: USER_ID, name: 'Ana' }
+      if (init?.method === 'POST' && u.includes('/ad_base/copies')) {
+        copyCount++
+        return { copied_ad_id: `ad_copy_${copyCount}` }
+      }
+      if (init?.method === 'POST' && u.includes('/adcreatives'))
+        return { id: 'creative_media' }
+      if (init?.method === 'POST' && u.includes('/ad_copy_2') && init?.body?.creative)
+        return { success: true }
+      if (init?.method === 'POST' && u.includes(`/${USER_ID}/ad_studies`))
+        return { id: 'study_mixed' }
+      if (u.includes('/ad_copy_1'))
+        return adNode('ad_copy_1')
+      if (u.includes('/ad_copy_2'))
+        return adNode('ad_copy_2')
+      if (u.includes('/ad_base'))
+        return adNode('ad_base')
+      return { data: [] }
+    })
+
+    const result = await metaCreateExperiment(
+      { client: createBaseClient({ page_id: 'p', page_access_token_enc: encryptSecret('page-token') }), graphFetch },
+      {
+        ...createInput,
+        dryRun: false,
+        variations: [
+          { name: 'Text Only', message: 'copy B' },
+          { name: 'Image V2', imageHash: 'hash_v2' },
+        ],
+      },
+    ) as any
+
+    expect(result.success).toBe(true)
+    expect(result.copiedAds).toHaveLength(2)
+
+    const creativePosts = graphFetch.mock.calls.filter(
+      ([url, init]) => init?.method === 'POST' && String(url).includes('/adcreatives'),
+    )
+    expect(creativePosts).toHaveLength(1)
+
+    const swapPosts = graphFetch.mock.calls.filter(
+      ([, init]) => init?.method === 'POST' && init?.body?.creative?.creative_id,
+    )
+    expect(swapPosts).toHaveLength(1)
+  })
+
+  it('rollback removes copies on creative create failure, preserves base', async () => {
+    const graphFetch = vi.fn(async (url: string, init?: any) => {
+      const u = String(url)
+      if (/\/v26\.0\/me$/.test(u.split('?')[0]))
+        return { id: USER_ID, name: 'Ana' }
+      if (init?.method === 'POST' && u.includes('/ad_base/copies'))
+        return { copied_ad_id: 'ad_copy_1' }
+      if (init?.method === 'POST' && u.includes('/adcreatives'))
+        throw new MetaAdsToolError('META_CREATE_CREATIVE_FAILED', 'Mock creative fail', 502)
+      if (init?.method === 'POST' && u.includes('/ad_copy_1') && init?.body?.status === 'DELETED')
+        return { success: true }
+      if (u.includes('/ad_copy_1'))
+        return adNode('ad_copy_1')
+      if (u.includes('/ad_base'))
+        return adNode('ad_base')
+      return { data: [] }
+    })
+
+    try {
+      await metaCreateExperiment(
+        { client: createBaseClient({ page_id: 'p', page_access_token_enc: encryptSecret('page-token') }), graphFetch },
+        {
+          ...createInput,
+          dryRun: false,
+          variations: [{
+            name: 'Fail Image',
+            imageHash: 'will_fail',
+          }],
+        },
+      )
+      expect.unreachable('Should have thrown')
+    }
+    catch (err: any) {
+      expect(err.message).toContain('Mock creative fail')
+      expect(err.details?.copiedAdsRolledBack?.deleted).toContain('ad_copy_1')
+      expect(err.details?.baseAdIdPreserved).toBe('ad_base')
+    }
+  })
+})
