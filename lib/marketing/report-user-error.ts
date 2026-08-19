@@ -41,6 +41,9 @@ export function toUserFacingReportError(error: unknown): string {
 
   const lower = raw.toLowerCase()
 
+  if (/DEVELOPER_TOKEN_NOT_APPROVED|TEST_ACCOUNT|developer.?token.*test|not yet approved/i.test(raw))
+    return 'Developer token do Google Ads sem aprovação. Solicite acesso Basic ou Standard no API Center.'
+
   if (looksLikeProviderDump(raw) || lower.includes('oauth') || lower.includes('access token') || lower.includes('invalid_token'))
     return 'A conexão com a plataforma expirou ou está incompleta. Reconecte em Integrações.'
 

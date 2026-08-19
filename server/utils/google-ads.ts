@@ -172,6 +172,10 @@ export function extractGoogleAdsErrorMessage(error: GoogleAdsErrorPayload | null
     return `Versão da API do Google Ads indisponível (${GOOGLE_ADS_API_VERSION}). Atualize a integração ou tente novamente mais tarde.`
   }
 
+  if (/DEVELOPER_TOKEN_NOT_APPROVED|TEST_ACCOUNT|only approved for use with test accounts|not yet approved/i.test(raw)) {
+    return 'Developer token do Google Ads sem aprovação. Solicite acesso Basic ou Standard no API Center do Google Ads.'
+  }
+
   if (raw) {
     // Avoid dumping raw $fetch URL noise like: [GET] "https://...": 404 Not Found
     if (/^\[(GET|POST|PUT|PATCH|DELETE)\]\s+"/i.test(raw))
