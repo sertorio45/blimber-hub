@@ -207,7 +207,7 @@ export async function processPublicationJob(
       .neq('status', 'published')
     if (!remaining) {
       await client.from('social_posts').update({
-        status: 'published',
+        publication_status: 'published',
         published_at: new Date().toISOString(),
       }).eq('id', claimed.post_id)
 
@@ -289,7 +289,7 @@ export async function processPublicationJob(
     })
 
     if (!shouldRetry) {
-      await client.from('social_posts').update({ status: 'failed' }).eq('id', claimed.post_id)
+      await client.from('social_posts').update({ publication_status: 'failed' }).eq('id', claimed.post_id)
       await client.from('dead_letter_events').insert({
         tenant_id: claimed.tenant_id,
         source: 'publication_job',
