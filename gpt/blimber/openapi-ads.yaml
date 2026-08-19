@@ -872,9 +872,8 @@ paths:
       summary: Invocação genérica (alternativa)
       description: >
         Invoca tool pelo nome. Overflow (capabilities, upload, catalogs, pixels,
-        datasets, tracking, experiments) usa este endpoint. Limite ChatGPT: ≤30 ops.
-        meta_upload_image: imageUrl XOR imageHash XOR assetId (biblioteca → imageHash).
-        Experiments: studyOwner AUTO|USER|BUSINESS (default AUTO = USER v26 → BUSINESS v26).
+        datasets, tracking, experiments) usa este endpoint. Limite ≤30 ops.
+        imageUrl XOR imageHash XOR assetId. studyOwner AUTO|USER|BUSINESS.
       x-openai-isConsequential: true
       requestBody:
         required: true

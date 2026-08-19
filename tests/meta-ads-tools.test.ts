@@ -1677,14 +1677,20 @@ describe('meta-ads MCP tools', () => {
     expect(graphFetch).not.toHaveBeenCalled()
   })
 
-  it('create ad dryRun previews tracking_specs for pixel + offline dataset without Graph', async () => {
+  it('create ad dryRun previews tracking_specs for pixel + offline dataset with ownership check', async () => {
     const client = createIntegrationClient({
       access_token_enc: encryptSecret('tok'),
       page_access_token_enc: encryptSecret('page-tok'),
       ad_account_id: '555',
       page_id: 'page_99',
     })
-    const graphFetch = vi.fn()
+    const graphFetch = vi.fn(async (url: string) => {
+      if (String(url).includes('/adspixels'))
+        return { data: [{ id: 'px_1', name: 'Pixel' }] }
+      if (String(url).includes('/offline_conversion_data_sets'))
+        return { data: [{ id: 'ds_1', name: 'Offline' }] }
+      return {}
+    })
     const result = await metaCreateAd(
       { client, graphFetch },
       {
@@ -1708,7 +1714,6 @@ describe('meta-ads MCP tools', () => {
     expect((result as any).preview?.body?.ad?.conversion_domain).toBe('example.com')
     expect((result as any).preview?.notes?.some((n: string) => n.includes('fb_pixel=px_1'))).toBe(true)
     expect((result as any).preview?.notes?.some((n: string) => n.includes('dataset=ds_1'))).toBe(true)
-    expect(graphFetch).not.toHaveBeenCalled()
   })
 
   it('create ad execute sends tracking_specs after ownership checks', async () => {
