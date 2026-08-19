@@ -29,6 +29,12 @@ export function resolveMetaGraphVersion(explicit?: string | null) {
   ).replace(/^\/*/, '')
 }
 
+/** Major version number from a Graph version string (e.g. v25.0 → 25). */
+export function parseMetaGraphMajorVersion(apiVersion: string): number {
+  const match = String(apiVersion || '').replace(/^\/*/, '').match(/^v(\d+)/i)
+  return match ? Number.parseInt(match[1]!, 10) : 25
+}
+
 /** Isolated Ad Studies Graph version. Does not bump Ads, CAPI, or WhatsApp Cloud. */
 export const DEFAULT_META_ADS_STUDIES_GRAPH_VERSION = 'v26.0'
 

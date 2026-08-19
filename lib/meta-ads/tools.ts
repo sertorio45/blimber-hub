@@ -1245,7 +1245,7 @@ export const metaListPixelsSchema = tenantContextSchema.extend({
   limit: z.number().int().min(1).max(200).optional().default(50),
 })
 
-/** GET act_{id}/offline_conversion_data_sets — Datasets da ad account do tenant. */
+/** GET act_{id}/adspixels (Graph v20+; legacy offline_conversion_data_sets ≤ v19). */
 export const metaListDatasetsSchema = tenantContextSchema.extend({
   limit: z.number().int().min(1).max(200).optional().default(50),
 })
@@ -6094,7 +6094,7 @@ export const META_TOOL_DESCRIPTIONS: Record<MetaToolName, string> = {
   meta_list_pixels:
     'Lista Pixels da ad account (GET act_{id}/adspixels). Use type=website + pixelId (ou actionType=offsite_conversion).',
   meta_list_datasets:
-    'Lista Datasets da ad account (GET act_{id}/offline_conversion_data_sets). Use type=offline + datasetId (ou actionType=offline_conversion).',
+    'Lista Datasets da ad account (GET act_{id}/adspixels; legacy offline_conversion_data_sets ≤ Graph v19). Use type=offline + datasetId (ou actionType=offline_conversion).',
   meta_update_ad_tracking:
     'Atualiza tracking_specs do Ad (website Pixel / offline Dataset / crm). Merge default; replaceTrackingSpecs=true substitui. dryRun true. confirm+confirmTenantId.',
   meta_list_experiments:

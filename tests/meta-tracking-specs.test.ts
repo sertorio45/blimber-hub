@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { MetaAdsToolError } from '~/lib/meta-ads'
 import {
   compileAdTracking,
+  listAdAccountDatasets,
   mergeTrackingSpecs,
   metaTrackingSpecInputSchema,
 } from '~/lib/meta-ads/tracking-specs'
@@ -88,5 +89,55 @@ describe('meta tracking_specs compile', () => {
       replace: true,
     })
     expect(merged).toEqual([{ 'action.type': 'offline_conversion', dataset: '222' }])
+  })
+})
+
+describe('listAdAccountDatasets (Graph v25 adapter)', () => {
+  it('lists datasets from adspixels on v25', async () => {
+    const graph = vi.fn(async (url: string, init?: { query?: Record<string, unknown> }) => {
+      expect(String(url)).toContain('/act_555/adspixels')
+      expect(String(init?.query?.fields ?? '')).toContain('is_consolidated_container')
+      return {
+        data: [
+          { id: 'px_1', name: 'Site Pixel', is_consolidated_container: true },
+          { id: 'ds_1', name: 'Loja offline' },
+        ],
+      }
+    })
+    const rows = await listAdAccountDatasets({
+      apiVersion: 'v25.0',
+      accessToken: 'tok',
+      adAccountId: '555',
+      graph,
+    })
+    expect(rows).toEqual([
+      { id: 'px_1', name: 'Site Pixel' },
+      { id: 'ds_1', name: 'Loja offline' },
+    ])
+    expect(graph).toHaveBeenCalledTimes(1)
+  })
+
+  it('merges legacy offline_conversion_data_sets on v19', async () => {
+    const graph = vi.fn(async (url: string, init?: { query?: Record<string, unknown> }) => {
+      const fields = String(init?.query?.fields ?? '')
+      if (String(url).includes('/adspixels') && fields.includes('is_consolidated_container')) {
+        return { data: [{ id: 'px_1', name: 'Pixel' }] }
+      }
+      if (String(url).includes('/offline_conversion_data_sets')) {
+        return { data: [{ id: 'legacy_ds', name: 'Legacy offline' }] }
+      }
+      return { data: [] }
+    })
+    const rows = await listAdAccountDatasets({
+      apiVersion: 'v19.0',
+      accessToken: 'tok',
+      adAccountId: '555',
+      graph,
+    })
+    expect(rows).toEqual([
+      { id: 'px_1', name: 'Pixel' },
+      { id: 'legacy_ds', name: 'Legacy offline' },
+    ])
+    expect(graph).toHaveBeenCalledTimes(2)
   })
 })

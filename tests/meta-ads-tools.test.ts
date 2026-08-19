@@ -1685,8 +1685,14 @@ describe('meta-ads MCP tools', () => {
       page_id: 'page_99',
     })
     const graphFetch = vi.fn(async (url: string) => {
-      if (String(url).includes('/adspixels'))
-        return { data: [{ id: 'px_1', name: 'Pixel' }] }
+      if (String(url).includes('/adspixels')) {
+        return {
+          data: [
+            { id: 'px_1', name: 'Pixel' },
+            { id: 'ds_1', name: 'Offline' },
+          ],
+        }
+      }
       if (String(url).includes('/offline_conversion_data_sets'))
         return { data: [{ id: 'ds_1', name: 'Offline' }] }
       return {}
@@ -1724,8 +1730,14 @@ describe('meta-ads MCP tools', () => {
       page_id: 'page_99',
     })
     const graphFetch = vi.fn(async (url: string, init?: any) => {
-      if (String(url).includes('/adspixels'))
-        return { data: [{ id: 'px_1', name: 'Pixel' }] }
+      if (String(url).includes('/adspixels')) {
+        return {
+          data: [
+            { id: 'px_1', name: 'Pixel' },
+            { id: 'ds_1', name: 'Offline' },
+          ],
+        }
+      }
       if (String(url).includes('/offline_conversion_data_sets'))
         return { data: [{ id: 'ds_1', name: 'Offline' }] }
       if (init?.method === 'POST') {
@@ -1803,8 +1815,14 @@ describe('meta-ads MCP tools', () => {
       ad_account_id: '555',
     })
     const graphFetch = vi.fn(async (url: string) => {
-      if (String(url).includes('/adspixels'))
-        return { data: [{ id: 'px_1' }] }
+      if (String(url).includes('/adspixels')) {
+        return {
+          data: [
+            { id: 'px_1' },
+            { id: 'ds_1' },
+          ],
+        }
+      }
       if (String(url).includes('/offline_conversion_data_sets'))
         return { data: [{ id: 'ds_1' }] }
       if (String(url).includes('/ad_1')) {

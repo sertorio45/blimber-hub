@@ -5,7 +5,7 @@
  */
 
 import { z } from 'zod'
-import { actPath, metaGraphUrl } from './graph'
+import { actPath, metaGraphUrl, normalizeMetaAdAccountId, parseMetaGraphMajorVersion } from './graph'
 import { MetaAdsToolError, type MetaGraphFetch } from './types'
 
 export const META_TRACKING_ACTION_TYPES = [
@@ -401,6 +401,17 @@ export async function listAdAccountPixels(
       access_token: ctx.accessToken,
     },
   })
+  return parseGraphDataRows(res)
+}
+
+/** Graph v20+ removed act_{id}/offline_conversion_data_sets; adspixels are consolidated Datasets. */
+const LEGACY_OFFLINE_DATASETS_MAX_MAJOR = 19
+
+function usesLegacyOfflineDatasetsEdge(apiVersion: string): boolean {
+  return parseMetaGraphMajorVersion(apiVersion) <= LEGACY_OFFLINE_DATASETS_MAX_MAJOR
+}
+
+function parseGraphDataRows(res: Record<string, unknown> | null | undefined): Array<{ id: string, name: string | null }> {
   const rows = Array.isArray(res?.data) ? res.data : []
   return rows
     .map((row: Record<string, unknown>) => ({
@@ -410,11 +421,10 @@ export async function listAdAccountPixels(
     .filter((row: { id: string }) => Boolean(row.id))
 }
 
-export async function listAdAccountDatasets(
+async function listLegacyOfflineConversionDataSets(
   ctx: TrackingAssetsContext,
-  options?: { limit?: number },
+  limit: number,
 ): Promise<Array<{ id: string, name: string | null }>> {
-  const limit = Math.min(Math.max(options?.limit ?? 50, 1), 200)
   const res = await ctx.graph(
     metaGraphUrl(ctx.apiVersion, `/${actPath(ctx.adAccountId)}/offline_conversion_data_sets`),
     {
@@ -425,13 +435,75 @@ export async function listAdAccountDatasets(
       },
     },
   )
-  const rows = Array.isArray(res?.data) ? res.data : []
-  return rows
-    .map((row: Record<string, unknown>) => ({
-      id: String(row.id || ''),
-      name: row.name != null ? String(row.name) : null,
-    }))
-    .filter((row: { id: string }) => Boolean(row.id))
+  return parseGraphDataRows(res)
+}
+
+async function listAdAccountPixelDatasets(
+  ctx: TrackingAssetsContext,
+  limit: number,
+): Promise<Array<{ id: string, name: string | null }>> {
+  const res = await ctx.graph(
+    metaGraphUrl(ctx.apiVersion, `/${actPath(ctx.adAccountId)}/adspixels`),
+    {
+      query: {
+        fields: 'id,name,is_consolidated_container',
+        limit,
+        access_token: ctx.accessToken,
+      },
+    },
+  )
+  return parseGraphDataRows(res)
+}
+
+async function resolveDatasetOwnerAdAccountId(
+  ctx: TrackingAssetsContext,
+  datasetId: string,
+): Promise<string | null> {
+  try {
+    const res = await ctx.graph(
+      metaGraphUrl(ctx.apiVersion, `/${datasetId}`),
+      {
+        query: {
+          fields: 'id,owner_ad_account',
+          access_token: ctx.accessToken,
+        },
+      },
+    ) as Record<string, unknown> | null | undefined
+    const owner = res?.owner_ad_account
+    if (!owner)
+      return null
+    if (typeof owner === 'object' && owner !== null && 'id' in owner)
+      return normalizeMetaAdAccountId(String((owner as { id: unknown }).id))
+    return normalizeMetaAdAccountId(String(owner))
+  }
+  catch {
+    return null
+  }
+}
+
+export async function listAdAccountDatasets(
+  ctx: TrackingAssetsContext,
+  options?: { limit?: number },
+): Promise<Array<{ id: string, name: string | null }>> {
+  const limit = Math.min(Math.max(options?.limit ?? 50, 1), 200)
+  const byId = new Map<string, { id: string, name: string | null }>()
+
+  const pixelDatasets = await listAdAccountPixelDatasets(ctx, limit)
+  for (const row of pixelDatasets)
+    byId.set(row.id, row)
+
+  if (usesLegacyOfflineDatasetsEdge(ctx.apiVersion)) {
+    try {
+      const legacy = await listLegacyOfflineConversionDataSets(ctx, limit)
+      for (const row of legacy)
+        byId.set(row.id, row)
+    }
+    catch {
+      // Legacy edge may be unavailable; adspixels remain the v20+ source of truth.
+    }
+  }
+
+  return [...byId.values()]
 }
 
 export async function assertTrackingAssetsOwned(params: {
@@ -477,15 +549,19 @@ export async function assertTrackingSpecsOwned(
   if (datasetIds.length) {
     const datasets = await listAdAccountDatasets(ctx, { limit: 200 })
     const allowed = new Set(datasets.map(d => d.id))
+    const tenantAdAccountId = normalizeMetaAdAccountId(ctx.adAccountId)
     for (const datasetId of datasetIds) {
-      if (!allowed.has(datasetId)) {
-        throw new MetaAdsToolError(
-          'DATASET_TENANT_MISMATCH',
-          'Dataset offline não pertence à ad account do tenant (GET act_*/offline_conversion_data_sets).',
-          403,
-          { datasetId },
-        )
-      }
+      if (allowed.has(datasetId))
+        continue
+      const ownerAdAccountId = await resolveDatasetOwnerAdAccountId(ctx, datasetId)
+      if (ownerAdAccountId === tenantAdAccountId)
+        continue
+      throw new MetaAdsToolError(
+        'DATASET_TENANT_MISMATCH',
+        'Dataset offline não pertence à ad account do tenant (GET act_*/adspixels ou owner_ad_account do Dataset).',
+        403,
+        { datasetId },
+      )
     }
   }
 }

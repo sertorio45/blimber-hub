@@ -2142,7 +2142,7 @@ components:
       required: [images, rules]
       description: >
         Placement Asset Customization — imagens/vídeos diferentes por posicionamento.
-        Gera asset_feed_spec + asset_customization_rules no criativo.
+        Gera asset_feed_spec (ad_formats AUTOMATIC_FORMAT) + asset_customization_rules no criativo.
       properties:
         images:
           type: array

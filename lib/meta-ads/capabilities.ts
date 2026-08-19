@@ -167,7 +167,7 @@ export function getMetaCapabilities(explicitVersion?: string | null): MetaCapabi
       ),
       listPixels: ok('GET act_{adAccountId}/adspixels (meta_list_pixels)'),
       listDatasets: ok(
-        'GET act_{adAccountId}/offline_conversion_data_sets (meta_list_datasets)',
+        'GET act_{adAccountId}/adspixels (meta_list_datasets; legacy offline_conversion_data_sets ≤ v19)',
       ),
       websitePixel: ok(
         'action.type=offsite_conversion + fb_pixel. Pixel da ad account do tenant.',

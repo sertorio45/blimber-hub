@@ -52,10 +52,22 @@ function createIntegrationClient(config: Record<string, unknown>) {
 function graphWithOwnedTracking(extra?: (url: string, init?: any) => any) {
   return vi.fn(async (url: string, init?: any) => {
     if (String(url).includes('/adspixels')) {
+      const fields = String(init?.query?.fields ?? '')
+      if (fields.includes('is_consolidated_container')) {
+        return {
+          data: [
+            { id: 'px_owned', name: 'Pixel Site', is_consolidated_container: true },
+            { id: 'ds_owned', name: 'Loja Física', description: 'POS' },
+          ],
+        }
+      }
       return { data: [{ id: 'px_owned', name: 'Pixel Site', is_unavailable: false }] }
     }
     if (String(url).includes('/offline_conversion_data_sets')) {
       return { data: [{ id: 'ds_owned', name: 'Loja Física', description: 'POS' }] }
+    }
+    if (String(url).includes('/ds_owned') && String(init?.query?.fields ?? '').includes('owner_ad_account')) {
+      return { id: 'ds_owned', owner_ad_account: { id: 'act_555' } }
     }
     if (extra)
       return extra(url, init)
@@ -100,9 +112,11 @@ describe('Meta Ad tracking_specs', () => {
       name: 'Pixel Site',
     }])
     expect(pixels.configuredPixelId).toBe('px_owned')
-    expect(datasets.datasets[0]).toMatchObject({ id: 'ds_owned', name: 'Loja Física' })
+    expect(datasets.datasets).toEqual(expect.arrayContaining([
+      { id: 'ds_owned', name: 'Loja Física' },
+    ]))
     expect(String(graphFetch.mock.calls[0]![0])).toContain('/act_555/adspixels')
-    expect(String(graphFetch.mock.calls[1]![0])).toContain('/act_555/offline_conversion_data_sets')
+    expect(String(graphFetch.mock.calls[1]![0])).toContain('/act_555/adspixels')
     expect(JSON.stringify(pixels)).not.toContain('tok')
   })
 

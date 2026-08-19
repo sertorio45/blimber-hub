@@ -78,7 +78,10 @@ export function buildPlacementAssetFeedSpec(params: {
   linkUrls?: Array<{ websiteUrl: string }>
   callToActionTypes?: string[]
 }): Record<string, unknown> {
-  const spec: Record<string, unknown> = {}
+  const spec: Record<string, unknown> = {
+    // Required by Meta for placement asset customization (multi-aspect in one ad).
+    ad_formats: ['AUTOMATIC_FORMAT'],
+  }
 
   spec.images = params.resolvedImages.map(img => ({
     hash: img.hash,

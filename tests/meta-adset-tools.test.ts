@@ -399,6 +399,7 @@ describe('meta_get_adset / meta_copy_adset', () => {
 
     expect(spec.asset_customization_rules).toHaveLength(2)
     expect(spec.images).toHaveLength(2)
+    expect(spec.ad_formats).toEqual(['AUTOMATIC_FORMAT'])
 
     const client = createIntegrationClient({
       access_token_enc: encryptSecret('tok'),
@@ -434,6 +435,7 @@ describe('meta_get_adset / meta_copy_adset', () => {
 
     const assetFeed = (result as any).preview?.body?.creative?.asset_feed_spec
     expect(assetFeed?.asset_customization_rules).toHaveLength(2)
+    expect(assetFeed?.ad_formats).toEqual(['AUTOMATIC_FORMAT'])
     expect(postCallsSafe(graphFetch)).toBe(0)
   })
 
