@@ -1,5 +1,6 @@
 import { defineEventHandler } from 'h3'
 import {
+  optionalBool,
   optionalInt,
   optionalString,
   queryRecord,
@@ -14,5 +15,7 @@ export default defineEventHandler(async (event) => {
     adAccountId: optionalString(q.adAccountId),
     campaignId: optionalString(q.campaignId),
     limit: optionalInt(q.limit),
+    detailLevel: optionalString(q.detailLevel),
+    includeTargeting: optionalBool(q.includeTargeting),
   })
 })

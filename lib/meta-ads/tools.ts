@@ -107,6 +107,21 @@ import {
   normalizeBulkDeleteIds,
   type BulkDeleteLevel,
 } from './bulk-delete-preview'
+import {
+  assertCampaignOwnedByAdAccount,
+  buildAdsetCreateBodyFromSource,
+  buildCopyAdsetGraphBody,
+  copyAdsetViaGraph,
+  createAdsetFromSource,
+  enrichAdsetWithPlacements,
+  fetchOwnedAdset,
+  isAdsetCopyEndpointUnsupported,
+  META_ADSET_DETAIL_FIELDS,
+  META_ADSET_LIST_FULL_FIELDS,
+  META_ADSET_LIST_SUMMARY_FIELDS,
+  parseAdsetBudgetCents,
+  patchAdsetFields,
+} from './adset-service'
 import { logMetaWriteAudit } from './write-audit'
 import {
   metaCreateCustomAudience,
@@ -190,7 +205,58 @@ export const metaGetCampaignSchema = tenantContextSchema.extend({
 export const metaListAdsetsSchema = tenantContextSchema.extend({
   campaignId: z.string().optional(),
   limit: z.number().int().min(1).max(200).optional().default(50),
+  detailLevel: z
+    .enum(['summary', 'full'])
+    .optional()
+    .default('summary')
+    .describe('summary (default) ou full — inclui targeting, promoted_object, attribution_spec, bid_strategy, start/end.'),
+  includeTargeting: z
+    .boolean()
+    .optional()
+    .describe('Atalho legado: true equivale a detailLevel=full.'),
 })
+
+export const metaGetAdsetSchema = tenantContextSchema.extend({
+  adsetId: z.string().min(1).describe('ID do adset Meta.'),
+})
+
+export const metaCopyAdsetSchema = tenantContextSchema
+  .extend({
+    sourceAdsetId: z.string().min(1).describe('ID do adset origem a duplicar.'),
+    name: z.string().min(1).max(400).describe('Nome do novo adset.'),
+    campaignId: z
+      .string()
+      .optional()
+      .describe('Campanha destino. Omitido = mesma campanha do adset origem.'),
+    status: z
+      .enum(['ACTIVE', 'PAUSED'])
+      .optional()
+      .default('PAUSED')
+      .describe('Default PAUSED por segurança.'),
+    dailyBudget: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe('Substitui daily_budget após cópia (centavos). Omitido = preserva origem.'),
+    lifetimeBudget: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe('Substitui lifetime_budget após cópia (centavos). Omitido = preserva origem.'),
+    ...metaWriteConfirmationFields,
+    ...metaWriteDryRunField,
+  })
+  .superRefine((data, ctx) => {
+    if (data.dailyBudget != null && data.lifetimeBudget != null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Informe dailyBudget OU lifetimeBudget na cópia, não ambos.',
+        path: ['dailyBudget'],
+      })
+    }
+  })
 
 export const metaListAdsSchema = tenantContextSchema.extend({
   campaignId: z.string().optional(),
@@ -1364,6 +1430,8 @@ export type MetaToolName =
   | 'meta_list_campaigns'
   | 'meta_get_campaign'
   | 'meta_list_adsets'
+  | 'meta_get_adset'
+  | 'meta_copy_adset'
   | 'meta_list_ads'
   | 'meta_get_ad'
   | 'meta_get_creative'
@@ -1759,21 +1827,283 @@ export async function metaListAdsets(
     ? `/${input.campaignId}/adsets`
     : `/${actPath(creds.adAccountId)}/adsets`
 
+  const detailFull = input.detailLevel === 'full' || input.includeTargeting === true
+  const fields = detailFull ? META_ADSET_LIST_FULL_FIELDS : META_ADSET_LIST_SUMMARY_FIELDS
+
   const res = await graph(metaGraphUrl(creds.apiVersion, path), {
     query: {
-      fields: 'id,name,status,effective_status,campaign_id,daily_budget,lifetime_budget,optimization_goal,billing_event',
+      fields,
       limit: input.limit,
       access_token: creds.accessToken,
     },
   })
 
+  const adsets = (res?.data || []) as Record<string, unknown>[]
+  const enrichedAdsets = detailFull
+    ? adsets.map(row => enrichAdsetWithPlacements(row))
+    : adsets
+
   return {
     tenantId: input.tenantId,
     adAccountId: creds.adAccountId,
     campaignId: input.campaignId || null,
-    adsets: res?.data || [],
+    detailLevel: detailFull ? 'full' as const : 'summary' as const,
+    adsets: enrichedAdsets,
     paging: res?.paging || null,
   }
+}
+
+export async function metaGetAdset(
+  ctx: MetaToolContext,
+  raw: unknown,
+) {
+  const input = metaGetAdsetSchema.parse(raw)
+  const creds = await withCreds(ctx, input.tenantId, input.adAccountId)
+  const graph = fetchGraph(ctx)
+
+  const adset = await fetchOwnedAdset(graph, {
+    apiVersion: creds.apiVersion,
+    accessToken: creds.accessToken,
+    adsetId: input.adsetId,
+    tenantAdAccountId: creds.adAccountId,
+    fields: META_ADSET_DETAIL_FIELDS,
+  })
+
+  return {
+    tenantId: input.tenantId,
+    adAccountId: creds.adAccountId,
+    adset: enrichAdsetWithPlacements(adset),
+  }
+}
+
+export async function metaCopyAdset(
+  ctx: MetaToolContext,
+  raw: unknown,
+) {
+  const input = metaCopyAdsetSchema.parse(raw)
+  assertWriteConfirmation(input)
+
+  if (input.dailyBudget != null || input.lifetimeBudget != null) {
+    assertCampaignBudgetWithinLimit({
+      dailyBudgetCents: input.dailyBudget,
+      lifetimeBudgetCents: input.lifetimeBudget,
+    })
+  }
+
+  const dryRun = resolveDryRun(input.dryRun, true)
+  const status = input.status ?? 'PAUSED'
+  const creds = await withCreds(ctx, input.tenantId, input.adAccountId)
+  const graph = fetchGraph(ctx)
+
+  const sourceAdset = await fetchOwnedAdset(graph, {
+    apiVersion: creds.apiVersion,
+    accessToken: creds.accessToken,
+    adsetId: input.sourceAdsetId,
+    tenantAdAccountId: creds.adAccountId,
+    fields: META_ADSET_DETAIL_FIELDS,
+  })
+
+  const sourceCampaignId = sourceAdset.campaign_id != null
+    ? String(sourceAdset.campaign_id)
+    : null
+  const targetCampaignId = input.campaignId ?? sourceCampaignId
+
+  if (!targetCampaignId) {
+    throw new MetaAdsToolError(
+      'CAMPAIGN_ID_REQUIRED',
+      'Não foi possível determinar campaign_id (informe campaignId ou use adset com campanha válida).',
+      400,
+    )
+  }
+
+  if (input.campaignId) {
+    await assertCampaignOwnedByAdAccount(graph, {
+      apiVersion: creds.apiVersion,
+      accessToken: creds.accessToken,
+      campaignId: input.campaignId,
+      tenantAdAccountId: creds.adAccountId,
+    })
+  }
+
+  const copyBody = buildCopyAdsetGraphBody({
+    status,
+    campaignId: input.campaignId,
+    deepCopy: false,
+  })
+
+  const fallbackCreateBody = buildAdsetCreateBodyFromSource({
+    source: sourceAdset,
+    name: input.name,
+    campaignId: targetCampaignId,
+    status,
+    dailyBudget: input.dailyBudget,
+    lifetimeBudget: input.lifetimeBudget,
+  })
+
+  const sourceDaily = parseAdsetBudgetCents(sourceAdset.daily_budget)
+  const sourceLifetime = parseAdsetBudgetCents(sourceAdset.lifetime_budget)
+  const afterCopyPatch: Record<string, unknown> = { name: input.name }
+  if (input.dailyBudget != null)
+    afterCopyPatch.daily_budget = input.dailyBudget
+  if (input.lifetimeBudget != null)
+    afterCopyPatch.lifetime_budget = input.lifetimeBudget
+
+  const notes = [
+    `Copiar adset ${input.sourceAdsetId} → "${input.name}"`,
+    `status: ${status}`,
+    `campaign_id: ${targetCampaignId}${input.campaignId ? ' (override)' : ' (origem)'}`,
+    input.dailyBudget != null
+      ? `daily_budget override: ${input.dailyBudget} centavos`
+      : sourceDaily != null
+        ? `daily_budget preservado: ${sourceDaily} centavos`
+        : 'daily_budget: —',
+    input.lifetimeBudget != null
+      ? `lifetime_budget override: ${input.lifetimeBudget} centavos`
+      : sourceLifetime != null
+        ? `lifetime_budget preservado: ${sourceLifetime} centavos`
+        : 'lifetime_budget: —',
+    'Prioridade: POST /{adsetId}/copies · fallback: sanitize + POST /act_{id}/adsets',
+    dryRun
+      ? 'dryRun=true (default): nenhuma mutação enviada à Graph API.'
+      : 'Mutação será enviada à Graph.',
+  ]
+
+  const run = await withDryRun(
+    dryRun,
+    {
+      method: 'POST',
+      path: `/${input.sourceAdsetId}/copies`,
+      body: copyBody,
+      notes,
+    },
+    async () => {
+      let copiedAdsetId: string
+      let copyMethod: 'copies_endpoint' | 'create_fallback' = 'copies_endpoint'
+
+      try {
+        copiedAdsetId = await copyAdsetViaGraph(graph, {
+          apiVersion: creds.apiVersion,
+          accessToken: creds.accessToken,
+          sourceAdsetId: input.sourceAdsetId,
+          copyBody,
+        })
+      }
+      catch (err) {
+        if (!isAdsetCopyEndpointUnsupported(err))
+          throw err
+
+        copyMethod = 'create_fallback'
+        copiedAdsetId = await createAdsetFromSource(graph, {
+          apiVersion: creds.apiVersion,
+          accessToken: creds.accessToken,
+          adAccountId: creds.adAccountId,
+          createBody: fallbackCreateBody,
+        })
+      }
+
+      if (copyMethod === 'copies_endpoint') {
+        const patchBody: Record<string, unknown> = { ...afterCopyPatch }
+        if (input.dailyBudget == null && input.lifetimeBudget == null) {
+          delete patchBody.daily_budget
+          delete patchBody.lifetime_budget
+        }
+        await patchAdsetFields(graph, {
+          apiVersion: creds.apiVersion,
+          accessToken: creds.accessToken,
+          adsetId: copiedAdsetId,
+          body: patchBody,
+        })
+      }
+
+      const copiedAdset = await fetchOwnedAdset(graph, {
+        apiVersion: creds.apiVersion,
+        accessToken: creds.accessToken,
+        adsetId: copiedAdsetId,
+        tenantAdAccountId: creds.adAccountId,
+        fields: META_ADSET_LIST_FULL_FIELDS,
+      })
+
+      return {
+        tenantId: input.tenantId,
+        adAccountId: creds.adAccountId,
+        sourceAdsetId: input.sourceAdsetId,
+        adsetId: copiedAdsetId,
+        name: input.name,
+        status,
+        campaignId: targetCampaignId,
+        copyMethod,
+        adset: enrichAdsetWithPlacements(copiedAdset),
+        success: true as const,
+        dryRun: false as const,
+        warning: copyMethod === 'create_fallback'
+          ? 'Cópia via fallback (create adset). Confira targeting e ads no Ads Manager.'
+          : 'Adset duplicado na Meta Graph API. Confira no Ads Manager.',
+      }
+    },
+  )
+
+  if (run.dryRun) {
+    await logMetaWriteAudit({
+      tenantId: input.tenantId,
+      action: 'meta.gpt.adset.copy.preview',
+      entityType: 'meta_adset',
+      entityId: input.sourceAdsetId,
+      dryRun: true,
+      before: {
+        sourceAdsetId: input.sourceAdsetId,
+        sourceCampaignId,
+        sourceDailyBudget: sourceDaily,
+        sourceLifetimeBudget: sourceLifetime,
+      },
+      after: {
+        name: input.name,
+        status,
+        campaignId: targetCampaignId,
+        dailyBudget: input.dailyBudget ?? sourceDaily,
+        lifetimeBudget: input.lifetimeBudget ?? sourceLifetime,
+        preview: run.preview,
+        fallbackCreateBody,
+      },
+    })
+
+    return {
+      tenantId: input.tenantId,
+      adAccountId: creds.adAccountId,
+      sourceAdsetId: input.sourceAdsetId,
+      adsetId: null,
+      name: input.name,
+      status,
+      campaignId: targetCampaignId,
+      copyMethod: null,
+      adset: enrichAdsetWithPlacements(sourceAdset),
+      success: true as const,
+      dryRun: true as const,
+      preview: run.preview,
+      warning: 'Dry-run: nenhum adset criado. Reenvie com dryRun: false para executar.',
+    }
+  }
+
+  const result = run.result!
+  await logMetaWriteAudit({
+    tenantId: input.tenantId,
+    action: 'meta.gpt.adset.copy',
+    entityType: 'meta_adset',
+    entityId: result.adsetId,
+    dryRun: false,
+    before: {
+      sourceAdsetId: input.sourceAdsetId,
+      sourceCampaignId,
+    },
+    after: {
+      adsetId: result.adsetId,
+      name: input.name,
+      status,
+      campaignId: targetCampaignId,
+      copyMethod: result.copyMethod,
+    },
+  })
+
+  return result
 }
 
 export async function metaListAds(
@@ -1810,7 +2140,8 @@ export async function metaListAds(
   }
 }
 
-const META_CREATIVE_FIELDS = 'id,name,object_story_spec,asset_feed_spec,degrees_of_freedom_spec,creative_asset_groups_spec,object_story_id,effective_object_story_id,instagram_actor_id,thumbnail_url,image_url,video_id,url_tags'
+/** Standard AdCreative fields — creative_asset_groups_spec omitted (Flexible Ad: meta_get_flexible_ad_structure). */
+const META_CREATIVE_FIELDS = 'id,name,object_story_spec,asset_feed_spec,degrees_of_freedom_spec,object_story_id,effective_object_story_id,instagram_actor_id,thumbnail_url,image_url,video_id,url_tags'
 
 const META_AD_WITH_CREATIVE_FIELDS
   = `id,name,status,configured_status,effective_status,creative{${META_CREATIVE_FIELDS}},tracking_specs,conversion_domain,issues_info,recommendations,ad_review_feedback,adset_id,campaign_id`
@@ -5571,6 +5902,8 @@ export const META_TOOL_HANDLERS: Record<MetaToolName, ToolHandler> = {
   meta_list_campaigns: metaListCampaigns,
   meta_get_campaign: metaGetCampaign,
   meta_list_adsets: metaListAdsets,
+  meta_get_adset: metaGetAdset,
+  meta_copy_adset: metaCopyAdset,
   meta_list_ads: metaListAds,
   meta_get_ad: metaGetAd,
   meta_get_creative: metaGetCreative,
@@ -5631,6 +5964,8 @@ export const META_TOOL_SCHEMAS: Record<MetaToolName, z.ZodTypeAny> = {
   meta_list_campaigns: metaListCampaignsSchema,
   meta_get_campaign: metaGetCampaignSchema,
   meta_list_adsets: metaListAdsetsSchema,
+  meta_get_adset: metaGetAdsetSchema,
+  meta_copy_adset: metaCopyAdsetSchema,
   meta_list_ads: metaListAdsSchema,
   meta_get_ad: metaGetAdSchema,
   meta_get_creative: metaGetCreativeSchema,
@@ -5689,13 +6024,17 @@ export const META_TOOL_DESCRIPTIONS: Record<MetaToolName, string> = {
   meta_get_campaign:
     'Obtém detalhe de uma campanha Meta. Valida ownership da ad account.',
   meta_list_adsets:
-    'Lista conjuntos de anúncios (adsets) da conta ou de uma campanha.',
+    'Lista conjuntos de anúncios (adsets) da conta ou campanha. detailLevel=full inclui targeting, promoted_object, attribution_spec, bid_strategy, start/end (sem N+1).',
+  meta_get_adset:
+    'Obtém detalhe completo de um adset Meta (targeting, placements, budgets, optimization, attribution). Valida ownership da ad account.',
+  meta_copy_adset:
+    'Duplica adset via POST /{adsetId}/copies (fallback: sanitize + create). Default PAUSED e dryRun=true. confirm+confirmTenantId obrigatórios.',
   meta_list_ads:
     'Lista anúncios Meta (conta, campanha ou adset).',
   meta_get_ad:
-    'Obtém detalhe de um anúncio Meta com creative expandido (object_story_spec, asset_feed_spec, degrees_of_freedom_spec, creative_asset_groups_spec, tracking, issues, recommendations).',
+    'Obtém detalhe de um anúncio Meta com creative expandido (object_story_spec, asset_feed_spec, degrees_of_freedom_spec, tracking, issues). Flexible Ad: meta_get_flexible_ad_structure.',
   meta_get_creative:
-    'Lê um AdCreative por ID. Retorna todos os campos criativos (object_story_spec, asset_feed_spec, degrees_of_freedom_spec, media, url_tags).',
+    'Lê um AdCreative por ID (object_story_spec, asset_feed_spec, degrees_of_freedom_spec, media, url_tags). Flexible Ad: meta_get_flexible_ad_structure.',
   meta_list_creatives:
     'Lista AdCreatives da ad account (id, name, object_story_spec resumido, thumbnail_url, status). Paginação via cursor.',
   meta_get_insights:

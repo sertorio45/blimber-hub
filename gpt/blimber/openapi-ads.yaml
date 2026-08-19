@@ -437,6 +437,18 @@ paths:
             maximum: 200
             default: 50
           description: Máximo de conjuntos de anúncios (1–200).
+        - name: detailLevel
+          in: query
+          schema:
+            type: string
+            enum: [summary, full]
+            default: summary
+          description: summary (default) ou full — inclui targeting, promoted_object, attribution_spec, bid_strategy, start/end.
+        - name: includeTargeting
+          in: query
+          schema:
+            type: boolean
+          description: Atalho legado — true equivale a detailLevel=full.
       responses:
         "200":
           description: Conjuntos de anúncios
@@ -465,6 +477,74 @@ paths:
       responses:
         "200":
           description: Adset criado ou preview dry-run
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkToolResponse"
+        "401":
+          description: Não autorizado — API key ausente ou inválida
+        "400":
+          description: Requisição inválida — erro de validação ou da ferramenta
+
+  /api/gpt/meta/adsets/{adsetId}:
+    get:
+      operationId: getAdset
+      summary: Obter adset Meta
+      description: >
+        Detalhe completo do adset (targeting, placements, budgets, optimization,
+        attribution). Valida ownership da ad account do tenant.
+      parameters:
+        - name: tenantId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: adAccountId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: adsetId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Adset
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkToolResponse"
+        "401":
+          description: Não autorizado — API key ausente ou inválida
+        "400":
+          description: Requisição inválida — erro de validação ou da ferramenta
+
+  /api/gpt/meta/adsets/{adsetId}/copy:
+    post:
+      operationId: copyAdset
+      summary: Duplicar adset Meta
+      description: >
+        Duplica adset via POST /{adsetId}/copies (fallback sanitize+create).
+        Default PAUSED e dryRun=true. confirm + confirmTenantId obrigatórios na execução.
+      x-openai-isConsequential: true
+      parameters:
+        - name: adsetId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CopyAdsetBody"
+      responses:
+        "200":
+          description: Adset duplicado ou preview dry-run
           content:
             application/json:
               schema:
@@ -1416,6 +1496,53 @@ components:
           type: boolean
           description: >
             Se true (default), retorna preview sem POST. Envie false para criar.
+    CopyAdsetBody:
+      type: object
+      required:
+        - tenantId
+        - name
+        - confirmTenantId
+        - confirm
+      properties:
+        tenantId:
+          type: string
+          format: uuid
+        adAccountId:
+          type: string
+          description: Conta sem act_. Usa a da integração se omitido.
+        name:
+          type: string
+          minLength: 1
+          maxLength: 400
+          description: Nome do novo adset.
+        campaignId:
+          type: string
+          description: Campanha destino. Omitido = mesma campanha do adset origem.
+        status:
+          type: string
+          enum: [ACTIVE, PAUSED]
+          default: PAUSED
+          description: Default PAUSED por segurança.
+        dailyBudget:
+          type: integer
+          minimum: 1
+          description: Override daily_budget em centavos após cópia.
+        lifetimeBudget:
+          type: integer
+          minimum: 1
+          description: Override lifetime_budget em centavos após cópia.
+        confirmTenantId:
+          type: string
+          format: uuid
+          description: Deve ser idêntico a tenantId.
+        confirm:
+          type: boolean
+          enum: [true]
+          description: Deve ser true para aplicar a mutação.
+        dryRun:
+          type: boolean
+          description: >
+            Se true (default), retorna preview sem POST. Envie false para duplicar.
     CreateAdBody:
       type: object
       required:
@@ -2096,7 +2223,12 @@ components:
             - meta_list_campaigns
             - meta_get_campaign
             - meta_list_adsets
+            - meta_get_adset
+            - meta_copy_adset
             - meta_list_ads
+            - meta_get_ad
+            - meta_get_creative
+            - meta_list_creatives
             - meta_get_insights
             - meta_search_interests
             - meta_search_geolocations

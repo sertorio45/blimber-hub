@@ -47,6 +47,12 @@ const EXPECTED_ROUTE_FILES: Record<string, string[]> = {
     'server/api/gpt/meta/adsets.get.ts',
     'server/api/gpt/meta/adsets.post.ts',
   ],
+  '/api/gpt/meta/adsets/{adsetId}': [
+    'server/api/gpt/meta/adsets/[adsetId].get.ts',
+  ],
+  '/api/gpt/meta/adsets/{adsetId}/copy': [
+    'server/api/gpt/meta/adsets/[adsetId]/copy.post.ts',
+  ],
   '/api/gpt/meta/adsets/{adsetId}/status': [
     'server/api/gpt/meta/adsets/[adsetId]/status.post.ts',
   ],

@@ -37,6 +37,8 @@ export {
   metaGetCreative,
   metaListAds,
   metaListAdsets,
+  metaGetAdset,
+  metaCopyAdset,
   metaListCreatives,
   metaListCampaigns,
   metaListCustomAudiences,
@@ -303,3 +305,15 @@ export {
   normalizeBulkDeleteIds,
   type BulkDeleteLevel,
 } from './bulk-delete-preview'
+export {
+  META_ADSET_DETAIL_FIELDS,
+  META_ADSET_LIST_FULL_FIELDS,
+  META_ADSET_LIST_SUMMARY_FIELDS,
+  buildAdsetCreateBodyFromSource,
+  buildCopyAdsetGraphBody,
+  enrichAdsetWithPlacements,
+  extractPlacementsFromTargeting,
+  fetchOwnedAdset,
+  isAdsetCopyEndpointUnsupported,
+  sanitizeAdsetForCreate,
+} from './adset-service'
