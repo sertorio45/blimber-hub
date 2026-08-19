@@ -3541,6 +3541,7 @@ type LinkCreativeSnapshot = {
   creativeId: string | null
   creativeName: string | null
   pageId: string | null
+  instagramActorId: string | null
   message: string | null
   headline: string | null
   description: string | null
@@ -3550,15 +3551,52 @@ type LinkCreativeSnapshot = {
   imageUrl: string | null
 }
 
+function trimInstagramActorId(value: unknown): string | null {
+  if (value == null)
+    return null
+  const trimmed = String(value).trim()
+  return trimmed || null
+}
+
+/** Prefer creative instagram_actor_id; fallback to integration instagram_business_account_id. */
+export function resolveInstagramActorIdForCreativeUpdate(params: {
+  creativeInstagramActorId?: string | null
+  integrationInstagramBusinessAccountId?: string | null
+}): string | null {
+  return trimInstagramActorId(params.creativeInstagramActorId)
+    ?? trimInstagramActorId(params.integrationInstagramBusinessAccountId)
+}
+
+function applyInstagramActorIdToCreativeBody(
+  body: Record<string, unknown>,
+  instagramActorId: string | null,
+): Record<string, unknown> {
+  if (!instagramActorId)
+    return body
+  const spec = body.object_story_spec
+  if (!spec || typeof spec !== 'object')
+    return body
+  return {
+    ...body,
+    object_story_spec: {
+      ...(spec as Record<string, unknown>),
+      instagram_actor_id: instagramActorId,
+    },
+  }
+}
+
 function extractLinkCreativeSnapshot(ad: any): LinkCreativeSnapshot {
   const creative = ad?.creative || {}
   const spec = creative?.object_story_spec || {}
   const linkData = spec?.link_data || {}
   const cta = linkData?.call_to_action
+  const instagramActorId = trimInstagramActorId(spec?.instagram_actor_id)
+    ?? trimInstagramActorId(creative?.instagram_actor_id)
   return {
     creativeId: creative?.id ? String(creative.id) : null,
     creativeName: creative?.name ? String(creative.name) : null,
     pageId: spec?.page_id ? String(spec.page_id) : null,
+    instagramActorId,
     message: linkData?.message != null ? String(linkData.message) : null,
     headline: linkData?.name != null ? String(linkData.name) : null,
     description: linkData?.description != null ? String(linkData.description) : null,
@@ -3577,7 +3615,7 @@ async function fetchOwnedAdWithCreative(
   const graph = fetchGraph(ctx)
   const ad = await graph(metaGraphUrl(creds.apiVersion, `/${params.adId}`), {
     query: {
-      fields: 'id,name,status,effective_status,account_id,campaign_id,adset_id,creative{id,name,object_story_spec,thumbnail_url}',
+      fields: 'id,name,status,effective_status,account_id,campaign_id,adset_id,creative{id,name,instagram_actor_id,object_story_spec,thumbnail_url}',
       access_token: creds.accessToken,
     },
   })
@@ -4137,6 +4175,10 @@ export async function metaUpdateAdMedia(
   const callToAction = before.callToAction || 'LEARN_MORE'
   const creativeName = input.creativeName
     || `${ad?.name || input.adId} Creative media ${Date.now()}`
+  const instagramActorId = resolveInstagramActorIdForCreativeUpdate({
+    creativeInstagramActorId: before.instagramActorId,
+    integrationInstagramBusinessAccountId: tokenCtx.publicConfig.instagram_business_account_id,
+  })
 
   const updatePlacementAssets = input.placementAssets as PlacementAssetsInput | undefined
   let creativeBody: Record<string, unknown>
@@ -4231,11 +4273,14 @@ export async function metaUpdateAdMedia(
     })
   }
 
+  creativeBody = applyInstagramActorIdToCreativeBody(creativeBody, instagramActorId)
+
   const afterMedia = updatePlacementAssets
-    ? { ...before, pageId, creativeType, placementAssets: true }
+    ? { ...before, pageId, instagramActorId, creativeType, placementAssets: true }
     : {
         ...before,
         pageId,
+        instagramActorId,
         imageHash: creativeType === 'IMAGE' ? (input.imageHash ?? null) : before.imageHash,
         imageUrl: creativeType === 'IMAGE' ? (input.imageUrl ?? null) : before.imageUrl,
         videoId: creativeType === 'VIDEO' ? (input.videoId ?? null) : null,
