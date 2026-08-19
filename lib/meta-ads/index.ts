@@ -33,8 +33,11 @@ export {
   metaGetCampaign,
   metaGetInsights,
   metaListAdAccounts,
+  metaGetAd,
+  metaGetCreative,
   metaListAds,
   metaListAdsets,
+  metaListCreatives,
   metaListCampaigns,
   metaListCustomAudiences,
   metaListIntegrations,
@@ -125,7 +128,13 @@ export {
   getVideoStatus,
   uploadImage,
   uploadVideo,
+  type UploadImageResult,
 } from './media-service'
+export {
+  normalizeImageForMeta,
+  shouldNormalizeForMeta,
+  type NormalizedImageResult,
+} from './normalize-image'
 export {
   downloadLibraryImageBytes,
   loadLibraryImageAsset,

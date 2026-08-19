@@ -3089,4 +3089,89 @@ describe('meta-ads MCP tools', () => {
       { tenantId: 'tenant-missing' },
     )).rejects.toMatchObject({ code: 'META_NOT_CONNECTED' })
   })
+
+  it('meta_get_ad returns ad with expanded creative fields', async () => {
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret('tok'),
+      ad_account_id: '123456789',
+      api_version: 'v25.0',
+    })
+    const mockAd = {
+      id: 'ad_1',
+      name: 'Meu Anúncio',
+      status: 'ACTIVE',
+      configured_status: 'ACTIVE',
+      effective_status: 'ACTIVE',
+      creative: {
+        id: 'cr_1',
+        name: 'Creative 1',
+        object_story_spec: { page_id: '111', link_data: { link: 'https://example.com' } },
+        thumbnail_url: 'https://img.example.com/thumb.jpg',
+      },
+      tracking_specs: [{ 'action.type': ['offsite_conversion'], fb_pixel: ['px1'] }],
+      campaign_id: 'cmp_1',
+      adset_id: 'adset_1',
+    }
+    const graphFetch = vi.fn(async () => mockAd)
+
+    const { metaGetAd } = await import('~/lib/meta-ads')
+    const result = await metaGetAd({ client, graphFetch }, { tenantId: 'tenant-1', adId: 'ad_1' })
+
+    expect(result.ad).toEqual(mockAd)
+    expect(result.ad.creative.object_story_spec).toBeDefined()
+    const [url] = graphFetch.mock.calls[0]!
+    expect(String(url)).toContain('/ad_1')
+    expect(String(url)).toContain('v25.0')
+    expect(JSON.stringify(result)).not.toContain('tok')
+  })
+
+  it('meta_get_creative returns standalone creative by ID', async () => {
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret('tok'),
+      ad_account_id: '123456789',
+      api_version: 'v25.0',
+    })
+    const mockCreative = {
+      id: 'cr_1',
+      name: 'Creative 1',
+      object_story_spec: { page_id: '111', link_data: { link: 'https://example.com' } },
+      asset_feed_spec: null,
+      degrees_of_freedom_spec: null,
+      thumbnail_url: 'https://img.example.com/thumb.jpg',
+      image_url: 'https://img.example.com/full.jpg',
+    }
+    const graphFetch = vi.fn(async () => mockCreative)
+
+    const { metaGetCreative } = await import('~/lib/meta-ads')
+    const result = await metaGetCreative({ client, graphFetch }, { tenantId: 'tenant-1', creativeId: 'cr_1' })
+
+    expect(result.creative).toEqual(mockCreative)
+    const [url] = graphFetch.mock.calls[0]!
+    expect(String(url)).toContain('/cr_1')
+    expect(JSON.stringify(result)).not.toContain('tok')
+  })
+
+  it('meta_list_creatives lists ad account creatives with pagination', async () => {
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret('tok'),
+      ad_account_id: '123456789',
+      api_version: 'v25.0',
+    })
+    const graphFetch = vi.fn(async () => ({
+      data: [
+        { id: 'cr_1', name: 'Creative A', thumbnail_url: 'https://img.example.com/a.jpg', status: 'ACTIVE' },
+        { id: 'cr_2', name: 'Creative B', thumbnail_url: 'https://img.example.com/b.jpg', status: 'ACTIVE' },
+      ],
+      paging: { cursors: { after: 'abc123' }, next: 'https://graph.facebook.com/...' },
+    }))
+
+    const { metaListCreatives } = await import('~/lib/meta-ads')
+    const result = await metaListCreatives({ client, graphFetch }, { tenantId: 'tenant-1', limit: 10 })
+
+    expect(result.creatives).toHaveLength(2)
+    expect(result.paging?.cursors?.after).toBe('abc123')
+    const [url] = graphFetch.mock.calls[0]!
+    expect(String(url)).toContain('/act_123456789/adcreatives')
+    expect(JSON.stringify(result)).not.toContain('tok')
+  })
 })

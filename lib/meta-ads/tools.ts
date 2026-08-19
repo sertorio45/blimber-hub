@@ -73,6 +73,7 @@ import {
   postAdStudyWithOwnerFallback,
   resolveStudyCreateTargets,
   stopExperiment,
+  variationHasMediaOverride,
   type ExperimentVariationInput,
   type StudyOwnerStrategy,
 } from './experiment-service'
@@ -175,6 +176,19 @@ export const metaListAdsSchema = tenantContextSchema.extend({
   adsetId: z.string().optional(),
   activeOnly: z.boolean().optional().default(false),
   limit: z.number().int().min(1).max(200).optional().default(50),
+})
+
+export const metaGetAdSchema = tenantContextSchema.extend({
+  adId: z.string().min(1).describe('ID do anúncio Meta.'),
+})
+
+export const metaGetCreativeSchema = tenantContextSchema.extend({
+  creativeId: z.string().min(1).describe('ID do AdCreative Meta.'),
+})
+
+export const metaListCreativesSchema = tenantContextSchema.extend({
+  limit: z.number().int().min(1).max(200).optional().default(50),
+  after: z.string().optional().describe('Cursor de paginação (paging.cursors.after).'),
 })
 
 export const metaGetInsightsSchema = tenantContextSchema.extend({
@@ -592,13 +606,18 @@ export const metaCreateAdSchema = tenantContextSchema
       .max(1000)
       .optional()
       .describe('Destinos de mensagem (IMAGE|VIDEO|CAROUSEL): page_welcome_message.'),
-    imageUrl: z.string().url().optional().describe('URL HTTPS imagem (upload ou picture). XOR imageHash|assetId.'),
-    imageHash: z.string().min(1).max(128).optional().describe('image_hash existente. XOR imageUrl|assetId.'),
+    imageUrl: z.string().url().optional().describe('URL HTTPS imagem (upload ou picture). XOR imageHash|assetId|sourceBase64.'),
+    imageHash: z.string().min(1).max(128).optional().describe('image_hash existente. XOR imageUrl|assetId|sourceBase64.'),
     assetId: z
       .string()
       .uuid()
       .optional()
-      .describe('UUID do media_asset da Biblioteca (tenant). Download interno → imageHash. XOR imageUrl|imageHash. Só IMAGE.'),
+      .describe('UUID do media_asset da Biblioteca (tenant). Download interno → imageHash. XOR imageUrl|imageHash|sourceBase64. Só IMAGE.'),
+    sourceBase64: z
+      .string()
+      .min(1)
+      .optional()
+      .describe('Imagem base64 (PNG/JPEG/WebP). Normalizada → imageHash. XOR imageUrl|imageHash|assetId. Só IMAGE.'),
     videoId: z.string().min(1).optional().describe('video_id existente (VIDEO). XOR videoUrl.'),
     videoUrl: z.string().url().optional().describe('HTTPS para upload Advideo (não dryRun). XOR videoId.'),
     childAttachments: z
@@ -1068,30 +1087,35 @@ export const metaGetCapabilitiesSchema = tenantContextSchema.pick({ tenantId: tr
 
 export const metaUploadImageSchema = tenantContextSchema
   .extend({
-    imageUrl: z.string().url().optional(),
-    imageHash: z.string().min(1).max(128).optional(),
+    imageUrl: z.string().url().optional().describe('URL HTTPS da imagem (SSRF-checked). XOR imageHash|assetId|sourceBase64.'),
+    imageHash: z.string().min(1).max(128).optional().describe('image_hash existente — reutiliza sem upload.'),
     assetId: z
       .string()
       .uuid()
       .optional()
-      .describe('UUID do media_asset da Biblioteca (tenant). XOR imageUrl|imageHash. Só imagem JPG/PNG/GIF.'),
+      .describe('UUID do media_asset da Biblioteca (tenant). XOR imageUrl|imageHash|sourceBase64. Aceita JPG/PNG/WebP/GIF.'),
+    sourceBase64: z
+      .string()
+      .min(1)
+      .optional()
+      .describe('Imagem codificada em base64 (PNG/JPEG/WebP). XOR imageUrl|imageHash|assetId. Normalizada para Meta antes do upload.'),
     name: z.string().min(1).max(255).optional(),
     ...metaWriteConfirmationFields,
     ...metaWriteDryRunField,
   })
   .superRefine((data, ctx) => {
-    const sources = [data.imageUrl, data.imageHash, data.assetId].filter(Boolean).length
+    const sources = [data.imageUrl, data.imageHash, data.assetId, data.sourceBase64].filter(Boolean).length
     if (sources === 0) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'Informe imageUrl, imageHash ou assetId (biblioteca).',
+        message: 'Informe imageUrl, imageHash, assetId (biblioteca) ou sourceBase64.',
         path: ['assetId'],
       })
     }
     if (sources > 1) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        message: 'Informe imageUrl OU imageHash OU assetId, não combine.',
+        message: 'Informe imageUrl OU imageHash OU assetId OU sourceBase64, não combine.',
         path: ['assetId'],
       })
     }
@@ -1164,12 +1188,32 @@ export const metaListProductSetsSchema = tenantContextSchema.extend({
   limit: z.number().int().min(1).max(200).optional().default(50),
 })
 
+const experimentVariationChildAttachmentSchema = z.object({
+  imageHash: z.string().optional(),
+  assetId: z.string().optional(),
+  videoId: z.string().optional(),
+  name: z.string().optional(),
+  description: z.string().optional(),
+  link: z.string().optional(),
+})
+
 const experimentVariationSchema = z.object({
   name: z.string().min(1).max(200).optional().describe('Nome da célula / sufixo do anúncio copiado.'),
+  creativeType: z.enum(['IMAGE', 'VIDEO', 'CAROUSEL']).optional()
+    .describe('Tipo de criativo da variação. Default = mesmo do base.'),
   message: z.string().optional(),
   headline: z.string().optional(),
   description: z.string().optional(),
-  linkUrl: z.string().optional(),
+  callToAction: z.string().optional(),
+  welcomeMessage: z.string().optional(),
+  imageHash: z.string().optional().describe('image_hash existente na ad account.'),
+  imageUrl: z.string().optional().describe('HTTPS URL — upload automático se sem imageHash.'),
+  assetId: z.string().optional().describe('Asset da Biblioteca Meta — download + upload como imagem.'),
+  videoId: z.string().optional().describe('video_id existente na ad account.'),
+  videoUrl: z.string().optional().describe('HTTPS URL — upload automático via advideos.'),
+  videoAssetId: z.string().optional().describe('Asset de vídeo da Biblioteca (não suportado — erro claro).'),
+  childAttachments: z.array(experimentVariationChildAttachmentSchema).min(2).max(10).optional()
+    .describe('Cards do carousel. 2–10 cards, cada um com imageHash/assetId/videoId + link.'),
 })
 
 export const metaListExperimentsSchema = tenantContextSchema.extend({
@@ -1294,6 +1338,9 @@ export type MetaToolName =
   | 'meta_get_campaign'
   | 'meta_list_adsets'
   | 'meta_list_ads'
+  | 'meta_get_ad'
+  | 'meta_get_creative'
+  | 'meta_list_creatives'
   | 'meta_get_insights'
   | 'meta_search_interests'
   | 'meta_search_geolocations'
@@ -1725,6 +1772,78 @@ export async function metaListAds(
     campaignId: input.campaignId || null,
     adsetId: input.adsetId || null,
     ads: res?.data || [],
+    paging: res?.paging || null,
+  }
+}
+
+const META_CREATIVE_FIELDS = 'id,name,object_story_spec,asset_feed_spec,degrees_of_freedom_spec,creative_asset_groups_spec,object_story_id,effective_object_story_id,instagram_actor_id,thumbnail_url,image_url,video_id,url_tags'
+
+const META_AD_WITH_CREATIVE_FIELDS
+  = `id,name,status,configured_status,effective_status,creative{${META_CREATIVE_FIELDS}},tracking_specs,conversion_domain,issues_info,recommendations,ad_review_feedback,adset_id,campaign_id`
+
+export async function metaGetAd(
+  ctx: MetaToolContext,
+  raw: unknown,
+) {
+  const input = metaGetAdSchema.parse(raw)
+  const creds = await withCreds(ctx, input.tenantId, input.adAccountId)
+  const graph = fetchGraph(ctx)
+  const ad = await graph(metaGraphUrl(creds.apiVersion, `/${input.adId}`), {
+    query: {
+      fields: META_AD_WITH_CREATIVE_FIELDS,
+      access_token: creds.accessToken,
+    },
+  })
+
+  return {
+    tenantId: input.tenantId,
+    adAccountId: creds.adAccountId,
+    ad,
+  }
+}
+
+export async function metaGetCreative(
+  ctx: MetaToolContext,
+  raw: unknown,
+) {
+  const input = metaGetCreativeSchema.parse(raw)
+  const creds = await withCreds(ctx, input.tenantId, input.adAccountId)
+  const graph = fetchGraph(ctx)
+  const creative = await graph(metaGraphUrl(creds.apiVersion, `/${input.creativeId}`), {
+    query: {
+      fields: META_CREATIVE_FIELDS,
+      access_token: creds.accessToken,
+    },
+  })
+
+  return {
+    tenantId: input.tenantId,
+    adAccountId: creds.adAccountId,
+    creative,
+  }
+}
+
+export async function metaListCreatives(
+  ctx: MetaToolContext,
+  raw: unknown,
+) {
+  const input = metaListCreativesSchema.parse(raw)
+  const creds = await withCreds(ctx, input.tenantId, input.adAccountId)
+  const graph = fetchGraph(ctx)
+  const query: Record<string, string | number | undefined> = {
+    fields: 'id,name,object_story_spec,thumbnail_url,status',
+    limit: input.limit,
+    access_token: creds.accessToken,
+  }
+  if (input.after)
+    query.after = input.after
+
+  const res = await graph(metaGraphUrl(creds.apiVersion, `/${actPath(creds.adAccountId)}/adcreatives`), { query })
+
+  return {
+    tenantId: input.tenantId,
+    adAccountId: creds.adAccountId,
+    creatives: res?.data || [],
     paging: res?.paging || null,
   }
 }
@@ -2577,7 +2696,12 @@ export async function metaCreateAd(
     // On dryRun, keep picture/url fields; uploads skipped. assetId already tenant-checked.
     if (!dryRun && creativeType === 'IMAGE' && libraryAsset && !input.imageHash) {
       const bytes = await downloadLibraryImageBytes(ctx.client, libraryAsset)
-      const uploaded = await uploadImage(mediaCtx, { bytes, name: libraryAsset.name }, { dryRun: false })
+      const uploaded = await uploadImage(mediaCtx, { bytes, name: libraryAsset.name, mimeType: libraryAsset.mimeType }, { dryRun: false })
+      resolvedImageHash = uploaded.imageHash
+      resolvedImageUrl = null
+    }
+    else if (!dryRun && creativeType === 'IMAGE' && input.sourceBase64 && !input.imageHash) {
+      const uploaded = await uploadImage(mediaCtx, { sourceBase64: input.sourceBase64, name: input.name }, { dryRun: false })
       resolvedImageHash = uploaded.imageHash
       resolvedImageUrl = null
     }
@@ -3781,8 +3905,10 @@ export async function metaUploadImage(ctx: MetaToolContext, raw: unknown) {
 
   let libraryAsset: LibraryImageAsset | null = null
   let bytes: Buffer | undefined
+  let inputMimeType: string | undefined
   if (input.assetId) {
     libraryAsset = await loadLibraryImageAsset(ctx.client, input.tenantId, input.assetId)
+    inputMimeType = libraryAsset.mimeType
     if (!dryRun)
       bytes = await downloadLibraryImageBytes(ctx.client, libraryAsset)
   }
@@ -3796,6 +3922,9 @@ export async function metaUploadImage(ctx: MetaToolContext, raw: unknown) {
       dryRun: true as const,
       width: libraryAsset.width,
       height: libraryAsset.height,
+      mimeType: null as string | null,
+      normalized: false,
+      originalAssetId: input.assetId ?? null,
       assetId: input.assetId,
       name: input.name || libraryAsset.name,
       success: true as const,
@@ -3809,6 +3938,8 @@ export async function metaUploadImage(ctx: MetaToolContext, raw: unknown) {
       imageUrl: input.imageUrl,
       imageHash: input.imageHash,
       bytes,
+      sourceBase64: input.sourceBase64,
+      mimeType: inputMimeType,
       name: input.name || libraryAsset?.name,
     },
     { dryRun },
@@ -3823,6 +3954,9 @@ export async function metaUploadImage(ctx: MetaToolContext, raw: unknown) {
     dryRun: result.dryRun,
     width,
     height,
+    mimeType: result.mimeType ?? null,
+    normalized: result.normalized ?? false,
+    originalAssetId: input.assetId ?? null,
     assetId: input.assetId ?? null,
     name: input.name || libraryAsset?.name || null,
     success: true as const,
@@ -4163,6 +4297,131 @@ export async function metaCheckExperimentEligibility(ctx: MetaToolContext, raw: 
   }
 }
 
+/**
+ * Resolve media + create AdCreative + swap on a copied ad for experiment variations with media overrides.
+ * Reuses meta_upload_image / meta_upload_video pipeline; never mutates the base ad.
+ */
+async function applyMediaOverrideToAd(
+  ctx: MetaToolContext,
+  params: {
+    variation: ExperimentVariationInput
+    adId: string
+    pageId: string
+    objectStorySpec: Record<string, unknown> | null
+    mediaCtx: { apiVersion: string, accessToken: string, adAccountId: string, graph: MetaGraphFetch }
+    creds: { apiVersion: string, accessToken: string, adAccountId: string }
+    tenantId: string
+  },
+) {
+  const { variation, adId, pageId, objectStorySpec, mediaCtx, creds } = params
+  const graph = mediaCtx.graph
+
+  if (variation.videoAssetId) {
+    throw new MetaAdsToolError(
+      'VIDEO_ASSET_NOT_SUPPORTED',
+      'videoAssetId (Biblioteca de vídeo) não é suportado em variações de experiment. Use videoId ou videoUrl.',
+      400,
+    )
+  }
+
+  const resolvedType = variation.creativeType
+    || (variation.videoId || variation.videoUrl ? 'VIDEO'
+      : variation.childAttachments?.length ? 'CAROUSEL'
+        : 'IMAGE') as 'IMAGE' | 'VIDEO' | 'CAROUSEL'
+
+  let resolvedImageHash: string | null = variation.imageHash ?? null
+  let resolvedVideoId: string | null = variation.videoId ?? null
+
+  if (variation.assetId && !resolvedImageHash) {
+    const libraryAsset = await loadLibraryImageAsset(ctx.client, params.tenantId, variation.assetId)
+    const bytes = await downloadLibraryImageBytes(ctx.client, libraryAsset)
+    const uploaded = await uploadImage(mediaCtx, { bytes, name: libraryAsset.name }, { dryRun: false })
+    resolvedImageHash = uploaded.imageHash
+  }
+  else if (variation.imageUrl && !resolvedImageHash) {
+    const uploaded = await uploadImage(mediaCtx, { imageUrl: variation.imageUrl }, { dryRun: false })
+    resolvedImageHash = uploaded.imageHash
+  }
+
+  if (variation.videoUrl && !resolvedVideoId) {
+    const uploaded = await uploadVideo(mediaCtx, { videoUrl: variation.videoUrl }, { dryRun: false })
+    resolvedVideoId = uploaded.videoId
+  }
+
+  const baseSpec = objectStorySpec ? structuredClone(objectStorySpec) as Record<string, unknown> : {}
+  const baseLinkData = baseSpec.link_data as Record<string, unknown> | undefined
+  const baseVideoData = baseSpec.video_data as Record<string, unknown> | undefined
+
+  const baseMessage = variation.message
+    ?? (baseLinkData?.message as string | undefined)
+    ?? (baseVideoData?.message as string | undefined)
+    ?? ''
+  const baseHeadline = variation.headline
+    ?? (baseLinkData?.name as string | undefined)
+    ?? (baseVideoData?.title as string | undefined)
+  const baseDescription = variation.description
+    ?? (baseLinkData?.description as string | undefined)
+    ?? (baseVideoData?.link_description as string | undefined)
+  const baseLinkUrl = variation.linkUrl
+    ?? (baseLinkData?.link as string | undefined)
+    ?? (baseVideoData?.link as string | undefined)
+  const baseCta = variation.callToAction
+    ?? (baseLinkData?.call_to_action as Record<string, unknown> | undefined)?.type as string | undefined
+    ?? 'LEARN_MORE'
+
+  const creativeName = `${adId} Experiment Variation ${Date.now()}`
+
+  const creativeBody = buildMetaCreateAdCreativeBodyByType({
+    creativeName,
+    pageId,
+    creativeType: resolvedType,
+    destinationType: 'WEBSITE',
+    website: {
+      message: baseMessage,
+      linkUrl: baseLinkUrl ?? 'https://placeholder.invalid',
+      callToAction: baseCta,
+      headline: baseHeadline,
+      description: baseDescription,
+      imageUrl: resolvedType === 'IMAGE' && !resolvedImageHash ? (variation.imageUrl ?? undefined) : undefined,
+      imageHash: resolvedType === 'IMAGE' ? (resolvedImageHash ?? undefined) : undefined,
+    },
+    videoId: resolvedType === 'VIDEO' ? (resolvedVideoId ?? undefined) : undefined,
+    childAttachments: resolvedType === 'CAROUSEL' ? variation.childAttachments?.map(card => ({
+      link: card.link,
+      name: card.name,
+      description: card.description,
+      imageHash: card.imageHash,
+      videoId: card.videoId,
+    })) : undefined,
+  })
+
+  const creativePath = `/${actPath(creds.adAccountId)}/adcreatives`
+  const createdCreative = await graphWrite(graph, metaGraphUrl(creds.apiVersion, creativePath), {
+    method: 'POST',
+    query: { access_token: creds.accessToken },
+    body: creativeBody,
+  }, creativeBody)
+
+  const creativeId = createdCreative?.id ? String(createdCreative.id) : null
+  if (!creativeId) {
+    throw new MetaAdsToolError(
+      'META_CREATE_CREATIVE_FAILED',
+      'Meta não retornou id do AdCreative criado para variação do experiment.',
+      502,
+      { response: createdCreative, request_payload: creativeBody },
+    )
+  }
+
+  const swapBody = { creative: { creative_id: creativeId } }
+  await graphWrite(graph, metaGraphUrl(creds.apiVersion, `/${adId}`), {
+    method: 'POST',
+    query: { access_token: creds.accessToken },
+    body: swapBody,
+  }, swapBody)
+
+  return { creativeId, creativeType: resolvedType }
+}
+
 export async function metaCreateExperiment(ctx: MetaToolContext, raw: unknown) {
   const input = metaCreateExperimentSchema.parse(raw)
   assertWriteConfirmation(input)
@@ -4250,8 +4509,9 @@ export async function metaCreateExperiment(ctx: MetaToolContext, raw: unknown) {
       : null,
     `cells: ${cellCount}`,
     'Cópias via POST /{adId}/copies uma única vez (status PAUSED). Fallback BUSINESS reutiliza as mesmas cópias.',
+    'Variações com mídia (imageHash/imageUrl/assetId/videoId/videoUrl/childAttachments): novo AdCreative criado + swap no ad copiado.',
     'Rollback das cópias só depois de TODAS as tentativas falharem. Anúncio-base nunca é apagado.',
-    'dryRun=true: nenhuma cópia, nenhum study, nenhum delete.',
+    'dryRun=true: nenhuma cópia, nenhum study, nenhum delete, nenhum upload.',
   ].filter((row): row is string => Boolean(row))
 
   if (input.baseAdId) {
@@ -4337,6 +4597,25 @@ export async function metaCreateExperiment(ctx: MetaToolContext, raw: unknown) {
       }
     }
 
+    const mediaCtx = {
+      apiVersion: creds.apiVersion,
+      accessToken: creds.accessToken,
+      adAccountId: creds.adAccountId,
+      graph,
+    }
+
+    let pageId: string | null = null
+    const hasAnyMediaVariation = variations.some(variationHasMediaOverride)
+    if (hasAnyMediaVariation) {
+      const tokenCtx = await resolveMetaAccessToken(ctx.client, input.tenantId)
+      const pageToken = decryptSecret(tokenCtx.config.page_access_token_enc)
+      pageId = assertMetaPageCreativeReady({
+        pageId: objectStorySpec?.page_id ? String(objectStorySpec.page_id)
+          : tokenCtx.publicConfig.page_id,
+        pageAccessToken: pageToken,
+      })
+    }
+
     try {
       for (const [index, variation] of variations.entries()) {
         const copyBody = plannedCopies[index]!.copyBody
@@ -4346,9 +4625,23 @@ export async function metaCreateExperiment(ctx: MetaToolContext, raw: unknown) {
           adAccountId: input.adAccountId,
           adId: copiedAdId,
         })
+        const finalAdId = String(ownedCopy.ad?.id || copiedAdId)
+
+        if (variationHasMediaOverride(variation) && pageId) {
+          await applyMediaOverrideToAd(ctx, {
+            variation,
+            adId: finalAdId,
+            pageId,
+            objectStorySpec,
+            mediaCtx,
+            creds,
+            tenantId: input.tenantId,
+          })
+        }
+
         copiedAds.push({
           variationName: variation.name ?? null,
-          adId: String(ownedCopy.ad?.id || copiedAdId),
+          adId: finalAdId,
           copyBody,
         })
       }
@@ -4891,6 +5184,9 @@ export const META_TOOL_HANDLERS: Record<MetaToolName, ToolHandler> = {
   meta_get_campaign: metaGetCampaign,
   meta_list_adsets: metaListAdsets,
   meta_list_ads: metaListAds,
+  meta_get_ad: metaGetAd,
+  meta_get_creative: metaGetCreative,
+  meta_list_creatives: metaListCreatives,
   meta_get_insights: metaGetInsights,
   meta_search_interests: metaSearchInterests,
   meta_search_geolocations: metaSearchGeolocations,
@@ -4935,6 +5231,9 @@ export const META_TOOL_SCHEMAS: Record<MetaToolName, z.ZodTypeAny> = {
   meta_get_campaign: metaGetCampaignSchema,
   meta_list_adsets: metaListAdsetsSchema,
   meta_list_ads: metaListAdsSchema,
+  meta_get_ad: metaGetAdSchema,
+  meta_get_creative: metaGetCreativeSchema,
+  meta_list_creatives: metaListCreativesSchema,
   meta_get_insights: metaGetInsightsSchema,
   meta_search_interests: metaSearchInterestsSchema,
   meta_search_geolocations: metaSearchGeolocationsSchema,
@@ -4985,6 +5284,12 @@ export const META_TOOL_DESCRIPTIONS: Record<MetaToolName, string> = {
     'Lista conjuntos de anúncios (adsets) da conta ou de uma campanha.',
   meta_list_ads:
     'Lista anúncios Meta (conta, campanha ou adset).',
+  meta_get_ad:
+    'Obtém detalhe de um anúncio Meta com creative expandido (object_story_spec, asset_feed_spec, degrees_of_freedom_spec, creative_asset_groups_spec, tracking, issues, recommendations).',
+  meta_get_creative:
+    'Lê um AdCreative por ID. Retorna todos os campos criativos (object_story_spec, asset_feed_spec, degrees_of_freedom_spec, media, url_tags).',
+  meta_list_creatives:
+    'Lista AdCreatives da ad account (id, name, object_story_spec resumido, thumbnail_url, status). Paginação via cursor.',
   meta_get_insights:
     'Consulta insights/métricas Meta (nível account|campaign|adset|ad + período).',
   meta_search_interests:
@@ -5014,7 +5319,7 @@ export const META_TOOL_DESCRIPTIONS: Record<MetaToolName, string> = {
   meta_create_adset:
     'Cria adset (BR_* ou targeting custom). PAUSED+dryRun. destinationType WEBSITE|WHATSAPP|MESSENGER|INSTAGRAM_DIRECT. isDynamicCreative opcional (DYNAMIC_CREATIVE_LEGACY, só WEBSITE). Exige confirm+budget+campaignId.',
   meta_create_ad:
-    'Cria Ad+Creative. creativeId XOR creativeType IMAGE|VIDEO|CAROUSEL|DYNAMIC_CREATIVE_LEGACY|CATALOG. IMAGE: imageUrl|imageHash|assetId (biblioteca). Destinos WEBSITE|WHATSAPP|MESSENGER|INSTAGRAM_DIRECT. trackingSpecs/pixelId/offlineDatasetId/conversionDomain opcionais. Advantage+ degreesOfFreedomSpec. Upload imageUrl/videoUrl (SSRF) ou assetId. PAUSED+dryRun.',
+    'Cria Ad+Creative. creativeId XOR creativeType IMAGE|VIDEO|CAROUSEL|DYNAMIC_CREATIVE_LEGACY|CATALOG. IMAGE: imageUrl|imageHash|assetId|sourceBase64 (biblioteca). Normaliza imagens (EXIF, alpha, WebP). Destinos WEBSITE|WHATSAPP|MESSENGER|INSTAGRAM_DIRECT. trackingSpecs/pixelId/offlineDatasetId/conversionDomain opcionais. Advantage+ degreesOfFreedomSpec. PAUSED+dryRun.',
   meta_update_adset_budget:
     'Atualiza budget do adset (daily|lifetime). dryRun default true. Teto META_GPT_BUDGET_* + confirmBudgetIncrease se aumento % alto.',
   meta_update_adset_targeting:
@@ -5030,7 +5335,7 @@ export const META_TOOL_DESCRIPTIONS: Record<MetaToolName, string> = {
   meta_get_capabilities:
     'Retorna matriz de capacidades Meta Ads (criativos, mídia, catálogo, experiments, Flexible Media) para a Graph version do tenant.',
   meta_upload_image:
-    'Upload/reuse imagem na ad account (imageUrl HTTPS com SSRF, imageHash existente, ou assetId da Biblioteca). dryRun default true. Vídeo via assetId não suportado.',
+    'Upload/reuse imagem na ad account (imageUrl HTTPS, imageHash existente, assetId da Biblioteca, ou sourceBase64). Normaliza automaticamente (EXIF, alpha→RGB, WebP→JPEG). Retry automático: URL fail→bytes, formato inválido→JPEG. dryRun default true.',
   meta_upload_video:
     'Upload/reuse vídeo (videoUrl HTTPS file_url com SSRF ou videoId). dryRun default true. Depois use meta_get_video_status.',
   meta_get_video_status:
@@ -5050,7 +5355,7 @@ export const META_TOOL_DESCRIPTIONS: Record<MetaToolName, string> = {
   meta_check_experiment_eligibility:
     'Checa conflitos com testes ativos/agendados (ad/adset/campaign vs studies).',
   meta_create_experiment:
-    'Cria Ad Study SPLIT_TEST_V2. studyOwner AUTO (default): GET /me + POST v26 /{user_id}/ad_studies, fallback POST /{business_id}/ad_studies com as mesmas cópias. cells[] OU baseAdId+variations. Rollback só se todas as tentativas falharem. dryRun default true.',
+    'Cria Ad Study SPLIT_TEST_V2. studyOwner AUTO (default): GET /me + POST v26 /{user_id}/ad_studies, fallback POST /{business_id}/ad_studies com as mesmas cópias. cells[] OU baseAdId+variations. Variações com mídia: imageHash/imageUrl/assetId/videoId/videoUrl/childAttachments → novo AdCreative + swap no ad copiado. Rollback só se todas as tentativas falharem. dryRun default true.',
   meta_get_experiment:
     'Lê study + cells + ads + winner (results_first_available_date; Graph não documenta winner_cell_id).',
   meta_stop_experiment:
