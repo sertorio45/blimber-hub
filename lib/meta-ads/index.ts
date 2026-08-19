@@ -73,9 +73,18 @@ export {
   metaListExperiments,
   metaCheckExperimentEligibility,
   metaStopExperiment,
+  metaCheckFlexibleAdEligibility,
+  metaCreateFlexibleAd,
+  metaGetFlexibleAdStructure,
   metaUpdateAdsetStatus,
   metaUpdateAdStatus,
   metaUpdateCampaignStatus,
+  metaGenerateAdPreview,
+  metaGenerateAdPreviewsBatch,
+  metaValidateCreative,
+  metaGenerateAdPreviewSchema,
+  metaGenerateAdPreviewsBatchSchema,
+  metaValidateCreativeSchema,
   META_CAMPAIGN_OBJECTIVES,
   META_GEOLOCATION_TYPES,
   META_SPECIAL_AD_CATEGORIES,
@@ -120,6 +129,17 @@ export {
   type MetaDynamicAdFormat,
 } from './creative-types'
 export { getMetaCapabilities, type MetaCapabilitiesReport } from './capabilities'
+export {
+  buildCreativeAssetGroupsSpec,
+  buildFlexibleAdGraphBody,
+  checkFlexibleAdEligibility,
+  readFlexibleAdStructure,
+  FLEXIBLE_AD_SUPPORTED_OBJECTIVES,
+  FLEXIBLE_AD_TEXT_TYPES,
+  type FlexibleAdAssetInput,
+  type FlexibleAdGroupInput,
+  type FlexibleAdTextType,
+} from './flexible-ad-format'
 export {
   assertSafeMediaUrl,
   assertPublicHostnameOrIp,
@@ -259,6 +279,16 @@ export {
   withDryRun,
   type MetaDryRunPreview,
 } from './write-guards'
+export {
+  generateAdPreview,
+  generateAdPreviewsBatch,
+  getExistingAdPreview,
+  getExistingCreativePreview,
+  META_AD_PREVIEW_FORMATS,
+  validateCreativeViaPreview,
+  type MetaAdPreviewFormat,
+  type MetaAdPreviewResult,
+} from './preview-service'
 export {
   getMetaGptBulkMax,
   getMetaGptBulkPreviewTtlMs,

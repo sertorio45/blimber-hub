@@ -143,6 +143,21 @@ import {
   getMetaGptBudgetDailyMaxCents,
   getMetaGptBudgetIncreaseMaxPercent,
 } from './write-limits'
+import {
+  buildCreativeAssetGroupsSpec,
+  buildFlexibleAdGraphBody,
+  checkFlexibleAdEligibility,
+  metaCheckFlexibleAdEligibilitySchema,
+  metaCreateFlexibleAdSchema,
+  metaGetFlexibleAdStructureSchema,
+  readFlexibleAdStructure,
+} from './flexible-ad-format'
+import {
+  generateAdPreview,
+  generateAdPreviewsBatch,
+  META_AD_PREVIEW_FORMATS,
+  validateCreativeViaPreview,
+} from './preview-service'
 
 export type { SupabaseLike } from './integration'
 
@@ -1376,6 +1391,12 @@ export type MetaToolName =
   | 'meta_create_experiment'
   | 'meta_get_experiment'
   | 'meta_stop_experiment'
+  | 'meta_check_flexible_ad_eligibility'
+  | 'meta_create_flexible_ad'
+  | 'meta_get_flexible_ad_structure'
+  | 'meta_generate_ad_preview'
+  | 'meta_generate_ad_previews_batch'
+  | 'meta_validate_creative'
 
 export interface MetaToolContext {
   client: SupabaseLike
@@ -5174,6 +5195,247 @@ export async function metaExecuteBulkDelete(
   }
 }
 
+// ---------- Flexible Ad Format tool handlers ----------
+
+export async function metaCheckFlexibleAdEligibility(ctx: MetaToolContext, raw: unknown) {
+  const input = metaCheckFlexibleAdEligibilitySchema.parse(raw)
+  const creds = await withCreds(ctx, input.tenantId, input.adAccountId)
+  const eligibility = checkFlexibleAdEligibility(creds.apiVersion)
+  return {
+    tenantId: input.tenantId,
+    adAccountId: creds.adAccountId,
+    ...eligibility,
+  }
+}
+
+export async function metaCreateFlexibleAd(ctx: MetaToolContext, raw: unknown) {
+  const input = metaCreateFlexibleAdSchema.parse(raw)
+  const dryRun = resolveDryRun(input.dryRun, true)
+  if (!dryRun) assertWriteConfirmation(input)
+  const creds = await withCreds(ctx, input.tenantId, input.adAccountId)
+  const graph = fetchGraph(ctx)
+
+  const eligibility = checkFlexibleAdEligibility(creds.apiVersion)
+  if (!eligibility.eligible) {
+    throw new MetaAdsToolError(
+      'FLEXIBLE_AD_NOT_ELIGIBLE',
+      eligibility.notes,
+      400,
+      { graphVersion: eligibility.graphVersion },
+    )
+  }
+
+  const graphBody = buildFlexibleAdGraphBody({
+    adsetId: input.adsetId,
+    name: input.name,
+    status: input.status ?? 'PAUSED',
+    groups: input.groups,
+  })
+
+  if (dryRun) {
+    return {
+      dryRun: true as const,
+      tenantId: input.tenantId,
+      adAccountId: creds.adAccountId,
+      graphBody,
+      preview: buildCreativeAssetGroupsSpec(input.groups),
+      message: 'Dry-run: payload validado. Reenvie com dryRun:false + confirm:true + confirmTenantId para criar.',
+      deprecationWarning: eligibility.deprecationWarning,
+    }
+  }
+
+  const url = metaGraphUrl(creds.apiVersion ?? 'v25.0', `${actPath(creds.adAccountId)}/ads`, {
+    access_token: creds.accessToken,
+  })
+
+  const formBody = new URLSearchParams()
+  for (const [k, v] of Object.entries(graphBody)) {
+    formBody.set(k, typeof v === 'string' ? v : JSON.stringify(v))
+  }
+
+  const response = await graph(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: formBody.toString(),
+  })
+
+  const data = await response.json() as Record<string, unknown>
+  if (!response.ok) {
+    throw new MetaAdsToolError(
+      'FLEXIBLE_AD_CREATE_FAILED',
+      `Erro ao criar Flexible Ad: ${JSON.stringify((data as any)?.error?.message ?? response.status)}`,
+      response.status,
+      { graphBody, error: (data as any)?.error },
+    )
+  }
+
+  await logMetaWriteAudit(ctx.client, {
+    tenantId: input.tenantId,
+    adAccountId: creds.adAccountId,
+    tool: 'meta_create_flexible_ad',
+    action: 'CREATE',
+    level: 'ad',
+    objectId: String((data as any)?.id ?? ''),
+    payload: graphBody,
+  })
+
+  return {
+    dryRun: false as const,
+    tenantId: input.tenantId,
+    adAccountId: creds.adAccountId,
+    adId: (data as any)?.id,
+    message: 'Anúncio Flexible Ad Format criado.',
+    deprecationWarning: eligibility.deprecationWarning,
+  }
+}
+
+export async function metaGetFlexibleAdStructure(ctx: MetaToolContext, raw: unknown) {
+  const input = metaGetFlexibleAdStructureSchema.parse(raw)
+  const creds = await withCreds(ctx, input.tenantId, input.adAccountId)
+  const graph = fetchGraph(ctx)
+
+  const data = await readFlexibleAdStructure(graph, input.adId, creds.accessToken, creds.apiVersion)
+  return {
+    tenantId: input.tenantId,
+    adAccountId: creds.adAccountId,
+    adId: input.adId,
+    ...(data ?? {}),
+    hasFlexibleFormat: Boolean((data as any)?.creative_asset_groups_spec),
+  }
+}
+
+// --- Ad Preview (Generate Previews API) ---
+
+const adPreviewFormatEnum = z.enum([
+  'DESKTOP_FEED_STANDARD',
+  'MOBILE_FEED_STANDARD',
+  'INSTAGRAM_STANDARD',
+  'INSTAGRAM_STORY',
+  'INSTAGRAM_REELS',
+  'FACEBOOK_STORY_MOBILE',
+  'FACEBOOK_REELS_MOBILE',
+  'MESSENGER_MOBILE_INBOX_MEDIA',
+  'RIGHT_COLUMN_STANDARD',
+  'INSTAGRAM_EXPLORE_CONTEXTUAL',
+  'INSTAGRAM_EXPLORE_GRID_HOME',
+  'AUDIENCE_NETWORK_INSTREAM_VIDEO',
+  'INSTREAM_VIDEO_DESKTOP',
+  'INSTREAM_VIDEO_MOBILE',
+  'FACEBOOK_REELS_BANNER',
+])
+
+export const metaGenerateAdPreviewSchema = tenantContextSchema.extend({
+  adId: z.string().optional().describe('ID de um ad existente (GET /{adId}/previews).'),
+  creativeId: z.string().optional().describe('ID de um AdCreative existente (GET /{creativeId}/previews).'),
+  creative: z.record(z.unknown()).optional().describe('Creative spec JSON para preview de rascunho (GET /act_{id}/generatepreviews).'),
+  ad_format: adPreviewFormatEnum.describe('Posicionamento/formato do preview.'),
+})
+
+export const metaGenerateAdPreviewsBatchSchema = tenantContextSchema.extend({
+  adId: z.string().optional().describe('ID de um ad existente.'),
+  creativeId: z.string().optional().describe('ID de um AdCreative existente.'),
+  creative: z.record(z.unknown()).optional().describe('Creative spec JSON para preview de rascunho.'),
+  ad_formats: z.array(adPreviewFormatEnum).min(1).max(15).describe('Lista de posicionamentos (máx 15).'),
+})
+
+export const metaValidateCreativeSchema = tenantContextSchema.extend({
+  adId: z.string().optional().describe('ID de um ad existente para validar.'),
+  creativeId: z.string().optional().describe('ID de um AdCreative existente.'),
+  creative: z.record(z.unknown()).optional().describe('Creative spec JSON a validar.'),
+  ad_formats: z.array(adPreviewFormatEnum).min(1).max(15).optional()
+    .default(['DESKTOP_FEED_STANDARD', 'MOBILE_FEED_STANDARD', 'INSTAGRAM_STANDARD', 'INSTAGRAM_STORY'])
+    .describe('Posicionamentos a testar (default: feed desktop/mobile + IG feed + IG story).'),
+})
+
+export async function metaGenerateAdPreview(ctx: MetaToolContext, raw: unknown) {
+  const input = metaGenerateAdPreviewSchema.parse(raw)
+  const creds = await withCreds(ctx, input.tenantId, input.adAccountId)
+  const graph = fetchGraph(ctx)
+
+  if (input.adId) {
+    const { getExistingAdPreview } = await import('./preview-service')
+    const result = await getExistingAdPreview(graph, creds.accessToken, {
+      adId: input.adId,
+      ad_format: input.ad_format,
+      apiVersion: creds.apiVersion,
+    })
+    return { tenantId: input.tenantId, adAccountId: creds.adAccountId, ...result }
+  }
+
+  if (input.creativeId) {
+    const { getExistingCreativePreview } = await import('./preview-service')
+    const result = await getExistingCreativePreview(graph, creds.accessToken, {
+      creativeId: input.creativeId,
+      ad_format: input.ad_format,
+      apiVersion: creds.apiVersion,
+    })
+    return { tenantId: input.tenantId, adAccountId: creds.adAccountId, ...result }
+  }
+
+  if (input.creative) {
+    const { generateAdPreview: genPreview } = await import('./preview-service')
+    const result = await genPreview(graph, creds.accessToken, {
+      adAccountId: creds.adAccountId,
+      creative: input.creative,
+      ad_format: input.ad_format,
+      apiVersion: creds.apiVersion,
+    })
+    return { tenantId: input.tenantId, adAccountId: creds.adAccountId, ...result }
+  }
+
+  throw new MetaAdsToolError('VALIDATION_ERROR', 'Informe adId, creativeId ou creative.')
+}
+
+export async function metaGenerateAdPreviewsBatch(ctx: MetaToolContext, raw: unknown) {
+  const input = metaGenerateAdPreviewsBatchSchema.parse(raw)
+  const creds = await withCreds(ctx, input.tenantId, input.adAccountId)
+  const graph = fetchGraph(ctx)
+
+  const { generateAdPreviewsBatch: batchPreviews } = await import('./preview-service')
+  const results = await batchPreviews(graph, creds.accessToken, {
+    adAccountId: creds.adAccountId,
+    adId: input.adId,
+    creativeId: input.creativeId,
+    creative: input.creative,
+    ad_formats: input.ad_formats,
+    apiVersion: creds.apiVersion,
+  })
+
+  const succeeded = results.filter(r => r.body && !r.error)
+  const failed = results.filter(r => r.error)
+
+  return {
+    tenantId: input.tenantId,
+    adAccountId: creds.adAccountId,
+    total: results.length,
+    succeeded: succeeded.length,
+    failed: failed.length,
+    previews: results,
+  }
+}
+
+export async function metaValidateCreative(ctx: MetaToolContext, raw: unknown) {
+  const input = metaValidateCreativeSchema.parse(raw)
+  const creds = await withCreds(ctx, input.tenantId, input.adAccountId)
+  const graph = fetchGraph(ctx)
+
+  const { validateCreativeViaPreview } = await import('./preview-service')
+  const result = await validateCreativeViaPreview(graph, creds.accessToken, {
+    adAccountId: creds.adAccountId,
+    adId: input.adId,
+    creativeId: input.creativeId,
+    creative: input.creative,
+    ad_formats: input.ad_formats,
+    apiVersion: creds.apiVersion,
+  })
+
+  return {
+    tenantId: input.tenantId,
+    adAccountId: creds.adAccountId,
+    ...result,
+  }
+}
+
 type ToolHandler = (ctx: MetaToolContext, raw: unknown) => Promise<unknown>
 
 export const META_TOOL_HANDLERS: Record<MetaToolName, ToolHandler> = {
@@ -5221,6 +5483,12 @@ export const META_TOOL_HANDLERS: Record<MetaToolName, ToolHandler> = {
   meta_create_experiment: metaCreateExperiment,
   meta_get_experiment: metaGetExperiment,
   meta_stop_experiment: metaStopExperiment,
+  meta_check_flexible_ad_eligibility: metaCheckFlexibleAdEligibility,
+  meta_create_flexible_ad: metaCreateFlexibleAd,
+  meta_get_flexible_ad_structure: metaGetFlexibleAdStructure,
+  meta_generate_ad_preview: metaGenerateAdPreview,
+  meta_generate_ad_previews_batch: metaGenerateAdPreviewsBatch,
+  meta_validate_creative: metaValidateCreative,
 }
 
 export const META_TOOL_SCHEMAS: Record<MetaToolName, z.ZodTypeAny> = {
@@ -5268,6 +5536,12 @@ export const META_TOOL_SCHEMAS: Record<MetaToolName, z.ZodTypeAny> = {
   meta_create_experiment: metaCreateExperimentSchema,
   meta_get_experiment: metaGetExperimentSchema,
   meta_stop_experiment: metaStopExperimentSchema,
+  meta_check_flexible_ad_eligibility: metaCheckFlexibleAdEligibilitySchema,
+  meta_create_flexible_ad: metaCreateFlexibleAdSchema,
+  meta_get_flexible_ad_structure: metaGetFlexibleAdStructureSchema,
+  meta_generate_ad_preview: metaGenerateAdPreviewSchema,
+  meta_generate_ad_previews_batch: metaGenerateAdPreviewsBatchSchema,
+  meta_validate_creative: metaValidateCreativeSchema,
 }
 
 export const META_TOOL_DESCRIPTIONS: Record<MetaToolName, string> = {
@@ -5359,6 +5633,18 @@ export const META_TOOL_DESCRIPTIONS: Record<MetaToolName, string> = {
     'Lê study + cells + ads + winner (results_first_available_date; Graph não documenta winner_cell_id).',
   meta_stop_experiment:
     'Encerra experiment antecipadamente (end_time=now). dryRun default true.',
+  meta_check_flexible_ad_eligibility:
+    'Verifica se a conta suporta Flexible Ad Format (creative_asset_groups_spec). Retorna eligibilidade, objetivos suportados e aviso de deprecação.',
+  meta_create_flexible_ad:
+    'Cria anúncio Flexible Ad Format com creative_asset_groups_spec (múltiplas imagens/vídeos + textos + CTA). Apenas OUTCOME_SALES/OUTCOME_APP_PROMOTION. dryRun default true.',
+  meta_get_flexible_ad_structure:
+    'Lê creative_asset_groups_spec de um anúncio existente. Retorna estrutura dos grupos de assets.',
+  meta_generate_ad_preview:
+    'Preview real de um ad/creative/spec via Generate Previews API Meta. Um posicionamento por vez (ad_format). Retorna HTML/iframe. adId | creativeId | creative spec.',
+  meta_generate_ad_previews_batch:
+    'Preview real em múltiplos posicionamentos (até 15). Retorna HTML/iframe + succeeded/failed por placement. adId | creativeId | creative spec.',
+  meta_validate_creative:
+    'Validação de criativo via Generate Previews API. Testa posicionamentos padrão, retorna placements_ok / placements_failed + summary. Sem HTML completo. adId | creativeId | creative spec.',
 }
 
 export async function invokeMetaTool(
