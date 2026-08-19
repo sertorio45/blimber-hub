@@ -7,6 +7,7 @@
 
 import type { MetaGraphFetch } from './types'
 import { actPath, enrichMetaGraphWriteError, metaGraphUrl } from './graph'
+import { normalizeImageForMeta } from './normalize-image'
 import { assertSafeMediaUrl } from './safe-url'
 import { MetaAdsToolError } from './types'
 
@@ -20,10 +21,14 @@ export type MediaServiceContext = {
 export type UploadImageInput = {
   /** Existing image_hash — reuse without Graph upload. */
   imageHash?: string
-  /** HTTPS URL for Meta to fetch (SSRF-checked). XOR with imageHash / bytes. */
+  /** HTTPS URL for Meta to fetch (SSRF-checked). XOR with imageHash / bytes / sourceBase64. */
   imageUrl?: string
-  /** Raw image bytes (library download). XOR with imageHash / imageUrl. Posted as Graph `bytes`. */
+  /** Raw image bytes (library download or decoded base64). XOR with imageHash / imageUrl. */
   bytes?: Buffer | Uint8Array
+  /** Base64-encoded image data. Decoded to bytes internally. XOR with imageHash / imageUrl / bytes. */
+  sourceBase64?: string
+  /** Original MIME type — used to decide normalization strategy. */
+  mimeType?: string
   name?: string
 }
 
@@ -42,6 +47,9 @@ export type UploadImageResult = {
   dryRun?: boolean
   width?: number | null
   height?: number | null
+  mimeType?: string | null
+  normalized?: boolean
+  convertedToJpeg?: boolean
 }
 
 export type UploadVideoResult = {
@@ -103,8 +111,93 @@ function redactUploadBody(body: Record<string, unknown>): Record<string, unknown
   return { ...body, bytes: '[omitted]' }
 }
 
+/** Meta error code #3 = app lacks capability for URL-based upload. */
+function isCapabilityError(err: unknown): boolean {
+  if (!(err instanceof MetaAdsToolError) || err.code !== 'META_GRAPH_ERROR') return false
+  const details = err.details as Record<string, unknown> | undefined
+  return details?.code === 3 || details?.code === '3'
+}
+
+/** Meta error_subcode 2446496 = invalid image format (e.g. PNG RGBA). */
+function isInvalidFormatError(err: unknown): boolean {
+  if (!(err instanceof MetaAdsToolError) || err.code !== 'META_GRAPH_ERROR') return false
+  const details = err.details as Record<string, unknown> | undefined
+  const subcode = details?.error_subcode
+  return subcode === 2446496 || subcode === '2446496'
+}
+
+async function fetchUrlToBytes(url: string): Promise<Buffer> {
+  const response = await fetch(url)
+  if (!response.ok)
+    throw new MetaAdsToolError('IMAGE_URL_FETCH_FAILED', `Falha ao baixar imagem: HTTP ${response.status}`, 502)
+  return Buffer.from(await response.arrayBuffer())
+}
+
+async function postAdImageBytes(
+  ctx: MediaServiceContext,
+  rawBytes: Buffer,
+  name?: string,
+  mimeType?: string,
+): Promise<UploadImageResult> {
+  const normalized = await normalizeImageForMeta(rawBytes, {
+    originalMimeType: mimeType || 'image/jpeg',
+  })
+  const path = `/${actPath(ctx.adAccountId)}/adimages`
+  const body: Record<string, unknown> = {
+    bytes: normalized.data.toString('base64'),
+  }
+  if (name) body.name = name
+
+  try {
+    const res = await ctx.graph(metaGraphUrl(ctx.apiVersion, path), {
+      method: 'POST',
+      query: { access_token: ctx.accessToken },
+      body,
+      bodyEncoding: 'form' as const,
+    })
+    const result = parseAdImageGraphResult(res)
+    return {
+      ...result,
+      width: result.width ?? normalized.width,
+      height: result.height ?? normalized.height,
+      mimeType: normalized.mimeType,
+      normalized: normalized.normalized,
+      convertedToJpeg: normalized.convertedToJpeg,
+    }
+  }
+  catch (err) {
+    // Format rejected even after normalization → force JPEG and retry once
+    if (isInvalidFormatError(err) && !normalized.convertedToJpeg) {
+      const jpegNormalized = await normalizeImageForMeta(rawBytes, {
+        originalMimeType: mimeType || 'image/jpeg',
+        forceJpeg: true,
+      })
+      body.bytes = jpegNormalized.data.toString('base64')
+      const res = await ctx.graph(metaGraphUrl(ctx.apiVersion, path), {
+        method: 'POST',
+        query: { access_token: ctx.accessToken },
+        body,
+        bodyEncoding: 'form' as const,
+      })
+      const result = parseAdImageGraphResult(res)
+      return {
+        ...result,
+        width: result.width ?? jpegNormalized.width,
+        height: result.height ?? jpegNormalized.height,
+        mimeType: jpegNormalized.mimeType,
+        normalized: true,
+        convertedToJpeg: true,
+      }
+    }
+    throw err
+  }
+}
+
 /**
- * Resolve image_hash: reuse hash, POST act_{id}/adimages with url, or POST bytes (form).
+ * Resolve image_hash: reuse hash, POST act_{id}/adimages with url (fallback bytes), or POST bytes (form).
+ * Normalizes images (EXIF, alpha, color space, format) via Sharp before sending to Meta.
+ * Auto-retries: URL upload fails with capability error #3 → download + multipart bytes.
+ * Auto-retries: invalid format (subcode 2446496) → convert to JPEG and retry.
  * Ads Management user token only — callers must not pass a page token.
  */
 export async function uploadImage(
@@ -115,11 +208,12 @@ export async function uploadImage(
   const hasHash = isPresentString(input.imageHash)
   const hasUrl = isPresentString(input.imageUrl)
   const hasBytes = isPresentBytes(input.bytes)
-  const sourceCount = [hasHash, hasUrl, hasBytes].filter(Boolean).length
+  const hasBase64 = isPresentString(input.sourceBase64)
+  const sourceCount = [hasHash, hasUrl, hasBytes, hasBase64].filter(Boolean).length
   if (sourceCount !== 1) {
     throw new MetaAdsToolError(
       'IMAGE_MEDIA_XOR',
-      'Informe imageHash OU imageUrl OU bytes (biblioteca), não combine nem omita.',
+      'Informe imageHash OU imageUrl OU bytes OU sourceBase64, não combine nem omita.',
       400,
     )
   }
@@ -136,27 +230,44 @@ export async function uploadImage(
     return { imageHash: '(dryRun — hash após upload)', reused: false, dryRun: true }
   }
 
-  const path = `/${actPath(ctx.adAccountId)}/adimages`
-  const body: Record<string, unknown> = {}
-  if (input.name)
-    body.name = input.name
+  // sourceBase64 → decode to bytes path
+  if (hasBase64) {
+    const rawBytes = Buffer.from(input.sourceBase64!, 'base64')
+    return postAdImageBytes(ctx, rawBytes, input.name, input.mimeType)
+  }
 
-  if (hasBytes)
-    body.bytes = Buffer.from(input.bytes!).toString('base64')
-  else
-    body.url = safeUrl
+  // bytes path (library asset download)
+  if (hasBytes) {
+    return postAdImageBytes(ctx, Buffer.from(input.bytes!), input.name, input.mimeType)
+  }
+
+  // URL path: try URL upload first, fallback to bytes on capability error or format error
+  const path = `/${actPath(ctx.adAccountId)}/adimages`
+  const body: Record<string, unknown> = { url: safeUrl }
+  if (input.name) body.name = input.name
 
   try {
     const res = await ctx.graph(metaGraphUrl(ctx.apiVersion, path), {
       method: 'POST',
       query: { access_token: ctx.accessToken },
       body,
-      ...(hasBytes ? { bodyEncoding: 'form' as const } : {}),
     })
     return parseAdImageGraphResult(res)
   }
   catch (err) {
-    enrichMetaGraphWriteError(err, redactUploadBody(body))
+    // Capability error #3 or invalid format → download image and retry as bytes
+    if (isCapabilityError(err) || isInvalidFormatError(err)) {
+      const rawBytes = await fetchUrlToBytes(safeUrl!)
+      return postAdImageBytes(ctx, rawBytes, input.name, input.mimeType)
+    }
+    if (err instanceof MetaAdsToolError && err.code === 'META_GRAPH_ERROR') {
+      const details = (err.details && typeof err.details === 'object') ? err.details as Record<string, unknown> : {}
+      throw new MetaAdsToolError(err.code, err.message, err.statusCode, {
+        ...details,
+        request_payload: { url: safeUrl, name: input.name },
+      })
+    }
+    throw err
   }
 }
 

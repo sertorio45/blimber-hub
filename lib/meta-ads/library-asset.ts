@@ -15,6 +15,7 @@ const META_AD_IMAGE_MIMES = new Set([
   'image/jpg',
   'image/png',
   'image/gif',
+  'image/webp',
 ])
 
 export type LibraryAssetClient = {
@@ -156,7 +157,7 @@ export async function loadLibraryImageAsset(
   if (!META_AD_IMAGE_MIMES.has(mime)) {
     throw new MetaAdsToolError(
       'LIBRARY_ASSET_NOT_IMAGE',
-      'A biblioteca só envia JPG, PNG ou GIF para a Meta (adimages). Este arquivo não é uma imagem de anúncio.',
+      'A biblioteca só envia JPG, PNG, WebP ou GIF para a Meta (adimages). Este arquivo não é uma imagem de anúncio.',
       400,
       { mimeType: mime || null },
     )

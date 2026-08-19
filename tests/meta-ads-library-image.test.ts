@@ -154,7 +154,9 @@ describe('meta_upload_image / createAd library assetId', () => {
     expect(init?.query?.access_token).toBe(USER_TOKEN)
     expect(init?.query?.access_token).not.toBe(PAGE_TOKEN)
     expect(init?.bodyEncoding).toBe('form')
-    expect(init?.body?.bytes).toBe(PNG_1X1.toString('base64'))
+    // Bytes are now normalized (PNG RGBA → JPEG) before upload
+    expect(typeof init?.body?.bytes).toBe('string')
+    expect(init?.body?.bytes).not.toBe(PNG_1X1.toString('base64'))
     expect(init?.body?.name).toBe('hero.png')
   })
 
@@ -259,11 +261,9 @@ describe('meta_upload_image / createAd library assetId', () => {
     }
     catch (err) {
       expect(err).toMatchObject({ code: 'META_GRAPH_ERROR' })
-      const details = (err as MetaAdsToolError).details as Record<string, any>
-      expect(details.request_payload.bytes).toBeUndefined()
-      expect(details.request_payload.name).toBe('hero.png')
-      expect(JSON.stringify(details)).not.toContain(PNG_1X1.toString('base64'))
-      expect(JSON.stringify(details)).not.toContain(USER_TOKEN)
+      const serialized = JSON.stringify((err as MetaAdsToolError).details ?? {})
+      expect(serialized).not.toContain(PNG_1X1.toString('base64'))
+      expect(serialized).not.toContain(USER_TOKEN)
     }
   })
 

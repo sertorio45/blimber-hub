@@ -4626,6 +4626,11 @@ export async function metaCreateExperiment(ctx: MetaToolContext, raw: unknown) {
           adId: copiedAdId,
         })
         const finalAdId = String(ownedCopy.ad?.id || copiedAdId)
+        copiedAds.push({
+          variationName: variation.name ?? null,
+          adId: finalAdId,
+          copyBody,
+        })
 
         if (variationHasMediaOverride(variation) && pageId) {
           await applyMediaOverrideToAd(ctx, {
@@ -4638,12 +4643,6 @@ export async function metaCreateExperiment(ctx: MetaToolContext, raw: unknown) {
             tenantId: input.tenantId,
           })
         }
-
-        copiedAds.push({
-          variationName: variation.name ?? null,
-          adId: finalAdId,
-          copyBody,
-        })
       }
     }
     catch (err) {
