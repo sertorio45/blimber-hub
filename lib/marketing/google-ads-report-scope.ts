@@ -203,3 +203,19 @@ export function googleAdsConversionEmptyMessage(params: {
 
   return 'Nenhuma conversão no período'
 }
+
+/**
+ * Default for the “Incluir todas as conversões” toggle.
+ * Performance Max campaigns (and the PMax report template) prefer
+ * `all_conversions` because primary conversions often undercount.
+ */
+export function defaultShowAllConversions(params: {
+  templateId?: string | null
+  campaignChannel?: string | null
+}): boolean {
+  const templateId = String(params.templateId || '').trim().toLowerCase()
+  if (templateId === 'performance_max')
+    return true
+  const channel = String(params.campaignChannel || '').trim().toUpperCase()
+  return channel === 'PERFORMANCE_MAX'
+}

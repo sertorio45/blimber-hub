@@ -21,6 +21,7 @@ import {
   getReportTemplate,
 } from '~/constants/marketing-report-templates'
 import {
+  defaultShowAllConversions,
   googleAdsConversionEmptyMessage,
   pickGoogleAdsConversionActionsForScope,
   pickGoogleAdsSeriesForScope,
@@ -49,8 +50,10 @@ const selectedCampaignId = ref<string | 'all'>('all')
 const activeCampaignsOnly = ref(true)
 const showAllConversions = ref(false)
 
+const effectiveTemplateId = computed(() => props.templateId || 'overview')
+
 const template = computed(() =>
-  getReportTemplate('google_ads', props.templateId || 'overview'),
+  getReportTemplate('google_ads', effectiveTemplateId.value),
 )
 
 const effectiveLayout = computed(() => {
@@ -85,6 +88,13 @@ const userFacingError = computed(() => {
 
 const campaigns = computed(() => props.google?.campaigns ?? [])
 const networks = computed(() => props.google?.networks ?? [])
+
+const selectedCampaignChannel = computed(() => {
+  if (selectedCampaignId.value === 'all')
+    return null
+  const row = campaigns.value.find(c => String(c.id) === String(selectedCampaignId.value))
+  return row?.channel != null ? String(row.channel) : null
+})
 
 const campaignSelectOptions = computed(() => {
   let list = [...campaigns.value]
@@ -335,6 +345,18 @@ watch(
     emit('campaign-change', {
       campaignId,
       channel: row?.channel != null ? String(row.channel) : null,
+    })
+  },
+  { immediate: true },
+)
+
+/** Reset all_conversions toggle when campaign type or template changes (respect manual until then). */
+watch(
+  [effectiveTemplateId, selectedCampaignChannel],
+  ([templateId, channel]) => {
+    showAllConversions.value = defaultShowAllConversions({
+      templateId,
+      campaignChannel: channel,
     })
   },
   { immediate: true },

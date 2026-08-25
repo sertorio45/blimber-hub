@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   aggregateGoogleAdsSeriesByDate,
   buildGoogleAdsSeriesMaps,
+  defaultShowAllConversions,
   googleAdsConversionEmptyMessage,
   parseGoogleAdsConversionActionId,
   pickGoogleAdsConversionActionsForScope,
@@ -152,5 +153,37 @@ describe('google ads report scope — conversion actions', () => {
       configuredCount: 2,
       conversionsTotal: 0,
     })).toBe('Nenhuma conversão no período')
+  })
+})
+
+describe('google ads — all_conversions default', () => {
+  it('defaults to all_conversions for Performance Max template or channel', () => {
+    expect(defaultShowAllConversions({ templateId: 'performance_max' })).toBe(true)
+    expect(defaultShowAllConversions({
+      templateId: 'overview',
+      campaignChannel: 'PERFORMANCE_MAX',
+    })).toBe(true)
+    expect(defaultShowAllConversions({
+      templateId: 'Performance_Max',
+      campaignChannel: null,
+    })).toBe(true)
+    expect(defaultShowAllConversions({
+      templateId: null,
+      campaignChannel: 'performance_max',
+    })).toBe(true)
+  })
+
+  it('defaults to primary conversions for other templates and channels', () => {
+    expect(defaultShowAllConversions({ templateId: 'overview' })).toBe(false)
+    expect(defaultShowAllConversions({ templateId: 'search' })).toBe(false)
+    expect(defaultShowAllConversions({
+      templateId: 'search',
+      campaignChannel: 'SEARCH',
+    })).toBe(false)
+    expect(defaultShowAllConversions({
+      templateId: 'shopping',
+      campaignChannel: 'SHOPPING',
+    })).toBe(false)
+    expect(defaultShowAllConversions({})).toBe(false)
   })
 })
