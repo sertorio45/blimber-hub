@@ -28,7 +28,17 @@ export default defineEventHandler(async (event) => {
 
   return {
     data: {
-      ...campaign,
+      id: campaign.id,
+      name: campaign.name,
+      objective: campaign.objective ?? '',
+      status: campaign.status,
+      startsAt: campaign.starts_at ?? null,
+      endsAt: campaign.ends_at ?? null,
+      ownerId: campaign.owner_id ?? null,
+      briefingSummary: campaign.briefing_summary ?? '',
+      postsCount: (posts || []).length,
+      createdAt: campaign.created_at,
+      updatedAt: campaign.updated_at,
       posts: posts || [],
     },
   }

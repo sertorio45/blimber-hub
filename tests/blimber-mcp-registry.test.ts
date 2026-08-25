@@ -306,6 +306,7 @@ describe('blimber unified MCP registry + openapi', () => {
     expect(names).toContain('marketing_delete_asset')
     expect(names).toContain('marketing_upload_asset')
     expect(names).toContain('marketing_create_campaign')
+    expect(names).toContain('marketing_delete_campaign')
     expect(names).toContain('meta_list_campaigns')
     expect(names).toContain('ads_meta_list_campaigns')
     expect(names).toContain('ads_google_status')

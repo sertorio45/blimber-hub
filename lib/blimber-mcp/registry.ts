@@ -64,6 +64,7 @@ export function listMarketingToolDescriptors(): BlimberMcpToolDescriptor[] {
     marketing_get_campaign: { path: '/api/gpt/marketing/campaigns/{campaignId}', method: 'GET' },
     marketing_create_campaign: { path: '/api/gpt/marketing/campaigns', method: 'POST' },
     marketing_update_campaign: { path: '/api/gpt/marketing/campaigns/{campaignId}', method: 'PUT' },
+    marketing_delete_campaign: { path: '/api/gpt/marketing/campaigns/{campaignId}/delete', method: 'POST' },
     marketing_list_approvals: { path: '/api/gpt/marketing/approvals', method: 'GET' },
     marketing_list_approvers: { path: '/api/gpt/marketing/approvers', method: 'GET' },
     marketing_list_calendar: { path: '/api/gpt/marketing/calendar', method: 'GET' },

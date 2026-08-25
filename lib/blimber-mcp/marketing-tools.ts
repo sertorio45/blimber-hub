@@ -587,6 +587,14 @@ export const marketingUpdateCampaignSchema = z.object({
   ...blimberWriteDryRunField,
 })
 
+export const marketingDeleteCampaignSchema = z.object({
+  tenantId: tenantIdField,
+  campaignId: uuid,
+  actorUserId: uuid.optional(),
+  ...blimberWriteConfirmationFields,
+  ...blimberWriteDryRunField,
+})
+
 export type MarketingToolName =
   | 'marketing_list_social_accounts'
   | 'marketing_list_assets'
@@ -607,6 +615,7 @@ export type MarketingToolName =
   | 'marketing_get_campaign'
   | 'marketing_create_campaign'
   | 'marketing_update_campaign'
+  | 'marketing_delete_campaign'
   | MarketingHubOpsToolName
 
 export const MARKETING_TOOL_DESCRIPTIONS: Record<MarketingToolName, string> = {
@@ -629,6 +638,7 @@ export const MARKETING_TOOL_DESCRIPTIONS: Record<MarketingToolName, string> = {
   marketing_get_campaign: 'Detalhe de campanha editorial + posts vinculados.',
   marketing_create_campaign: 'Cria campanha editorial (dryRun default true sem actor; execute exige actorUserId ou env).',
   marketing_update_campaign: 'Atualiza campanha editorial (nome, status, briefing, datas).',
+  marketing_delete_campaign: 'Hard-delete de campanha editorial (posts desvinculam via FK SET NULL). dryRun default true.',
   ...MARKETING_HUB_OPS_DESCRIPTIONS,
 }
 
@@ -652,6 +662,7 @@ export const MARKETING_TOOL_SCHEMAS = {
   marketing_get_campaign: marketingGetCampaignSchema,
   marketing_create_campaign: marketingCreateCampaignSchema,
   marketing_update_campaign: marketingUpdateCampaignSchema,
+  marketing_delete_campaign: marketingDeleteCampaignSchema,
   ...MARKETING_HUB_OPS_SCHEMAS,
 } as const
 
@@ -2267,6 +2278,59 @@ export async function marketingUpdateCampaign(
   }
 }
 
+export async function marketingDeleteCampaign(
+  ctx: BlimberMcpToolContext,
+  raw: unknown,
+) {
+  const input = marketingDeleteCampaignSchema.parse(raw)
+  assertBlimberWriteConfirmation(input)
+  const dryRun = resolveDryRun(input.dryRun, true)
+
+  const { data: existing } = await ctx.client
+    .from('social_campaigns')
+    .select('*')
+    .eq('id', input.campaignId)
+    .eq('tenant_id', input.tenantId)
+    .maybeSingle()
+
+  if (!existing)
+    throw new BlimberMcpError('NOT_FOUND', 'Campanha editorial não encontrada', 404)
+
+  const preview = mapCampaignRow(existing)
+
+  if (dryRun) {
+    return {
+      dryRun: true as const,
+      wouldMutate: true,
+      entity: 'social_campaign',
+      kind: 'editorial' as const,
+      deleteMode: 'hard' as const,
+      preview,
+      notes: [
+        'Hard-delete em social_campaigns. Posts vinculados ficam com campaign_id NULL (FK ON DELETE SET NULL).',
+        'Reenvie com dryRun=false após confirmação.',
+      ],
+    }
+  }
+
+  const { error } = await ctx.client
+    .from('social_campaigns')
+    .delete()
+    .eq('id', input.campaignId)
+    .eq('tenant_id', input.tenantId)
+
+  if (error)
+    throw new BlimberMcpError('DB_ERROR', error.message, 400)
+
+  return {
+    dryRun: false as const,
+    kind: 'editorial' as const,
+    deleted: true,
+    campaignId: input.campaignId,
+    before: preview,
+  }
+}
+
 type MarketingHandler = (ctx: BlimberMcpToolContext, raw: unknown) => Promise<unknown>
 
 export const MARKETING_TOOL_HANDLERS: Record<MarketingToolName, MarketingHandler> = {
@@ -2289,6 +2353,7 @@ export const MARKETING_TOOL_HANDLERS: Record<MarketingToolName, MarketingHandler
   marketing_get_campaign: marketingGetCampaign,
   marketing_create_campaign: marketingCreateCampaign,
   marketing_update_campaign: marketingUpdateCampaign,
+  marketing_delete_campaign: marketingDeleteCampaign,
   ...MARKETING_HUB_OPS_HANDLERS,
 }
 

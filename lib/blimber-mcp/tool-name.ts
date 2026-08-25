@@ -54,6 +54,7 @@ const OPENAPI_TO_MARKETING: Record<string, string> = {
   getEditorialCampaign: 'marketing_get_campaign',
   createEditorialCampaign: 'marketing_create_campaign',
   updateEditorialCampaign: 'marketing_update_campaign',
+  deleteEditorialCampaign: 'marketing_delete_campaign',
 }
 
 /** Strip ChatGPT connector namespace: `Blimber_Hub.meta_create_ad` → `meta_create_ad`. */

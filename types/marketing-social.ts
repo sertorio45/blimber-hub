@@ -1,5 +1,64 @@
 export type SocialPlatform = 'facebook' | 'instagram' | 'linkedin'
 
+/** Editorial campaign lifecycle (`social_campaigns`). */
+export const SOCIAL_CAMPAIGN_STATUSES = [
+  'draft',
+  'active',
+  'paused',
+  'completed',
+  'cancelled',
+] as const
+export type SocialCampaignStatus = typeof SOCIAL_CAMPAIGN_STATUSES[number]
+
+export const SOCIAL_CAMPAIGN_STATUS_LABELS: Record<SocialCampaignStatus, string> = {
+  draft: 'Rascunho',
+  active: 'Ativa',
+  paused: 'Pausada',
+  completed: 'Concluída',
+  cancelled: 'Cancelada',
+}
+
+export interface SocialCampaign {
+  id: string
+  name: string
+  objective: string
+  status: SocialCampaignStatus
+  startsAt: string | null
+  endsAt: string | null
+  ownerId: string | null
+  briefingSummary: string
+  postsCount: number
+  createdAt: string
+  updatedAt: string
+}
+
+export interface SocialCampaignDetail extends SocialCampaign {
+  posts: Array<{
+    id: string
+    title: string
+    production_status?: string | null
+    editorial_status?: string | null
+    publication_status?: string | null
+    current_version?: number | null
+    scheduled_at?: string | null
+  }>
+}
+
+export interface SocialCampaignInput {
+  name: string
+  objective?: string
+  status?: SocialCampaignStatus
+  startsAt?: string | null
+  endsAt?: string | null
+  ownerId?: string | null
+  briefingSummary?: string
+}
+
+export type SocialCampaignUpdateInput = Partial<SocialCampaignInput> & {
+  postIds?: string[]
+}
+
+
 export type SocialPostStatus
   = | 'draft'
     | 'pending_approval'
