@@ -1,10 +1,12 @@
 import { defineEventHandler, getRouterParam, readBody } from 'h3'
 import {
-  optionalBool,
-  optionalString,
   parseConfirmTrue,
   runMarketingGptTool,
 } from '~/server/utils/blimber-gpt-api'
+import {
+  optionalBool,
+  optionalString,
+} from '~/server/utils/meta-gpt-api'
 
 /** Cancela agendamento (jobs + publication_status=not_scheduled). dryRun default true. */
 export default defineEventHandler(async (event) => {

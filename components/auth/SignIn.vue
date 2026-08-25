@@ -34,7 +34,12 @@ async function onSubmit(event: Event) {
   const { success } = await login(email.value, password.value)
 
   if (success) {
-    await setTenantFromJWT()
+    try {
+      await setTenantFromJWT()
+    }
+    catch (tenantError) {
+      console.error('Falha ao resolver tenant após login:', tenantError)
+    }
     const route = useRoute()
     router.push(resolveSafeRedirect(route.query.redirect))
   }

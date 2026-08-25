@@ -1,9 +1,11 @@
 import { defineEventHandler, getRouterParam } from 'h3'
 import {
-  optionalString,
-  queryRecord,
   runMarketingGptTool,
 } from '~/server/utils/blimber-gpt-api'
+import {
+  optionalString,
+  queryRecord,
+} from '~/server/utils/meta-gpt-api'
 
 /** Detalhe de post editorial. */
 export default defineEventHandler(async (event) => {

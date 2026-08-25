@@ -26,8 +26,6 @@ export function optionalStringArray(value: unknown): string[] | undefined {
   return undefined
 }
 
-export { optionalBool, optionalInt, optionalString, queryRecord }
-
 /** Coerces confirm from JSON boolean or query string ("true"). */
 export function parseConfirmTrue(value: unknown): unknown {
   if (value === true)

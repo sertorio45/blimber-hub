@@ -1,12 +1,14 @@
 import { defineEventHandler, getRouterParam, readBody } from 'h3'
 import {
-  optionalBool,
-  optionalInt,
-  optionalString,
   optionalStringArray,
   parseConfirmTrue,
   runMarketingGptTool,
 } from '~/server/utils/blimber-gpt-api'
+import {
+  optionalBool,
+  optionalInt,
+  optionalString,
+} from '~/server/utils/meta-gpt-api'
 
 /** Gera link mágico de aprovação (dryRun default true). */
 export default defineEventHandler(async (event) => {

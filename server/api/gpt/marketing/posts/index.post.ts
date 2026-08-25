@@ -1,9 +1,11 @@
 import { defineEventHandler, readBody } from 'h3'
 import {
-  optionalBool,
-  optionalString,
   runMarketingGptTool,
 } from '~/server/utils/blimber-gpt-api'
+import {
+  optionalBool,
+  optionalString,
+} from '~/server/utils/meta-gpt-api'
 
 /** Cria post editorial (draft). dryRun default true. */
 export default defineEventHandler(async (event) => {

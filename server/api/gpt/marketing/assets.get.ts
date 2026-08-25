@@ -1,10 +1,12 @@
 import { defineEventHandler } from 'h3'
 import {
+  runMarketingGptTool,
+} from '~/server/utils/blimber-gpt-api'
+import {
   optionalInt,
   optionalString,
   queryRecord,
-  runMarketingGptTool,
-} from '~/server/utils/blimber-gpt-api'
+} from '~/server/utils/meta-gpt-api'
 
 /** Lista assets da Biblioteca de mídia. */
 export default defineEventHandler(async (event) => {

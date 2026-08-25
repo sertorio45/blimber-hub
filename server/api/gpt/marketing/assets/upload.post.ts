@@ -1,11 +1,13 @@
 import { defineEventHandler } from 'h3'
 import {
-  optionalBool,
-  optionalString,
   parseConfirmTrue,
   readGptMutationBody,
   runMarketingGptTool,
 } from '~/server/utils/blimber-gpt-api'
+import {
+  optionalBool,
+  optionalString,
+} from '~/server/utils/meta-gpt-api'
 
 /** Upload para a Biblioteca (sourceUrl HTTPS preferencial). dryRun default true. */
 export default defineEventHandler(async (event) => {

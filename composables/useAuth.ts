@@ -111,15 +111,25 @@ export function useAuth() {
       })
 
       if (authError) {
-        error.value = authError.message
-        return { success: false, error: authError.message }
+        const message = authError.message === 'Invalid login credentials'
+          ? 'E-mail ou senha inválidos'
+          : authError.message
+        error.value = message
+        return { success: false, error: message }
       }
 
       // Após login bem-sucedido, verifique o role do usuário
       await updateUserRole()
 
-      const { bootstrapTenantContext } = useTenant()
-      await bootstrapTenantContext()
+      // Workspace bootstrap is best-effort: a context API failure must not
+      // undo an already-successful Supabase session.
+      try {
+        const { bootstrapTenantContext } = useTenant()
+        await bootstrapTenantContext()
+      }
+      catch (bootstrapError) {
+        console.error('Falha ao carregar contexto do workspace após login:', bootstrapError)
+      }
 
       return { success: true, data }
     }
