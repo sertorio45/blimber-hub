@@ -5,6 +5,10 @@ import {
   normalizeMetaTemplateId,
 } from '~/constants/marketing-report-templates'
 import {
+  buildGoogleAdsSeriesMaps,
+  parseGoogleAdsConversionActionId,
+} from '~/lib/marketing/google-ads-report-scope'
+import {
   // Alias avoids Nitro dual auto-import of the same symbol from google-ads + this file.
   extractGoogleAdsErrorMessage,
   getGoogleAccessToken as getGoogleOAuthAccessToken,
@@ -17,8 +21,11 @@ import { decryptSecret } from '~/server/utils/marketing'
 import type {
   AnalyticsOverviewBlock,
   AnalyticsReportTemplateId,
+  GoogleAdsConfiguredConversionAction,
+  GoogleAdsConversionActionRow,
   GoogleAdsOverviewBlock,
   GoogleAdsReportTemplateId,
+  GoogleAdsSeriesPoint,
   MetaReportTemplateId,
 } from '~/types/marketing-reports'
 
@@ -164,7 +171,63 @@ function emptyGoogleBlock(
     deltas: null,
     campaigns: [],
     series: [],
+    series_by_campaign: {},
+    conversion_actions: [],
+    conversion_actions_configured: [],
     networks: [],
+  }
+}
+
+function mapGoogleDailyCampaignRow(row: any): GoogleAdsSeriesPoint & { campaign_id: string } {
+  return {
+    campaign_id: String(row.campaign?.id || ''),
+    date: String(row.segments?.date || ''),
+    impressions: Number(row.metrics?.impressions || 0),
+    clicks: Number(row.metrics?.clicks || 0),
+    cost: Number(row.metrics?.costMicros || row.metrics?.cost_micros || 0) / 1_000_000,
+    conversions: Number(row.metrics?.conversions || 0),
+    conversions_value: Number(
+      row.metrics?.conversionsValue || row.metrics?.conversions_value || 0,
+    ),
+  }
+}
+
+function mapGoogleConversionActionRow(row: any): GoogleAdsConversionActionRow {
+  const resourceName = String(
+    row.segments?.conversionAction
+    || row.segments?.conversion_action
+    || '',
+  )
+  return {
+    id: parseGoogleAdsConversionActionId(resourceName),
+    name: String(
+      row.segments?.conversionActionName
+      || row.segments?.conversion_action_name
+      || '',
+    ).trim() || 'Ação sem nome',
+    campaign_id: row.campaign?.id != null ? String(row.campaign.id) : null,
+    conversions: Number(row.metrics?.conversions || 0),
+    conversions_value: Number(
+      row.metrics?.conversionsValue || row.metrics?.conversions_value || 0,
+    ),
+    all_conversions: Number(
+      row.metrics?.allConversions || row.metrics?.all_conversions || 0,
+    ),
+    all_conversions_value: Number(
+      row.metrics?.allConversionsValue || row.metrics?.all_conversions_value || 0,
+    ),
+  }
+}
+
+function mapGoogleConfiguredConversionAction(row: any): GoogleAdsConfiguredConversionAction {
+  return {
+    id: String(row.conversionAction?.id || row.conversion_action?.id || ''),
+    name: String(
+      row.conversionAction?.name || row.conversion_action?.name || '',
+    ).trim() || 'Ação sem nome',
+    status: row.conversionAction?.status || row.conversion_action?.status
+      ? String(row.conversionAction?.status || row.conversion_action?.status)
+      : null,
   }
 }
 
@@ -396,23 +459,53 @@ export async function fetchGoogleAdsReportData(
       AND campaign.status != 'REMOVED'
   `
 
+  // Campaign-level daily series so the board can filter by selected campaign
+  // without mixing account totals into campaign KPIs.
   const dailyQuery = `
     SELECT
+      campaign.id,
       segments.date,
       metrics.impressions,
       metrics.clicks,
       metrics.cost_micros,
       metrics.conversions,
       metrics.conversions_value
-    FROM customer
+    FROM campaign
     WHERE ${dateWhere}
+      AND campaign.status != 'REMOVED'
   `
 
-  const [campaignResult, dailyResult, previousResult] = await Promise.all([
-    runGoogleAdsSearch(customerId, headers, campaignQuery),
-    runGoogleAdsSearch(customerId, headers, dailyQuery),
-    runGoogleAdsSearch(customerId, headers, previousCampaignQuery),
-  ])
+  const conversionActionQuery = `
+    SELECT
+      campaign.id,
+      segments.conversion_action,
+      segments.conversion_action_name,
+      metrics.conversions,
+      metrics.conversions_value,
+      metrics.all_conversions,
+      metrics.all_conversions_value
+    FROM campaign
+    WHERE ${dateWhere}
+      AND campaign.status != 'REMOVED'
+  `
+
+  const configuredActionsQuery = `
+    SELECT
+      conversion_action.id,
+      conversion_action.name,
+      conversion_action.status
+    FROM conversion_action
+    WHERE conversion_action.status != 'REMOVED'
+  `
+
+  const [campaignResult, dailyResult, previousResult, conversionResult, configuredResult]
+    = await Promise.all([
+      runGoogleAdsSearch(customerId, headers, campaignQuery),
+      runGoogleAdsSearch(customerId, headers, dailyQuery),
+      runGoogleAdsSearch(customerId, headers, previousCampaignQuery),
+      runGoogleAdsSearch(customerId, headers, conversionActionQuery),
+      runGoogleAdsSearch(customerId, headers, configuredActionsQuery),
+    ])
 
   const apiError = campaignResult.error || dailyResult.error
   if (apiError && !campaignResult.results.length && !dailyResult.results.length) {
@@ -440,10 +533,23 @@ export async function fetchGoogleAdsReportData(
       message: previousResult.error,
     })
   }
+  if (conversionResult.error) {
+    console.warn('[marketing-reports] google_ads conversion actions skipped', {
+      customerId,
+      message: conversionResult.error,
+    })
+  }
+  if (configuredResult.error) {
+    console.warn('[marketing-reports] google_ads configured conversion actions skipped', {
+      customerId,
+      message: configuredResult.error,
+    })
+  }
 
   const allCampaigns = campaignResult.results.map(mapGoogleCampaignRow)
   const campaigns = filterGoogleByTemplate(allCampaigns, templateId)
   const metrics = aggregateGoogleCampaigns(campaigns)
+  const allowedCampaignIds = campaigns.map(c => c.id).filter(Boolean)
 
   const previousCampaigns = filterGoogleByTemplate(
     previousResult.results.map(mapGoogleCampaignRow),
@@ -461,19 +567,22 @@ export async function fetchGoogleAdsReportData(
       )
     : null
 
-  const series = dailyResult.results
-    .map((row: any) => ({
-      date: String(row.segments?.date || ''),
-      impressions: Number(row.metrics?.impressions || 0),
-      clicks: Number(row.metrics?.clicks || 0),
-      cost: Number(row.metrics?.costMicros || row.metrics?.cost_micros || 0) / 1_000_000,
-      conversions: Number(row.metrics?.conversions || 0),
-      conversions_value: Number(
-        row.metrics?.conversionsValue || row.metrics?.conversions_value || 0,
-      ),
-    }))
-    .filter((r: { date: string }) => Boolean(r.date))
-    .sort((a: { date: string }, b: { date: string }) => a.date.localeCompare(b.date))
+  const { series, series_by_campaign } = buildGoogleAdsSeriesMaps(
+    dailyResult.results.map(mapGoogleDailyCampaignRow),
+    allowedCampaignIds,
+  )
+
+  const conversion_actions = conversionResult.results
+    .map(mapGoogleConversionActionRow)
+    .filter((row) => {
+      if (!row.campaign_id)
+        return false
+      return allowedCampaignIds.includes(row.campaign_id)
+    })
+
+  const conversion_actions_configured = configuredResult.results
+    .map(mapGoogleConfiguredConversionAction)
+    .filter(row => Boolean(row.id))
 
   return {
     connected: true,
@@ -485,6 +594,9 @@ export async function fetchGoogleAdsReportData(
     deltas,
     campaigns,
     series,
+    series_by_campaign,
+    conversion_actions,
+    conversion_actions_configured,
     networks: aggregateGoogleNetworks(campaigns),
   }
 }

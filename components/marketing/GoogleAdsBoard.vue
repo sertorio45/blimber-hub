@@ -21,6 +21,11 @@ import {
   getReportTemplate,
   primaryMetricsOf,
 } from '~/constants/marketing-report-templates'
+import {
+  googleAdsConversionEmptyMessage,
+  pickGoogleAdsConversionActionsForScope,
+  pickGoogleAdsSeriesForScope,
+} from '~/lib/marketing/google-ads-report-scope'
 import { toUserFacingReportError } from '~/lib/marketing/report-user-error'
 
 const props = defineProps<{
@@ -32,6 +37,7 @@ const props = defineProps<{
 
 const selectedCampaignId = ref<string | 'all'>('all')
 const activeCampaignsOnly = ref(true)
+const showAllConversions = ref(false)
 
 const template = computed(() =>
   getReportTemplate('google_ads', props.templateId || 'overview'),
@@ -100,14 +106,53 @@ const displayMetrics = computed(() => {
   }
 })
 
-const accountSeries = computed(() => props.google?.series ?? [])
+/** Series aligned with KPI scope (campaign or template-filtered account). */
+const scopedSeries = computed(() =>
+  pickGoogleAdsSeriesForScope({
+    series: props.google?.series,
+    seriesByCampaign: props.google?.series_by_campaign,
+    campaignId: selectedCampaignId.value,
+  }),
+)
+
+const scopedConversionActions = computed(() =>
+  pickGoogleAdsConversionActionsForScope({
+    actions: props.google?.conversion_actions,
+    campaignId: selectedCampaignId.value,
+    allowedCampaignIds: campaigns.value.map(c => c.id),
+  }),
+)
+
+const configuredConversionCount = computed(
+  () => props.google?.conversion_actions_configured?.length ?? 0,
+)
+
+const conversionActionsHaveData = computed(() => {
+  return scopedConversionActions.value.some((row) => {
+    if (showAllConversions.value)
+      return row.all_conversions > 0 || row.all_conversions_value > 0
+    return row.conversions > 0 || row.conversions_value > 0
+  })
+})
+
+const conversionEmptyText = computed(() =>
+  googleAdsConversionEmptyMessage({
+    campaignId: selectedCampaignId.value,
+    configuredCount: configuredConversionCount.value,
+    conversionsTotal: displayMetrics.value.conversions,
+    allConversionsTotal: scopedConversionActions.value.reduce(
+      (sum, row) => sum + Number(row.all_conversions || 0),
+      0,
+    ),
+  }),
+)
 
 function invertKey(key: string) {
   return key.includes('cost') || key === 'cpc' || key === 'cpm'
 }
 
 function valuesFromSeries(key: keyof GoogleAdsSeriesPoint | 'ctr' | 'cpc' | 'cost_per_conversion' | 'roas'): number[] {
-  const s = accountSeries.value
+  const s = scopedSeries.value
   if (s.length >= 2) {
     return s.map((p) => {
       if (key in p)
@@ -158,7 +203,7 @@ function channelPt(channel: string | null | undefined) {
 }
 
 const trendData = computed(() =>
-  accountSeries.value.map(p => ({
+  scopedSeries.value.map(p => ({
     date: p.date,
     investimento: Number(p.cost.toFixed(2)),
     conversoes: p.conversions,
@@ -203,6 +248,34 @@ const networkRows = computed(() =>
     _id: n.network,
     network_label: channelPt(n.network),
   })),
+)
+
+const conversionActionColumns = computed<ReportTableColumn[]>(() => {
+  if (showAllConversions.value) {
+    return [
+      { key: 'name', label: 'Ação de conversão', format: 'raw' },
+      { key: 'all_conversions', label: 'Todas as conversões', align: 'right', format: 'decimal' },
+      { key: 'all_conversions_value', label: 'Valor (todas)', align: 'right', format: 'currency' },
+    ]
+  }
+  return [
+    { key: 'name', label: 'Ação de conversão', format: 'raw' },
+    { key: 'conversions', label: 'Conversões', align: 'right', format: 'decimal' },
+    { key: 'conversions_value', label: 'Valor', align: 'right', format: 'currency' },
+  ]
+})
+
+const conversionActionRows = computed(() =>
+  scopedConversionActions.value
+    .filter((row) => {
+      if (showAllConversions.value)
+        return row.all_conversions > 0 || row.all_conversions_value > 0
+      return row.conversions > 0 || row.conversions_value > 0
+    })
+    .map(row => ({
+      ...row,
+      _id: row.id || row.name,
+    })),
 )
 
 watch(
@@ -370,7 +443,12 @@ watch(activeCampaignsOnly, () => {
                 Investimento vs resultados
               </p>
               <p class="mt-0.5 text-sm text-muted-foreground">
-                Custo diário, cliques e conversões
+                <template v-if="selectedCampaignId === 'all'">
+                  Custo diário, cliques e conversões (escopo do modelo)
+                </template>
+                <template v-else>
+                  Custo diário, cliques e conversões da campanha selecionada
+                </template>
               </p>
             </div>
             <ReportTrendChart
@@ -384,6 +462,46 @@ watch(activeCampaignsOnly, () => {
               :height="240"
               :y-formatter="(v) => formatReportMetricValue(v, v >= 100 ? 'integer' : 'decimal')"
             />
+          </div>
+
+          <div class="border-b px-4 py-4 sm:px-6">
+            <div class="mb-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <p class="text-xs text-muted-foreground font-medium tracking-wide uppercase">
+                  Conversões por ação
+                </p>
+                <p class="mt-0.5 text-sm text-muted-foreground">
+                  <template v-if="showAllConversions">
+                    Todas as conversões (inclui ações secundárias / não primárias)
+                  </template>
+                  <template v-else>
+                    Conversões primárias por ação de conversão
+                  </template>
+                </p>
+              </div>
+              <div
+                class="flex items-center justify-between gap-3 border border-border/70 rounded-xl bg-muted/25 px-3 py-2.5 shadow-sm sm:min-w-[240px]"
+              >
+                <Label for="gads-all-conv" class="cursor-pointer text-sm font-medium">
+                  Incluir todas as conversões
+                </Label>
+                <Switch id="gads-all-conv" v-model:checked="showAllConversions" />
+              </div>
+            </div>
+
+            <ReportInsightTable
+              v-if="conversionActionsHaveData"
+              :columns="conversionActionColumns"
+              :rows="conversionActionRows as any"
+              :max-rows="40"
+              empty-text="Nenhuma conversão no período"
+            />
+            <div
+              v-else
+              class="rounded-lg border border-dashed px-4 py-8 text-center text-sm text-muted-foreground"
+            >
+              {{ conversionEmptyText }}
+            </div>
           </div>
 
           <div

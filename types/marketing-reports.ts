@@ -105,6 +105,25 @@ export interface GoogleAdsSeriesPoint {
   conversions_value: number
 }
 
+/** Per-campaign conversion action metrics (primary + all_conversions). */
+export interface GoogleAdsConversionActionRow {
+  id: string | null
+  name: string
+  /** Google Ads campaign id; null only for rare account-level rows */
+  campaign_id: string | null
+  conversions: number
+  conversions_value: number
+  all_conversions: number
+  all_conversions_value: number
+}
+
+/** Conversion actions configured on the Ads account (not period metrics). */
+export interface GoogleAdsConfiguredConversionAction {
+  id: string
+  name: string
+  status?: string | null
+}
+
 export interface GoogleAdsNetworkRow {
   network: string
   impressions: number
@@ -139,7 +158,17 @@ export interface GoogleAdsOverviewBlock {
   /** Delta % vs previous_metrics (keyed like metrics) */
   deltas?: ReportMetricDeltas | null
   campaigns: GoogleAdsCampaignInsight[]
+  /**
+   * Account-level daily series for the active template scope
+   * (aggregated from campaigns that match the template filters).
+   */
   series?: GoogleAdsSeriesPoint[]
+  /** Daily series keyed by Google Ads campaign id */
+  series_by_campaign?: Record<string, GoogleAdsSeriesPoint[]>
+  /** Conversion metrics broken down by conversion_action × campaign */
+  conversion_actions?: GoogleAdsConversionActionRow[]
+  /** Actions configured on the account (for empty-state messaging) */
+  conversion_actions_configured?: GoogleAdsConfiguredConversionAction[]
   /** Performance by advertising channel / network type */
   networks?: GoogleAdsNetworkRow[]
   connected: boolean
