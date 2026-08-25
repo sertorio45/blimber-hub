@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { MarketingOverviewPeriod, MetaOverviewBlock, MetaSeriesPoint } from '~/types/marketing'
+import type { MarketingReportLayoutJson } from '~/types/marketing-report-layout'
 import type { MetaReportTemplateId } from '~/types/marketing-reports'
 import type { ReportTableColumn } from '@/components/marketing/ReportInsightTable.vue'
 
@@ -9,21 +10,33 @@ import ReportKpiCard from '@/components/marketing/ReportKpiCard.vue'
 import ReportTrendChart from '@/components/marketing/ReportTrendChart.vue'
 import { Switch } from '@/components/ui/switch'
 import {
-  detailMetricsOf,
   getReportTemplate,
-  primaryMetricsOf,
 } from '~/constants/marketing-report-templates'
 import {
   formatReportMetricValue,
   periodLabelPt,
   readMetricBag,
 } from '~/composables/marketing/useMarketingReportMetrics'
+import {
+  buildDefaultReportLayout,
+  normalizeReportLayout,
+  resolveBlockMetricDefs,
+} from '~/lib/marketing/report-layout'
 
 const props = defineProps<{
   meta?: MetaOverviewBlock | null
   period?: MarketingOverviewPeriod | null
   loading?: boolean
   templateId?: MetaReportTemplateId | string
+  layout?: MarketingReportLayoutJson | null
+}>()
+
+const emit = defineEmits<{
+  'campaign-change': [payload: {
+    campaignId: string | 'all'
+    objective: string | null
+    primaryActionType: string | null
+  }]
 }>()
 
 const adsActiveOnly = defineModel<boolean>('adsActiveOnly', { default: false })
@@ -34,8 +47,25 @@ const activeCampaignsOnly = ref(true)
 const template = computed(() =>
   getReportTemplate('meta', props.templateId || 'overview'),
 )
-const primaryDefs = computed(() => primaryMetricsOf(template.value))
-const detailDefs = computed(() => detailMetricsOf(template.value))
+
+const effectiveLayout = computed(() => {
+  const baseId = props.templateId || 'overview'
+  if (props.layout)
+    return normalizeReportLayout('meta', baseId, props.layout)
+  return buildDefaultReportLayout('meta', baseId)
+})
+
+const visibleBlocks = computed(() =>
+  effectiveLayout.value.blocks.filter(b => b.enabled !== false),
+)
+
+function metricDefsForBlock(block: { type: string, metricKeys?: string[] }) {
+  if (block.type === 'kpi_primary')
+    return resolveBlockMetricDefs(template.value.metrics, block.metricKeys, 'primary')
+  if (block.type === 'kpi_detail')
+    return resolveBlockMetricDefs(template.value.metrics, block.metricKeys, 'detail')
+  return []
+}
 
 const periodLabel = computed(() => periodLabelPt(props.period))
 
@@ -223,6 +253,29 @@ watch(activeCampaignsOnly, () => {
   if (!campaignSelectOptions.value.some(c => String(c.id) === String(selectedCampaignId.value)))
     selectedCampaignId.value = 'all'
 })
+
+watch(
+  selectedCampaignId,
+  (campaignId) => {
+    if (campaignId === 'all') {
+      emit('campaign-change', {
+        campaignId: 'all',
+        objective: null,
+        primaryActionType: null,
+      })
+      return
+    }
+    const row = campaigns.value.find(c => String(c.id) === String(campaignId))
+    emit('campaign-change', {
+      campaignId,
+      objective: row?.objective != null ? String(row.objective) : null,
+      primaryActionType: row?.primary_action_type != null
+        ? String(row.primary_action_type)
+        : null,
+    })
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
@@ -321,91 +374,109 @@ watch(activeCampaignsOnly, () => {
       </div>
 
       <template v-else>
-        <div class="border-b px-4 py-4 sm:px-6">
-          <div class="grid gap-4 lg:grid-cols-3">
-            <ReportKpiCard
-              v-for="item in primaryDefs"
-              :key="item.key"
-              :label="item.label"
-              :value="metricValue(item.key)"
-              :format="item.format"
-              :delta="trendHalf(valuesFromSeries(item.key))"
-              :invert-delta="invertKey(item.key)"
-              delta-suffix="tendência"
-              :sparkline="valuesFromSeries(item.key)"
-              :muted="item.muted"
-              size="primary"
-            />
-          </div>
-        </div>
-
-        <div class="border-b px-4 py-4 sm:px-6">
-          <p class="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Detalhamento
-          </p>
-          <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <ReportKpiCard
-              v-for="item in detailDefs"
-              :key="item.key"
-              :label="item.label"
-              :value="metricValue(item.key)"
-              :format="item.format"
-              :delta="trendHalf(valuesFromSeries(item.key))"
-              :invert-delta="invertKey(item.key)"
-              delta-suffix="tendência"
-              :sparkline="valuesFromSeries(item.key)"
-              :muted="item.muted"
-              size="detail"
-            />
-          </div>
-        </div>
-
-        <div v-if="trendData.length" class="border-b px-4 py-4 sm:px-6">
-          <div class="mb-3">
-            <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Investimento vs resultados
-            </p>
-            <p class="mt-0.5 text-sm text-muted-foreground">
-              Evolução diária da conta
-            </p>
-          </div>
-          <ReportTrendChart
-            :data="trendData"
-            index="date"
-            :series="[
-              { key: 'investimento', label: 'Investimento (R$)' },
-              { key: 'resultados', label: 'Resultados' },
-              { key: 'alcance', label: 'Alcance' },
-            ]"
-            :height="240"
-            :y-formatter="(v) => formatReportMetricValue(v, v >= 100 ? 'integer' : 'decimal')"
-          />
-        </div>
-
-        <div class="px-4 py-4 sm:px-6">
-          <p class="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Campanhas
-          </p>
-          <ReportInsightTable
-            :columns="campaignColumns"
-            :rows="campaignRows as any"
-            :max-rows="40"
-            empty-text="Sem campanhas neste modelo/período."
+        <template v-for="(block, blockIndex) in visibleBlocks" :key="block.id">
+          <div
+            v-if="block.type === 'kpi_primary'"
+            class="border-b px-4 py-4 sm:px-6"
+            :class="blockIndex === visibleBlocks.length - 1 ? 'border-b-0' : ''"
           >
-            <template #cell-name="{ row }">
-              <button
-                type="button"
-                class="text-left font-medium hover:underline"
-                @click="selectedCampaignId = String(row.id)"
-              >
-                {{ row.name || row.id }}
-              </button>
-              <p v-if="row.status_label" class="text-xs text-muted-foreground">
-                {{ row.status_label }}
+            <div class="grid gap-4 lg:grid-cols-3">
+              <ReportKpiCard
+                v-for="item in metricDefsForBlock(block)"
+                :key="item.key"
+                :label="item.label"
+                :value="metricValue(item.key)"
+                :format="item.format"
+                :delta="trendHalf(valuesFromSeries(item.key))"
+                :invert-delta="invertKey(item.key)"
+                delta-suffix="tendência"
+                :sparkline="valuesFromSeries(item.key)"
+                :muted="item.muted"
+                size="primary"
+              />
+            </div>
+          </div>
+
+          <div
+            v-else-if="block.type === 'kpi_detail'"
+            class="border-b px-4 py-4 sm:px-6"
+            :class="blockIndex === visibleBlocks.length - 1 ? 'border-b-0' : ''"
+          >
+            <p class="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              {{ block.title || 'Detalhamento' }}
+            </p>
+            <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <ReportKpiCard
+                v-for="item in metricDefsForBlock(block)"
+                :key="item.key"
+                :label="item.label"
+                :value="metricValue(item.key)"
+                :format="item.format"
+                :delta="trendHalf(valuesFromSeries(item.key))"
+                :invert-delta="invertKey(item.key)"
+                delta-suffix="tendência"
+                :sparkline="valuesFromSeries(item.key)"
+                :muted="item.muted"
+                size="detail"
+              />
+            </div>
+          </div>
+
+          <div
+            v-else-if="block.type === 'trend_chart' && trendData.length"
+            class="border-b px-4 py-4 sm:px-6"
+            :class="blockIndex === visibleBlocks.length - 1 ? 'border-b-0' : ''"
+          >
+            <div class="mb-3">
+              <p class="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                {{ block.title || 'Investimento vs resultados' }}
               </p>
-            </template>
-          </ReportInsightTable>
-        </div>
+              <p class="mt-0.5 text-sm text-muted-foreground">
+                Evolução diária da conta
+              </p>
+            </div>
+            <ReportTrendChart
+              :data="trendData"
+              index="date"
+              :series="[
+                { key: 'investimento', label: 'Investimento (R$)' },
+                { key: 'resultados', label: 'Resultados' },
+                { key: 'alcance', label: 'Alcance' },
+              ]"
+              :height="240"
+              :y-formatter="(v) => formatReportMetricValue(v, v >= 100 ? 'integer' : 'decimal')"
+            />
+          </div>
+
+          <div
+            v-else-if="block.type === 'campaigns_table' || block.type === 'insights'"
+            class="border-b px-4 py-4 sm:px-6"
+            :class="blockIndex === visibleBlocks.length - 1 ? 'border-b-0' : ''"
+          >
+            <p class="mb-3 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              {{ block.title || (block.type === 'insights' ? 'Insights' : 'Campanhas') }}
+            </p>
+            <ReportInsightTable
+              :columns="campaignColumns"
+              :rows="campaignRows as any"
+              :max-rows="40"
+              empty-text="Sem campanhas neste modelo/período."
+            >
+              <template #cell-name="{ row }">
+                <button
+                  type="button"
+                  class="text-left font-medium hover:underline"
+                  @click="selectedCampaignId = String(row.id)"
+                >
+                  {{ row.name || row.id }}
+                </button>
+                <p v-if="row.status_label" class="text-xs text-muted-foreground">
+                  {{ row.status_label }}
+                </p>
+              </template>
+            </ReportInsightTable>
+          </div>
+        </template>
       </template>
     </CardContent>
   </Card>

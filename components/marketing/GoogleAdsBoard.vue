@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { ReportTableColumn } from '@/components/marketing/ReportInsightTable.vue'
 import type { MarketingOverviewPeriod } from '~/types/marketing'
+import type { MarketingReportLayoutJson } from '~/types/marketing-report-layout'
 import type {
   GoogleAdsOverviewBlock,
   GoogleAdsReportTemplateId,
@@ -17,15 +18,18 @@ import {
   readMetricBag,
 } from '~/composables/marketing/useMarketingReportMetrics'
 import {
-  detailMetricsOf,
   getReportTemplate,
-  primaryMetricsOf,
 } from '~/constants/marketing-report-templates'
 import {
   googleAdsConversionEmptyMessage,
   pickGoogleAdsConversionActionsForScope,
   pickGoogleAdsSeriesForScope,
 } from '~/lib/marketing/google-ads-report-scope'
+import {
+  buildDefaultReportLayout,
+  normalizeReportLayout,
+  resolveBlockMetricDefs,
+} from '~/lib/marketing/report-layout'
 import { toUserFacingReportError } from '~/lib/marketing/report-user-error'
 
 const props = defineProps<{
@@ -33,6 +37,12 @@ const props = defineProps<{
   period?: MarketingOverviewPeriod | null
   templateId?: GoogleAdsReportTemplateId | string
   loading?: boolean
+  /** Custom layout (tenant); defaults to template catalog layout */
+  layout?: MarketingReportLayoutJson | null
+}>()
+
+const emit = defineEmits<{
+  'campaign-change': [payload: { campaignId: string | 'all', channel: string | null }]
 }>()
 
 const selectedCampaignId = ref<string | 'all'>('all')
@@ -42,8 +52,25 @@ const showAllConversions = ref(false)
 const template = computed(() =>
   getReportTemplate('google_ads', props.templateId || 'overview'),
 )
-const primaryDefs = computed(() => primaryMetricsOf(template.value))
-const detailDefs = computed(() => detailMetricsOf(template.value))
+
+const effectiveLayout = computed(() => {
+  const baseId = props.templateId || 'overview'
+  if (props.layout)
+    return normalizeReportLayout('google_ads', baseId, props.layout)
+  return buildDefaultReportLayout('google_ads', baseId)
+})
+
+const visibleBlocks = computed(() =>
+  effectiveLayout.value.blocks.filter(b => b.enabled !== false),
+)
+
+function metricDefsForBlock(block: { type: string, metricKeys?: string[] }) {
+  if (block.type === 'kpi_primary')
+    return resolveBlockMetricDefs(template.value.metrics, block.metricKeys, 'primary')
+  if (block.type === 'kpi_detail')
+    return resolveBlockMetricDefs(template.value.metrics, block.metricKeys, 'detail')
+  return []
+}
 
 const periodLabel = computed(() => periodLabelPt(props.period))
 const deltas = computed(() =>
@@ -296,6 +323,22 @@ watch(activeCampaignsOnly, () => {
   if (!campaignSelectOptions.value.some(c => String(c.id) === String(selectedCampaignId.value)))
     selectedCampaignId.value = 'all'
 })
+
+watch(
+  selectedCampaignId,
+  (campaignId) => {
+    if (campaignId === 'all') {
+      emit('campaign-change', { campaignId: 'all', channel: null })
+      return
+    }
+    const row = campaigns.value.find(c => String(c.id) === String(campaignId))
+    emit('campaign-change', {
+      campaignId,
+      channel: row?.channel != null ? String(row.channel) : null,
+    })
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
@@ -400,148 +443,171 @@ watch(activeCampaignsOnly, () => {
         </div>
 
         <template v-else>
-          <div class="border-b px-4 py-4 sm:px-6">
-            <div class="grid gap-4 lg:grid-cols-3">
-              <ReportKpiCard
-                v-for="item in primaryDefs"
-                :key="item.key"
-                :label="item.label"
-                :value="readMetricBag(displayMetrics as any, item.key)"
-                :format="item.format"
-                :delta="deltas?.[item.key] ?? null"
-                :invert-delta="invertKey(item.key)"
-                :sparkline="valuesFromSeries(item.key as any)"
-                :muted="item.muted"
-                size="primary"
-              />
+          <template v-for="(block, blockIndex) in visibleBlocks" :key="block.id">
+            <div
+              v-if="block.type === 'kpi_primary'"
+              class="border-b px-4 py-4 sm:px-6"
+              :class="blockIndex === visibleBlocks.length - 1 ? 'border-b-0' : ''"
+            >
+              <div class="grid gap-4 lg:grid-cols-3">
+                <ReportKpiCard
+                  v-for="item in metricDefsForBlock(block)"
+                  :key="item.key"
+                  :label="item.label"
+                  :value="readMetricBag(displayMetrics as any, item.key)"
+                  :format="item.format"
+                  :delta="deltas?.[item.key] ?? null"
+                  :invert-delta="invertKey(item.key)"
+                  :sparkline="valuesFromSeries(item.key as any)"
+                  :muted="item.muted"
+                  size="primary"
+                />
+              </div>
             </div>
-          </div>
 
-          <div class="border-b px-4 py-4 sm:px-6">
-            <p class="mb-3 text-xs text-muted-foreground font-medium tracking-wide uppercase">
-              Detalhamento
-            </p>
-            <div class="grid gap-3 lg:grid-cols-4 sm:grid-cols-2">
-              <ReportKpiCard
-                v-for="item in detailDefs"
-                :key="item.key"
-                :label="item.label"
-                :value="readMetricBag(displayMetrics as any, item.key)"
-                :format="item.format"
-                :delta="deltas?.[item.key] ?? null"
-                :invert-delta="invertKey(item.key)"
-                :sparkline="valuesFromSeries(item.key as any)"
-                :muted="item.muted"
-                size="detail"
-              />
-            </div>
-          </div>
-
-          <div v-if="trendData.length" class="border-b px-4 py-4 sm:px-6">
-            <div class="mb-3">
-              <p class="text-xs text-muted-foreground font-medium tracking-wide uppercase">
-                Investimento vs resultados
+            <div
+              v-else-if="block.type === 'kpi_detail'"
+              class="border-b px-4 py-4 sm:px-6"
+              :class="blockIndex === visibleBlocks.length - 1 ? 'border-b-0' : ''"
+            >
+              <p class="mb-3 text-xs text-muted-foreground font-medium tracking-wide uppercase">
+                {{ block.title || 'Detalhamento' }}
               </p>
-              <p class="mt-0.5 text-sm text-muted-foreground">
-                <template v-if="selectedCampaignId === 'all'">
-                  Custo diário, cliques e conversões (escopo do modelo)
-                </template>
-                <template v-else>
-                  Custo diário, cliques e conversões da campanha selecionada
-                </template>
-              </p>
+              <div class="grid gap-3 lg:grid-cols-4 sm:grid-cols-2">
+                <ReportKpiCard
+                  v-for="item in metricDefsForBlock(block)"
+                  :key="item.key"
+                  :label="item.label"
+                  :value="readMetricBag(displayMetrics as any, item.key)"
+                  :format="item.format"
+                  :delta="deltas?.[item.key] ?? null"
+                  :invert-delta="invertKey(item.key)"
+                  :sparkline="valuesFromSeries(item.key as any)"
+                  :muted="item.muted"
+                  size="detail"
+                />
+              </div>
             </div>
-            <ReportTrendChart
-              :data="trendData"
-              index="date"
-              :series="[
-                { key: 'investimento', label: 'Investimento (R$)' },
-                { key: 'cliques', label: 'Cliques' },
-                { key: 'conversoes', label: 'Conversões' },
-              ]"
-              :height="240"
-              :y-formatter="(v) => formatReportMetricValue(v, v >= 100 ? 'integer' : 'decimal')"
-            />
-          </div>
 
-          <div class="border-b px-4 py-4 sm:px-6">
-            <div class="mb-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div>
+            <div
+              v-else-if="block.type === 'trend_chart' && trendData.length"
+              class="border-b px-4 py-4 sm:px-6"
+              :class="blockIndex === visibleBlocks.length - 1 ? 'border-b-0' : ''"
+            >
+              <div class="mb-3">
                 <p class="text-xs text-muted-foreground font-medium tracking-wide uppercase">
-                  Conversões por ação
+                  {{ block.title || 'Investimento vs resultados' }}
                 </p>
                 <p class="mt-0.5 text-sm text-muted-foreground">
-                  <template v-if="showAllConversions">
-                    Todas as conversões (inclui ações secundárias / não primárias)
+                  <template v-if="selectedCampaignId === 'all'">
+                    Custo diário, cliques e conversões (escopo do modelo)
                   </template>
                   <template v-else>
-                    Conversões primárias por ação de conversão
+                    Custo diário, cliques e conversões da campanha selecionada
                   </template>
                 </p>
               </div>
+              <ReportTrendChart
+                :data="trendData"
+                index="date"
+                :series="[
+                  { key: 'investimento', label: 'Investimento (R$)' },
+                  { key: 'cliques', label: 'Cliques' },
+                  { key: 'conversoes', label: 'Conversões' },
+                ]"
+                :height="240"
+                :y-formatter="(v) => formatReportMetricValue(v, v >= 100 ? 'integer' : 'decimal')"
+              />
+            </div>
+
+            <div
+              v-else-if="block.type === 'conversions_table'"
+              class="border-b px-4 py-4 sm:px-6"
+              :class="blockIndex === visibleBlocks.length - 1 ? 'border-b-0' : ''"
+            >
+              <div class="mb-3 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <p class="text-xs text-muted-foreground font-medium tracking-wide uppercase">
+                    {{ block.title || 'Conversões por ação' }}
+                  </p>
+                  <p class="mt-0.5 text-sm text-muted-foreground">
+                    <template v-if="showAllConversions">
+                      Todas as conversões (inclui ações secundárias / não primárias)
+                    </template>
+                    <template v-else>
+                      Conversões primárias por ação de conversão
+                    </template>
+                  </p>
+                </div>
+                <div
+                  class="flex items-center justify-between gap-3 border border-border/70 rounded-xl bg-muted/25 px-3 py-2.5 shadow-sm sm:min-w-[240px]"
+                >
+                  <Label for="gads-all-conv" class="cursor-pointer text-sm font-medium">
+                    Incluir todas as conversões
+                  </Label>
+                  <Switch id="gads-all-conv" v-model:checked="showAllConversions" />
+                </div>
+              </div>
+
+              <ReportInsightTable
+                v-if="conversionActionsHaveData"
+                :columns="conversionActionColumns"
+                :rows="conversionActionRows as any"
+                :max-rows="40"
+                empty-text="Nenhuma conversão no período"
+              />
               <div
-                class="flex items-center justify-between gap-3 border border-border/70 rounded-xl bg-muted/25 px-3 py-2.5 shadow-sm sm:min-w-[240px]"
+                v-else
+                class="rounded-lg border border-dashed px-4 py-8 text-center text-sm text-muted-foreground"
               >
-                <Label for="gads-all-conv" class="cursor-pointer text-sm font-medium">
-                  Incluir todas as conversões
-                </Label>
-                <Switch id="gads-all-conv" v-model:checked="showAllConversions" />
+                {{ conversionEmptyText }}
               </div>
             </div>
 
-            <ReportInsightTable
-              v-if="conversionActionsHaveData"
-              :columns="conversionActionColumns"
-              :rows="conversionActionRows as any"
-              :max-rows="40"
-              empty-text="Nenhuma conversão no período"
-            />
             <div
-              v-else
-              class="rounded-lg border border-dashed px-4 py-8 text-center text-sm text-muted-foreground"
+              v-else-if="block.type === 'networks_table' && networkRows.length > 1"
+              class="border-b px-4 py-4 sm:px-6"
+              :class="blockIndex === visibleBlocks.length - 1 ? 'border-b-0' : ''"
             >
-              {{ conversionEmptyText }}
+              <p class="mb-3 text-xs text-muted-foreground font-medium tracking-wide uppercase">
+                {{ block.title || 'Por tipo de campanha' }}
+              </p>
+              <ReportInsightTable
+                :columns="networkColumns"
+                :rows="networkRows as any"
+                empty-text="Sem breakdown por canal."
+              />
             </div>
-          </div>
 
-          <div
-            v-if="networkRows.length > 1"
-            class="border-b px-4 py-4 sm:px-6"
-          >
-            <p class="mb-3 text-xs text-muted-foreground font-medium tracking-wide uppercase">
-              Por tipo de campanha
-            </p>
-            <ReportInsightTable
-              :columns="networkColumns"
-              :rows="networkRows as any"
-              empty-text="Sem breakdown por canal."
-            />
-          </div>
-
-          <div class="px-4 py-4 sm:px-6">
-            <p class="mb-3 text-xs text-muted-foreground font-medium tracking-wide uppercase">
-              Campanhas
-            </p>
-            <ReportInsightTable
-              :columns="campaignColumns"
-              :rows="campaignRows as any"
-              :max-rows="40"
-              empty-text="Sem dados de campanha neste modelo/período."
+            <div
+              v-else-if="block.type === 'campaigns_table' || block.type === 'insights'"
+              class="border-b px-4 py-4 sm:px-6"
+              :class="blockIndex === visibleBlocks.length - 1 ? 'border-b-0' : ''"
             >
-              <template #cell-name="{ row }">
-                <button
-                  type="button"
-                  class="text-left font-medium hover:underline"
-                  @click="selectedCampaignId = String(row.id)"
-                >
-                  {{ row.name || row.id }}
-                </button>
-                <p v-if="row.status_label" class="text-xs text-muted-foreground">
-                  {{ row.status_label }}
-                </p>
-              </template>
-            </ReportInsightTable>
-          </div>
+              <p class="mb-3 text-xs text-muted-foreground font-medium tracking-wide uppercase">
+                {{ block.title || (block.type === 'insights' ? 'Insights' : 'Campanhas') }}
+              </p>
+              <ReportInsightTable
+                :columns="campaignColumns"
+                :rows="campaignRows as any"
+                :max-rows="40"
+                empty-text="Sem dados de campanha neste modelo/período."
+              >
+                <template #cell-name="{ row }">
+                  <button
+                    type="button"
+                    class="text-left font-medium hover:underline"
+                    @click="selectedCampaignId = String(row.id)"
+                  >
+                    {{ row.name || row.id }}
+                  </button>
+                  <p v-if="row.status_label" class="text-xs text-muted-foreground">
+                    {{ row.status_label }}
+                  </p>
+                </template>
+              </ReportInsightTable>
+            </div>
+          </template>
         </template>
       </template>
     </CardContent>

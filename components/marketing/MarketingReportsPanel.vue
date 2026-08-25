@@ -10,13 +10,21 @@ import type {
   MarketingDatePreset,
   MetaReportTemplateId,
 } from '~/types/marketing'
+import type { MarketingReportLayoutJson } from '~/types/marketing-report-layout'
 
 import AnalyticsBoard from '@/components/marketing/AnalyticsBoard.vue'
 import GoogleAdsBoard from '@/components/marketing/GoogleAdsBoard.vue'
+import MarketingReportLayoutBuilder from '@/components/marketing/MarketingReportLayoutBuilder.vue'
 import MarketingReportTemplatePicker from '@/components/marketing/MarketingReportTemplatePicker.vue'
 import MarketingReportTemplateSidebar from '@/components/marketing/MarketingReportTemplateSidebar.vue'
 import MetaAdsBoard from '@/components/marketing/MetaAdsBoard.vue'
 import { DateRangePicker } from '@/components/ui/date-range-picker'
+import { useMarketingReportLayouts } from '~/composables/marketing/useMarketingReportLayouts'
+import { buildDefaultReportLayout } from '~/lib/marketing/report-layout'
+import {
+  presetGoogleAdsTemplateFromChannel,
+  presetMetaTemplateFromCampaign,
+} from '~/lib/marketing/report-template-preset'
 import { toUserFacingReportError } from '~/lib/marketing/report-user-error'
 import { defaultCustomDateRange } from '~/lib/marketing/reports-hub'
 
@@ -42,6 +50,12 @@ const props = withDefaults(defineProps<{
 
 const { tenantId } = useTenant()
 const queryRange = useMarketingReportsRange()
+
+const layoutsApi = useMarketingReportLayouts()
+const editingLayout = ref(false)
+const draftLayout = ref<MarketingReportLayoutJson | null>(null)
+/** When true, skip auto-preset until source changes. */
+const templateManuallyLocked = ref(false)
 
 const allowed = computed(() => {
   if (props.lockedSource)
@@ -121,6 +135,9 @@ watch(datePreset, (value) => {
 })
 
 watch(source, (value) => {
+  templateManuallyLocked.value = false
+  editingLayout.value = false
+  draftLayout.value = null
   if (value === 'meta' && !metaTemplate.value)
     metaTemplate.value = 'overview'
   if (value === 'google_ads' && !googleTemplate.value)
@@ -129,7 +146,23 @@ watch(source, (value) => {
     analyticsTemplate.value = 'overview'
 })
 
+watch(
+  tenantId,
+  async (id) => {
+    if (!id)
+      return
+    await layoutsApi.loadLayouts()
+  },
+  { immediate: true },
+)
+
 const showSourceSidebar = computed(() => !props.lockedSource && (allowed.value?.length || 3) > 1)
+
+const layoutProvider = computed(() => {
+  if (source.value === 'meta' || source.value === 'google_ads')
+    return source.value
+  return null
+})
 
 const activeTemplateId = computed({
   get: () => {
@@ -140,6 +173,7 @@ const activeTemplateId = computed({
     return analyticsTemplate.value
   },
   set: (id: string) => {
+    templateManuallyLocked.value = true
     if (source.value === 'meta')
       metaTemplate.value = id as MetaReportTemplateId
     else if (source.value === 'google_ads')
@@ -148,6 +182,14 @@ const activeTemplateId = computed({
       analyticsTemplate.value = id as AnalyticsReportTemplateId
   },
 })
+
+const boardLayout = computed(() => {
+  if (!layoutProvider.value)
+    return null
+  return layoutsApi.resolveLayout(layoutProvider.value, activeTemplateId.value)
+})
+
+const canEditLayout = computed(() => Boolean(layoutProvider.value))
 
 function overviewQuery() {
   const query: Record<string, string | undefined> = {
@@ -213,6 +255,74 @@ async function refreshMarketing() {
   lastRefreshAt.value = now
   forceRefreshOnce.value = true
   await refresh()
+}
+
+function onGoogleCampaignChange(payload: { campaignId: string | 'all', channel: string | null }) {
+  if (payload.campaignId === 'all')
+    return
+  if (templateManuallyLocked.value)
+    return
+  // Auto-preset only when the tenant has no custom layout for this provider yet
+  if (layoutsApi.providerHasAnyCustomLayout('google_ads'))
+    return
+  const next = presetGoogleAdsTemplateFromChannel(payload.channel)
+  if (next !== googleTemplate.value)
+    googleTemplate.value = next
+}
+
+function onMetaCampaignChange(payload: {
+  campaignId: string | 'all'
+  objective: string | null
+  primaryActionType: string | null
+}) {
+  if (payload.campaignId === 'all')
+    return
+  if (templateManuallyLocked.value)
+    return
+  if (layoutsApi.providerHasAnyCustomLayout('meta'))
+    return
+  const next = presetMetaTemplateFromCampaign({
+    objective: payload.objective,
+    primaryActionType: payload.primaryActionType,
+  })
+  if (next !== metaTemplate.value)
+    metaTemplate.value = next
+}
+
+function startEditLayout() {
+  if (!layoutProvider.value)
+    return
+  draftLayout.value = structuredClone(
+    layoutsApi.resolveLayout(layoutProvider.value, activeTemplateId.value),
+  )
+  editingLayout.value = true
+}
+
+function cancelEditLayout() {
+  editingLayout.value = false
+  draftLayout.value = null
+}
+
+async function saveEditLayout() {
+  if (!layoutProvider.value || !draftLayout.value)
+    return
+  await layoutsApi.saveLayout({
+    provider: layoutProvider.value,
+    templateBaseId: activeTemplateId.value,
+    layout: draftLayout.value,
+  })
+  editingLayout.value = false
+  draftLayout.value = null
+}
+
+async function restoreEditLayout() {
+  if (!layoutProvider.value)
+    return
+  await layoutsApi.restoreDefault({
+    provider: layoutProvider.value,
+    templateBaseId: activeTemplateId.value,
+  })
+  draftLayout.value = buildDefaultReportLayout(layoutProvider.value, activeTemplateId.value)
 }
 </script>
 
@@ -342,6 +452,20 @@ async function refreshMarketing() {
               :platform="source"
             />
 
+            <Button
+              v-if="canEditLayout"
+              type="button"
+              variant="outline"
+              :disabled="pending || layoutsApi.pending.value"
+              @click="editingLayout ? cancelEditLayout() : startEditLayout()"
+            >
+              <Icon
+                :name="editingLayout ? 'lucide:x' : 'lucide:layout-dashboard'"
+                class="mr-2 h-4 w-4"
+              />
+              {{ editingLayout ? 'Fechar editor' : 'Editar layout' }}
+            </Button>
+
             <Button variant="outline" :disabled="pending" @click="refreshMarketing">
               <Icon name="lucide:refresh-cw" class="mr-2 h-4 w-4" :class="pending ? 'animate-spin' : ''" />
               Atualizar
@@ -349,12 +473,38 @@ async function refreshMarketing() {
           </div>
         </div>
 
+        <p
+          v-if="layoutsApi.successMessage.value"
+          class="text-sm text-emerald-700 dark:text-emerald-400"
+        >
+          {{ layoutsApi.successMessage.value }}
+        </p>
+        <p
+          v-if="layoutsApi.errorMessage.value"
+          class="text-sm text-destructive"
+        >
+          {{ layoutsApi.errorMessage.value }}
+        </p>
+
+        <MarketingReportLayoutBuilder
+          v-if="editingLayout && draftLayout && layoutProvider"
+          v-model="draftLayout"
+          :provider="layoutProvider"
+          :template-base-id="activeTemplateId"
+          :saving="layoutsApi.saving.value"
+          @save="saveEditLayout"
+          @restore="restoreEditLayout"
+          @cancel="cancelEditLayout"
+        />
+
         <GoogleAdsBoard
           v-if="showGoogleAdsBlock"
           :loading="pending && !data?.google"
           :google="data?.google"
           :period="data?.period"
           :template-id="googleTemplate"
+          :layout="boardLayout"
+          @campaign-change="onGoogleCampaignChange"
         />
 
         <AnalyticsBoard
@@ -372,6 +522,8 @@ async function refreshMarketing() {
           :meta="data?.meta"
           :period="data?.period"
           :template-id="metaTemplate"
+          :layout="boardLayout"
+          @campaign-change="onMetaCampaignChange"
         />
       </div>
     </div>
