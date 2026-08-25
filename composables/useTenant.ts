@@ -1,7 +1,7 @@
-import type { WorkspaceContextTenant } from '~/types/workspace'
+import type { WorkspaceContextResponse, WorkspaceContextTenant } from '~/types/workspace'
 import { useSupabaseClient } from '#imports'
 
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 import { isStaffRole, isTenantScopedRole } from '~/constants/roles'
 import { useWorkspace } from '~/composables/useWorkspace'
@@ -10,6 +10,10 @@ import { useTenantStore } from '~/stores/tenant'
 /**
  * Tenant selection for the UI. Every switch goes through the workspace resolver,
  * so the browser can only *ask* for a workspace — the server decides.
+ *
+ * Does not auto-fetch on mount: guest pages (login) call useTenant for helpers
+ * only. Authenticated bootstrap lives in tenant-init plugin, useTenantPage,
+ * and the post-login path in useAuth / SignIn.
  */
 
 const tenantId = ref<string | null>(null)
@@ -19,6 +23,13 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3
 
 function isUuid(value: string | null | undefined): value is string {
   return !!value && UUID_PATTERN.test(value)
+}
+
+function fetchStatus(error: unknown): number | undefined {
+  if (!error || typeof error !== 'object')
+    return undefined
+  const e = error as { statusCode?: number, status?: number, response?: { status?: number } }
+  return e.statusCode ?? e.status ?? e.response?.status
 }
 
 const currentTenant = computed(() => {
@@ -83,20 +94,44 @@ export function useTenant() {
     await workspace.load()
   }
 
-  async function bootstrapTenantContext() {
-    const context = await workspace.load()
-    if (!context.tenant && context.tenants.length)
-      await workspace.switchContext({ tenantId: context.tenants[0].id })
+  /**
+   * Loads workspace when a session exists. No-op for guests; swallows 401 so
+   * login/register never surface an unhandled mounted error.
+   * Uses getSession (not only the user ref) so post-login bootstrap still runs
+   * if the reactive user has not caught up yet.
+   */
+  async function bootstrapTenantContext(): Promise<WorkspaceContextResponse | null> {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session)
+      return null
+
+    try {
+      const context = await workspace.load()
+      if (!context.tenant && context.tenants.length)
+        await workspace.switchContext({ tenantId: context.tenants[0].id })
+      return context
+    }
+    catch (error) {
+      if (fetchStatus(error) === 401)
+        return null
+      throw error
+    }
   }
 
   function restoreLastTenant() {
-    void workspace.load()
+    void (async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session)
+        return
+      try {
+        await workspace.load()
+      }
+      catch (error) {
+        if (fetchStatus(error) !== 401)
+          console.error('Falha ao restaurar tenant:', error)
+      }
+    })()
   }
-
-  onMounted(async () => {
-    if (!workspace.context.value)
-      await bootstrapTenantContext()
-  })
 
   return {
     tenantId,

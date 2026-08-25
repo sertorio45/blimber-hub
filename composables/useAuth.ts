@@ -10,6 +10,8 @@ export function useAuth() {
   const loading = ref(false)
   const error = ref<string | null>(null)
   const userRole = ref<string | null>(null)
+  // Resolve in setup so login() never calls useTenant after await (lifecycle warn).
+  const { bootstrapTenantContext } = useTenant()
 
   // Função para decodificar JWT
   function decodeJWT(token: string) {
@@ -124,7 +126,6 @@ export function useAuth() {
       // Workspace bootstrap is best-effort: a context API failure must not
       // undo an already-successful Supabase session.
       try {
-        const { bootstrapTenantContext } = useTenant()
         await bootstrapTenantContext()
       }
       catch (bootstrapError) {
