@@ -1,46 +1,69 @@
 /**
- * Google Ads stub — documented namespace for future ads.google.* tools.
+ * ads.google namespace: thin MCP surface over lib/google-ads.
  */
 
-import { z } from 'zod'
-import { BlimberMcpToolError } from '../errors'
+import {
+  formatGoogleAdsToolError,
+  GOOGLE_ADS_TOOL_DESCRIPTIONS,
+  invokeGoogleAdsTool,
+  type GoogleAdsToolContext,
+  type GoogleAdsToolName,
+} from '../../google-ads'
 import type { BlimberMcpToolDescriptor } from '../types'
 
-export const adsGoogleStatusSchema = z.object({
-  tenantId: z.string().uuid().optional(),
+export const ADS_GOOGLE_TOOL_NAMES = Object.keys(GOOGLE_ADS_TOOL_DESCRIPTIONS) as GoogleAdsToolName[]
+
+const HTTP_PATHS: Partial<Record<GoogleAdsToolName, { path: string, method: 'GET' | 'POST' }>> = {
+  ads_google_status: { path: '/api/gpt/ads/google/status', method: 'GET' },
+  ads_google_list_accounts: { path: '/api/gpt/ads/google/accounts', method: 'GET' },
+  ads_google_list_campaigns: { path: '/api/gpt/ads/google/campaigns', method: 'GET' },
+  ads_google_get_report: { path: '/api/gpt/ads/google/report', method: 'GET' },
+}
+
+export const ADS_GOOGLE_TOOL_DESCRIPTORS: BlimberMcpToolDescriptor[] = ADS_GOOGLE_TOOL_NAMES.map((name) => {
+  const http = HTTP_PATHS[name]
+  return {
+    name,
+    domain: 'ads.google',
+    description: GOOGLE_ADS_TOOL_DESCRIPTIONS[name],
+    status: 'ready' as const,
+    httpPath: http?.path,
+    httpMethod: http?.method,
+    arguments: name === 'ads_google_status'
+      ? ['tenantId']
+      : ['tenantId', '…'],
+    notes: 'Implementação em lib/google-ads. Leitura only — sem writes OAuth/campanha nesta fase.',
+  }
 })
 
-export const ADS_GOOGLE_TOOL_DESCRIPTORS: BlimberMcpToolDescriptor[] = [
-  {
-    name: 'ads_google_status',
-    domain: 'ads.google',
-    description: 'Stub: status do adapter Google Ads (ainda não implementado).',
-    status: 'stub',
-    httpPath: '/api/gpt/ads/google/status',
-    httpMethod: 'GET',
-    arguments: ['tenantId?'],
-    notes: 'Coming soon — não cria campanhas nem conecta OAuth Google Ads nesta fase.',
-  },
-]
+export {
+  adsGoogleStatusSchema,
+  adsGoogleListAccountsSchema,
+  adsGoogleListCampaignsSchema,
+  adsGoogleGetReportSchema,
+} from '../../google-ads'
 
-export async function adsGoogleStatus(_args: unknown) {
-  adsGoogleStatusSchema.parse(_args ?? {})
-  return {
-    ok: true as const,
-    provider: 'google_ads' as const,
-    status: 'coming_soon' as const,
-    tools: [] as string[],
-    message: 'Google Ads ainda não está disponível no MCP Blimber. Use ads.meta (Meta) por enquanto.',
+export async function invokeAdsGoogleTool(
+  name: string,
+  ctx: GoogleAdsToolContext,
+  args: unknown,
+) {
+  if (!(name in GOOGLE_ADS_TOOL_DESCRIPTIONS)) {
+    return formatGoogleAdsToolError(new Error(`Tool Google Ads desconhecida: ${name}`))
+  }
+  try {
+    const data = await invokeGoogleAdsTool(name as GoogleAdsToolName, ctx, args)
+    return { ok: true as const, tool: name, data }
+  }
+  catch (error) {
+    return formatGoogleAdsToolError(error)
   }
 }
 
-export async function invokeAdsGoogleTool(name: string, args: unknown) {
-  if (name === 'ads_google_status')
-    return adsGoogleStatus(args)
-
-  throw new BlimberMcpToolError(
-    'NOT_IMPLEMENTED',
-    `Tool Google Ads não implementada: ${name}`,
-    501,
-  )
+/** @deprecated Use invokeAdsGoogleTool with context */
+export async function adsGoogleStatus(ctx: GoogleAdsToolContext, args: unknown) {
+  const result = await invokeAdsGoogleTool('ads_google_status', ctx, args)
+  if (!result.ok)
+    throw new Error(result.error.message)
+  return result.data
 }

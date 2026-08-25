@@ -1,12 +1,14 @@
-import { defineEventHandler, getQuery } from 'h3'
-import { adsGoogleStatus } from '~/lib/blimber-mcp'
-import { assertBlimberMcpApiKey } from '~/server/utils/blimber-gpt-auth'
+import { defineEventHandler } from 'h3'
+import {
+  optionalString,
+  queryRecord,
+  runGoogleGptTool,
+} from '~/server/utils/google-gpt-api'
 
-/** Stub Google Ads — documented coming soon. */
+/** Status da integração Google Ads do tenant (OAuth, customer_id, prontidão). */
 export default defineEventHandler(async (event) => {
-  assertBlimberMcpApiKey(event)
-  const q = getQuery(event)
-  return adsGoogleStatus({
-    tenantId: typeof q.tenantId === 'string' ? q.tenantId : undefined,
+  const q = queryRecord(event)
+  return runGoogleGptTool(event, 'ads_google_status', {
+    tenantId: optionalString(q.tenantId),
   })
 })

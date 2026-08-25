@@ -221,6 +221,11 @@ const EXPECTED_ROUTE_FILES: Record<string, string[]> = {
   '/api/gpt/marketing/invoke': ['server/api/gpt/marketing/invoke.post.ts'],
   '/api/gpt/ads/meta/tools': ['server/api/gpt/ads/meta/tools.get.ts'],
   '/api/gpt/ads/google/status': ['server/api/gpt/ads/google/status.get.ts'],
+  '/api/gpt/ads/google/tools': ['server/api/gpt/ads/google/tools.get.ts'],
+  '/api/gpt/ads/google/accounts': ['server/api/gpt/ads/google/accounts.get.ts'],
+  '/api/gpt/ads/google/campaigns': ['server/api/gpt/ads/google/campaigns.get.ts'],
+  '/api/gpt/ads/google/report': ['server/api/gpt/ads/google/report.get.ts'],
+  '/api/gpt/ads/google/invoke': ['server/api/gpt/ads/google/invoke.post.ts'],
   '/api/gpt/meta/tenants': ['server/api/gpt/meta/tenants.get.ts'],
   '/api/gpt/meta/tools': ['server/api/gpt/meta/tools.get.ts'],
   '/api/gpt/meta/integrations': ['server/api/gpt/meta/integrations.get.ts'],
@@ -310,6 +315,8 @@ describe('blimber unified MCP registry + openapi', () => {
     expect(names).toContain('meta_list_campaigns')
     expect(names).toContain('ads_meta_list_campaigns')
     expect(names).toContain('ads_google_status')
+    expect(names).toContain('ads_google_list_campaigns')
+    expect(names).toContain('ads_google_get_report')
     expect(names).toContain('crm_status')
   })
 

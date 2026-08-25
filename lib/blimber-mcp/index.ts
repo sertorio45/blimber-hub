@@ -33,8 +33,8 @@ export {
   stripMcpConnectorNamespace,
 } from './tool-name'
 export {
-  adsGoogleStatus,
   ADS_GOOGLE_TOOL_DESCRIPTORS,
+  ADS_GOOGLE_TOOL_NAMES,
   invokeAdsGoogleTool,
 } from './ads/google'
 export {

@@ -11,7 +11,7 @@ server/api/gpt/
   marketing/*                # editorial MVP
   brand/context              # alias Brand
   ads/meta/tools             # catálogo namespace ads.meta
-  ads/google/status          # stub
+  ads/google/*               # Google Ads read (lib/google-ads)
   meta/*                     # Meta legado (lib/meta-ads) — intacto
 lib/blimber-mcp/             # registry, marketing-tools, ads aliases, errors
 lib/meta-ads/                # Graph write/read (reutilizado)
@@ -27,7 +27,7 @@ lib/meta-ads/                # Graph write/read (reutilizado)
 | `marketing` | ready (MVP) | `lib/blimber-mcp/marketing-tools` → `/api/gpt/marketing/*` |
 | `brand` | ready | alias de brand-context marketing |
 | `ads.meta` | ready (reuse) | `lib/meta-ads` + `/api/gpt/meta/*` + aliases `ads_meta_*` no registry |
-| `ads.google` | stub | `/api/gpt/ads/google/status` |
+| `ads.google` | ready (read) | `lib/google-ads` + `/api/gpt/ads/google/*` |
 | `crm` | planned | só no registry / plano |
 
 ### Auth
@@ -65,7 +65,7 @@ Keep vs drop: [`gpt/blimber/README.md`](../gpt/blimber/README.md).
 ## Roadmap
 
 1. **Fase 1 (esta):** fundação + Marketing editorial MVP + OpenAPI em 2 Ações (hosts app.* + ads.*)  
-2. **Fase 2:** Google Ads (OAuth + tools read)  
+2. **Fase 2 (esta):** Google Ads read via MCP (`ads_google_*`) — OAuth/conta existentes da UI  
 3. **Fase 3:** CRM stubs → reads → writes com as mesmas confirmações  
 4. **Fase 4:** MCP remoto Streamable HTTP (`/api/mcp`) + stdio Meta (`mcp/blimber-meta`) — ver [`gpt-blimber-MCP-PLUGIN.md`](./gpt-blimber-MCP-PLUGIN.md)
 

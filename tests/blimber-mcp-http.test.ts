@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { META_TOOL_DESCRIPTIONS } from '../lib/meta-ads'
+import { GOOGLE_ADS_TOOL_DESCRIPTIONS } from '../lib/google-ads'
 import {
   buildBlimberMcpRegistry,
   MARKETING_TOOL_DESCRIPTIONS,
@@ -7,7 +8,7 @@ import {
 import { listBlimberMcpRemoteToolNames } from '../lib/blimber-mcp/create-server'
 
 describe('blimber MCP remote server tools', () => {
-  it('lists platform, marketing, meta and google stub tools', () => {
+  it('lists platform, marketing, meta and google ads read tools', () => {
     const names = listBlimberMcpRemoteToolNames()
 
     expect(names).toContain('searchTenants')
@@ -17,14 +18,16 @@ describe('blimber MCP remote server tools', () => {
     expect(names).toContain('marketing_upload_asset')
     expect(names).toContain('meta_list_campaigns')
     expect(names).toContain('meta_create_campaign')
-    expect(names).toContain('ads_google_status')
+    expect(names).toContain('ads_google_get_report')
 
     const marketingCount = names.filter(n => n.startsWith('marketing_')).length
     const metaCount = names.filter(n => n.startsWith('meta_')).length
+    const googleCount = names.filter(n => n.startsWith('ads_google_')).length
 
     expect(marketingCount).toBe(Object.keys(MARKETING_TOOL_DESCRIPTIONS).length)
     expect(metaCount).toBe(Object.keys(META_TOOL_DESCRIPTIONS).length)
-    expect(names.length).toBe(2 + marketingCount + metaCount + 1)
+    expect(googleCount).toBe(Object.keys(GOOGLE_ADS_TOOL_DESCRIPTIONS).length)
+    expect(names.length).toBe(2 + marketingCount + metaCount + googleCount)
     expect(new Set(names).size).toBe(names.length)
   })
 

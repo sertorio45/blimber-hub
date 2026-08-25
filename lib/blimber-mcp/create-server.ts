@@ -2,14 +2,13 @@
  * Unified Blimber MCP server — Marketing + Meta Ads + platform tools.
  * Shared by HTTP (ChatGPT plugin) and optional stdio/tunnel packages.
  *
- * Registration order: platform → Meta Ads → Marketing → Google stub.
+ * Registration order: platform → Meta Ads → Marketing → Google Ads read.
  * Meta writes (create_campaign/adset/ad) stay early so ChatGPT connectors
  * with soft tool caps still keep them invocable.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import { z } from 'zod'
 import {
   formatToolError,
   invokeMetaTool,
@@ -17,7 +16,12 @@ import {
   META_TOOL_SCHEMAS,
   type MetaToolName,
 } from '../meta-ads'
-import { invokeAdsGoogleTool } from './ads/google'
+import { invokeAdsGoogleTool, ADS_GOOGLE_TOOL_NAMES } from './ads/google'
+import {
+  GOOGLE_ADS_TOOL_DESCRIPTIONS,
+  GOOGLE_ADS_TOOL_SCHEMAS,
+  type GoogleAdsToolName,
+} from '../google-ads'
 import { BLIMBER_MCP_VERSION, buildBlimberMcpRegistry } from './registry'
 import { formatBlimberMcpError } from './errors'
 import {
@@ -32,13 +36,11 @@ import type { BlimberMcpToolContext } from './types'
 import { zodObjectShape } from './zod-shape'
 
 const PLATFORM_TOOL_NAMES = ['searchTenants', 'listBlimberTools'] as const
-const GOOGLE_STUB_TOOL_NAMES = ['ads_google_status'] as const
-
 export type BlimberMcpRemoteToolName =
   | typeof PLATFORM_TOOL_NAMES[number]
   | MarketingToolName
   | MetaToolName
-  | typeof GOOGLE_STUB_TOOL_NAMES[number]
+  | GoogleAdsToolName
 
 type RegisteredToolsMap = Record<string, unknown>
 
@@ -57,7 +59,7 @@ export function listBlimberMcpRemoteToolNames(): BlimberMcpRemoteToolName[] {
     ...PLATFORM_TOOL_NAMES,
     ...(Object.keys(META_TOOL_DESCRIPTIONS) as MetaToolName[]),
     ...(Object.keys(MARKETING_TOOL_DESCRIPTIONS) as MarketingToolName[]),
-    ...GOOGLE_STUB_TOOL_NAMES,
+    ...ADS_GOOGLE_TOOL_NAMES,
   ]
 }
 
@@ -224,23 +226,20 @@ export function createBlimberMcpServer(
     )
   }
 
-  server.tool(
-    'ads_google_status',
-    'Stub: status do adapter Google Ads (ainda não implementado).',
-    zodObjectShape(z.object({
-      tenantId: z.string().uuid().optional(),
-    })),
-    async (args) => {
-      try {
-        const data = await invokeAdsGoogleTool('ads_google_status', args)
-        return toolTextPayload({ ok: true, tool: 'ads_google_status', data })
-      }
-      catch (error) {
-        const formatted = formatBlimberMcpError(error)
-        return toolTextPayload(formatted, true)
-      }
-    },
-  )
+  for (const name of ADS_GOOGLE_TOOL_NAMES) {
+    const schema = GOOGLE_ADS_TOOL_SCHEMAS[name]
+    server.tool(
+      name,
+      GOOGLE_ADS_TOOL_DESCRIPTIONS[name],
+      zodObjectShape(schema),
+      async (args) => {
+        const result = await invokeAdsGoogleTool(name, ctx, args)
+        if (!result.ok)
+          return toolTextPayload(result, true)
+        return toolTextPayload(result)
+      },
+    )
+  }
 
   const knownNames = listBlimberMcpRemoteToolNames()
   installToolNameAliasResolver(server, knownNames)
@@ -255,7 +254,10 @@ export function createBlimberMcpServer(
         name,
         description: MARKETING_TOOL_DESCRIPTIONS[name],
       })),
-      { name: 'ads_google_status', description: 'Stub Google Ads.' },
+      ...ADS_GOOGLE_TOOL_NAMES.map(name => ({
+        name,
+        description: GOOGLE_ADS_TOOL_DESCRIPTIONS[name],
+      })),
     ],
   )
 
