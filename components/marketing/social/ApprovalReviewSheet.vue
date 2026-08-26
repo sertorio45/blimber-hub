@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import type { ApprovalChangeCategory, ApprovalDecision } from '~/types/marketing-social'
 import ApprovalMediaPreview from '@/components/marketing/social/ApprovalMediaPreview.vue'
+import ApprovalStatusBadge from '@/components/marketing/social/ApprovalStatusBadge.vue'
 import ApprovalVersionCompare from '@/components/marketing/social/ApprovalVersionCompare.vue'
 import { buildCaptionWithHashtags } from '~/utils/social-hashtags'
 import {
   APPROVAL_CHANGE_CATEGORY_LABELS,
-  APPROVAL_REQUEST_STATUS_LABELS,
   APPROVAL_STAGE_LABELS,
 } from '~/types/marketing-social'
 import { uniqueApprovalPreviewAssets, platformIcon } from '@/utils/marketing-social-preview'
@@ -39,6 +39,9 @@ const changeCategory = ref<ApprovalChangeCategory>('art')
 const decisionMode = ref<ApprovalDecision | null>(null)
 const showDecisionForm = ref(false)
 const annotateMode = ref(false)
+const confirmCancelOpen = ref(false)
+const confirmBypassOpen = ref(false)
+const bypassJustification = ref('')
 const pendingAnchor = ref<{
   anchorType: 'image' | 'carousel' | 'video'
   xPercent: number | null
@@ -153,9 +156,15 @@ const errorMessages: Record<string, { title: string, description: string }> = {
   },
 }
 
-const statusLabel = computed(() =>
-  APPROVAL_REQUEST_STATUS_LABELS[detail.value?.status || ''] || detail.value?.status || '—',
-)
+const visibleDecisions = computed(() => detail.value?.decisions || [])
+
+const decisionFormTitle = computed(() => {
+  if (decisionMode.value === 'approved')
+    return 'Confirmar aprovação'
+  if (decisionMode.value === 'rejected')
+    return 'Confirmar reprovação'
+  return 'Pedir alterações'
+})
 
 async function loadDetail() {
   if (!props.requestId)
@@ -353,16 +362,21 @@ async function scheduleApproved() {
   }
 }
 
+function openBypassDialog() {
+  bypassJustification.value = ''
+  confirmBypassOpen.value = true
+}
+
 async function runBypass() {
-  if (!detail.value?.post_id)
+  if (!detail.value?.post_id || !bypassJustification.value.trim()) {
+    toast.error('Informe a justificativa do bypass')
     return
-  const justification = window.prompt('Justificativa do bypass (obrigatória):')
-  if (!justification?.trim())
-    return
+  }
   saving.value = true
   try {
-    await social.bypassApproval(detail.value.post_id, justification.trim())
+    await social.bypassApproval(detail.value.post_id, bypassJustification.value.trim())
     toast.success('Aprovação ignorada com auditoria')
+    confirmBypassOpen.value = false
     emit('decided', { id: detail.value.id, status: 'approved' })
     openProxy.value = false
   }
@@ -377,12 +391,11 @@ async function runBypass() {
 async function cancelRequest() {
   if (!detail.value?.post_id)
     return
-  if (!window.confirm('Cancelar esta solicitação de aprovação?'))
-    return
   saving.value = true
   try {
     await social.cancelApproval(detail.value.post_id, null, { tenantId: detail.value.tenant_id })
     toast.success('Solicitação cancelada')
+    confirmCancelOpen.value = false
     emit('decided', { id: detail.value.id, status: 'cancelled' })
     openProxy.value = false
   }
@@ -419,6 +432,13 @@ const showStickyActions = computed(() => {
     || detail.value.status === 'changes_requested'
     || detail.value.status === 'approved'
 })
+
+const canDecideNow = computed(() =>
+  canApprove.value
+  && detail.value?.can_decide
+  && detail.value?.status === 'pending'
+  && !saving.value,
+)
 </script>
 
 <template>
@@ -463,18 +483,19 @@ const showStickyActions = computed(() => {
           </Alert>
 
           <template v-if="detail.error_state !== 'forbidden'">
-            <div class="mb-4 flex flex-wrap gap-2">
-              <Badge :variant="detail.status === 'pending' ? 'default' : 'secondary'">
-                {{ statusLabel }}
-              </Badge>
-              <Badge v-if="detail.overdue" variant="destructive">
-                Atrasado
-              </Badge>
+            <div class="mb-4 flex flex-wrap items-center gap-2">
+              <ApprovalStatusBadge
+                :status="detail.status"
+                :overdue="Boolean(detail.overdue)"
+              />
               <Badge variant="outline">
                 Aguardando {{ waitingLabel(detail.waiting_ms) }}
               </Badge>
               <Badge variant="outline">
                 v{{ detail.version_number || '—' }}
+              </Badge>
+              <Badge v-if="!clientMode && detail.stage" variant="secondary">
+                {{ APPROVAL_STAGE_LABELS[detail.stage as 'internal' | 'client'] }}
               </Badge>
             </div>
 
@@ -623,11 +644,11 @@ const showStickyActions = computed(() => {
                   </div>
                 </div>
 
-                <div v-if="!clientMode" class="space-y-2">
+                <div class="space-y-2">
                   <h4 class="text-sm font-semibold">
-                    Aprovadores e decisões
+                    {{ clientMode ? 'Decisões' : 'Aprovadores e decisões' }}
                   </h4>
-                  <div class="flex flex-wrap gap-2">
+                  <div v-if="!clientMode" class="flex flex-wrap gap-2">
                     <Badge
                       v-for="approver in detail.raw?.approval_request_approvers || []"
                       :key="approver.user_id"
@@ -637,23 +658,35 @@ const showStickyActions = computed(() => {
                     </Badge>
                   </div>
                   <div
-                    v-for="decision in detail.decisions || []"
+                    v-for="decision in visibleDecisions"
                     :key="`${decision.approver_id}-${decision.created_at}`"
                     class="rounded-lg border p-3 text-sm"
                   >
-                    <p class="font-medium">
-                      {{ APPROVAL_REQUEST_STATUS_LABELS[decision.decision] || decision.decision }}
-                      <span v-if="decision.change_category" class="text-muted-foreground">
-                        · {{ APPROVAL_CHANGE_CATEGORY_LABELS[decision.change_category as ApprovalChangeCategory] }}
+                    <div class="flex flex-wrap items-center gap-2">
+                      <ApprovalStatusBadge
+                        :status="decision.decision"
+                        :show-icon="true"
+                      />
+                      <span
+                        v-if="decision.change_category"
+                        class="text-xs text-muted-foreground"
+                      >
+                        {{ APPROVAL_CHANGE_CATEGORY_LABELS[decision.change_category as ApprovalChangeCategory] || decision.change_category }}
                       </span>
-                    </p>
-                    <p v-if="decision.comment" class="mt-1 text-muted-foreground">
+                    </div>
+                    <p v-if="decision.comment" class="mt-2 text-muted-foreground">
                       {{ decision.comment }}
                     </p>
                     <p class="mt-1 text-xs text-muted-foreground">
                       {{ new Date(decision.created_at).toLocaleString('pt-BR') }}
                     </p>
                   </div>
+                  <p
+                    v-if="!visibleDecisions.length"
+                    class="text-sm text-muted-foreground"
+                  >
+                    Nenhuma decisão registrada ainda.
+                  </p>
                 </div>
 
                 <div class="space-y-3">
@@ -769,10 +802,16 @@ const showStickyActions = computed(() => {
               </TabsContent>
             </Tabs>
 
-            <div v-if="showDecisionForm && decisionMode" class="mt-6 space-y-3 rounded-xl border p-4">
+            <div v-if="showDecisionForm && decisionMode" class="mt-6 space-y-3 rounded-xl border bg-muted/20 p-4">
               <h4 class="font-semibold">
-                {{ decisionMode === 'approved' ? 'Confirmar aprovação' : decisionMode === 'rejected' ? 'Reprovar' : 'Pedir alterações' }}
+                {{ decisionFormTitle }}
               </h4>
+              <Alert v-if="decisionMode === 'rejected'" variant="destructive">
+                <AlertTitle>Ação irreversível nesta rodada</AlertTitle>
+                <AlertDescription>
+                  A peça será marcada como reprovada. Descreva o motivo para a equipe.
+                </AlertDescription>
+              </Alert>
               <div v-if="decisionMode === 'changes_requested'" class="space-y-2">
                 <Label>O que precisa mudar</Label>
                 <Select v-model="changeCategory">
@@ -797,18 +836,38 @@ const showStickyActions = computed(() => {
                 <Label>
                   {{ decisionMode === 'approved' ? 'Comentário opcional' : 'Motivo obrigatório' }}
                 </Label>
-                <Textarea v-model="decisionComment" class="min-h-28 text-base sm:text-sm" />
+                <Textarea
+                  v-model="decisionComment"
+                  class="min-h-28 text-base sm:text-sm"
+                  :placeholder="decisionMode === 'approved' ? 'Opcional…' : 'Descreva o motivo…'"
+                  :disabled="saving"
+                />
               </div>
-              <div class="flex gap-2">
-                <Button variant="outline" class="min-h-11" @click="showDecisionForm = false">
+              <div class="flex flex-col-reverse gap-2 sm:flex-row">
+                <Button
+                  variant="outline"
+                  class="min-h-11"
+                  :disabled="saving"
+                  @click="showDecisionForm = false"
+                >
                   Voltar
                 </Button>
                 <Button
                   :variant="decisionMode === 'approved' ? 'default' : 'destructive'"
-                  class="min-h-11"
+                  class="min-h-11 sm:flex-1"
                   :disabled="saving"
                   @click="submitDecision"
                 >
+                  <Icon
+                    v-if="saving"
+                    name="lucide:loader-2"
+                    class="mr-2 h-4 w-4 animate-spin"
+                  />
+                  <Icon
+                    v-else-if="decisionMode === 'approved'"
+                    name="lucide:check"
+                    class="mr-2 h-4 w-4"
+                  />
                   Confirmar
                 </Button>
               </div>
@@ -824,57 +883,69 @@ const showStickyActions = computed(() => {
       >
         <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
           <Button
-            v-if="canApprove && detail.can_decide && detail.status === 'pending'"
-            class="min-h-11 w-full sm:w-auto"
+            v-if="canDecideNow"
+            class="min-h-11 w-full sm:order-1 sm:w-auto sm:min-w-32"
+            :disabled="saving"
             @click="startDecision('approved')"
           >
+            <Icon name="lucide:check" class="mr-1.5 h-4 w-4" />
             Aprovar
           </Button>
           <Button
-            v-if="canApprove && detail.can_decide && detail.status === 'pending'"
+            v-if="canDecideNow"
             variant="outline"
-            class="min-h-11 w-full sm:w-auto"
+            class="min-h-11 w-full sm:order-2 sm:w-auto"
+            :disabled="saving"
             @click="startDecision('changes_requested')"
           >
+            <Icon name="lucide:message-square-warning" class="mr-1.5 h-4 w-4" />
             Pedir alterações
           </Button>
           <Button
-            v-if="canApprove && detail.can_decide && detail.status === 'pending'"
-            variant="destructive"
-            class="min-h-11 w-full sm:w-auto"
+            v-if="canDecideNow"
+            variant="ghost"
+            class="min-h-11 w-full text-destructive hover:bg-destructive/10 hover:text-destructive sm:order-3 sm:w-auto"
+            :disabled="saving"
             @click="startDecision('rejected')"
           >
+            <Icon name="lucide:x" class="mr-1.5 h-4 w-4" />
             Reprovar
           </Button>
           <Button
             v-if="canEdit && (detail.status === 'changes_requested' || detail.status === 'pending')"
             variant="secondary"
-            class="w-full sm:w-auto"
+            class="min-h-11 w-full sm:order-4 sm:w-auto"
+            :disabled="saving"
             @click="openEditor"
           >
+            <Icon name="lucide:pencil" class="mr-1.5 h-4 w-4" />
             {{ detail.status === 'changes_requested' ? 'Editar e nova versão' : 'Editar peça' }}
           </Button>
           <Button
             v-if="canSchedule && detail.post?.editorial_status === 'approved'"
             variant="secondary"
-            class="w-full sm:w-auto"
+            class="min-h-11 w-full sm:order-5 sm:w-auto"
+            :disabled="saving"
             @click="scheduleApproved"
           >
+            <Icon name="lucide:calendar-clock" class="mr-1.5 h-4 w-4" />
             Agendar
           </Button>
           <Button
             v-if="canCancel"
             variant="ghost"
-            class="w-full sm:w-auto"
-            @click="cancelRequest"
+            class="min-h-11 w-full sm:order-6 sm:w-auto"
+            :disabled="saving"
+            @click="confirmCancelOpen = true"
           >
             Cancelar solicitação
           </Button>
           <Button
             v-if="canBypass && detail.status === 'pending'"
             variant="ghost"
-            class="w-full sm:w-auto"
-            @click="runBypass"
+            class="min-h-11 w-full sm:order-7 sm:w-auto"
+            :disabled="saving"
+            @click="openBypassDialog"
           >
             Avançar (bypass)
           </Button>
@@ -882,4 +953,61 @@ const showStickyActions = computed(() => {
       </div>
     </SheetContent>
   </Sheet>
+
+  <AlertDialog v-model:open="confirmCancelOpen">
+    <AlertDialogContent>
+      <AlertDialogHeader>
+        <AlertDialogTitle>Cancelar solicitação?</AlertDialogTitle>
+        <AlertDialogDescription>
+          A rodada de aprovação será encerrada. A peça volta para edição sem decisão registrada.
+        </AlertDialogDescription>
+      </AlertDialogHeader>
+      <AlertDialogFooter>
+        <AlertDialogCancel :disabled="saving">
+          Manter
+        </AlertDialogCancel>
+        <AlertDialogAction
+          class="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+          :disabled="saving"
+          @click.prevent="cancelRequest"
+        >
+          Cancelar solicitação
+        </AlertDialogAction>
+      </AlertDialogFooter>
+    </AlertDialogContent>
+  </AlertDialog>
+
+  <AlertDialog v-model:open="confirmBypassOpen">
+    <AlertDialogContent>
+      <AlertDialogHeader>
+        <AlertDialogTitle>Avançar sem aprovação?</AlertDialogTitle>
+        <AlertDialogDescription>
+          O bypass fica registrado na auditoria. Justifique o motivo para a equipe.
+        </AlertDialogDescription>
+      </AlertDialogHeader>
+      <div class="space-y-2 py-2">
+        <Label for="bypass-justification">
+          Justificativa
+        </Label>
+        <Textarea
+          id="bypass-justification"
+          v-model="bypassJustification"
+          class="min-h-24"
+          placeholder="Ex.: urgência comercial com alinhamento verbal do cliente"
+          :disabled="saving"
+        />
+      </div>
+      <AlertDialogFooter>
+        <AlertDialogCancel :disabled="saving">
+          Voltar
+        </AlertDialogCancel>
+        <AlertDialogAction
+          :disabled="saving || !bypassJustification.trim()"
+          @click.prevent="runBypass"
+        >
+          Confirmar bypass
+        </AlertDialogAction>
+      </AlertDialogFooter>
+    </AlertDialogContent>
+  </AlertDialog>
 </template>

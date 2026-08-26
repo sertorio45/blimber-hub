@@ -205,6 +205,11 @@ const canShareStories = computed(() => {
   return variants.some((variant: any) => variant.platform === 'facebook' || variant.platform === 'instagram')
 })
 
+const isAwaitingApproval = computed(() =>
+  postStatus.value === 'pending_approval'
+  || ['internal_review', 'client_review'].includes(editorialStatus.value),
+)
+
 watch(
   () => [postStatus.value, scheduledAtValue.value, pastPromptDismissed.value] as const,
   ([status]) => {
@@ -441,6 +446,23 @@ function onDeleted() {
         </Button>
       </div>
     </div>
+
+    <Alert v-if="isAwaitingApproval">
+      <Icon name="lucide:clipboard-check" class="h-4 w-4" />
+      <AlertTitle>
+        {{ isClientExperience ? 'Aguardando sua aprovação' : 'Em aprovação' }}
+      </AlertTitle>
+      <AlertDescription class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <span>
+          {{ isClientExperience
+            ? 'Abra a inbox para revisar a peça, aprovar ou pedir ajustes.'
+            : 'Acompanhe o andamento e registre a decisão na inbox de aprovações.' }}
+        </span>
+        <Button size="sm" variant="outline" @click="navigateTo('/marketing/approvals')">
+          Abrir aprovações
+        </Button>
+      </AlertDescription>
+    </Alert>
 
     <Alert v-if="canShareStories && postStatus === 'published'">
       <Icon name="lucide:sparkles" class="h-4 w-4" />
