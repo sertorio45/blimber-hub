@@ -30,10 +30,13 @@ const category = ref('all')
 const uploadPurpose = ref<'publication' | 'reference'>('publication')
 const uploading = ref(false)
 const uploadingItems = ref<MediaLibraryUploadItem[]>([])
+const isFileDragOver = ref(false)
 const previewDialogOpen = ref(false)
 const activeAsset = ref<LibraryAssetRow | null>(null)
 const newFolderName = ref('')
 const creatingFolder = ref(false)
+/** Nested dragenter/leave counter so child nodes don't flicker the overlay. */
+let fileDragDepth = 0
 
 const selectedIds = ref<string[]>([])
 const deleteDialogOpen = ref(false)
@@ -135,6 +138,7 @@ function revokeUploadPreviews(items: MediaLibraryUploadItem[]) {
 
 onUnmounted(() => {
   revokeUploadPreviews(uploadingItems.value)
+  resetFileDragState()
 })
 
 watch(filteredAssets, (items) => {
@@ -174,12 +178,106 @@ function prependUploadedAssets(uploaded: LibraryAssetRow[]) {
   ] as LibraryAssetRow[]
 }
 
-async function upload(event: Event) {
+function uploadAccept(): string {
+  return uploadPurpose.value === 'publication'
+    ? 'image/*,video/mp4,video/quicktime'
+    : 'image/*,video/mp4,video/quicktime,application/pdf'
+}
+
+function isAcceptedLibraryFile(file: File): boolean {
+  const mime = (file.type || '').toLowerCase()
+  if (mime.startsWith('image/'))
+    return true
+  if (mime === 'video/mp4' || mime === 'video/quicktime')
+    return true
+  if (uploadPurpose.value === 'reference' && mime === 'application/pdf')
+    return true
+
+  // Some OS/browsers omit MIME — fall back to extension.
+  const name = file.name.toLowerCase()
+  if (/\.(?:jpe?g|png|gif|webp|svg|heic|heif|avif|bmp)$/i.test(name))
+    return true
+  if (/\.(?:mp4|mov)$/i.test(name))
+    return true
+  if (uploadPurpose.value === 'reference' && name.endsWith('.pdf'))
+    return true
+  return false
+}
+
+function hasFileDragPayload(event: DragEvent): boolean {
+  const types = event.dataTransfer?.types
+  if (!types)
+    return false
+  return Array.from(types).includes('Files')
+}
+
+function onLibraryDragEnter(event: DragEvent) {
+  if (uploading.value || !hasFileDragPayload(event))
+    return
+  event.preventDefault()
+  fileDragDepth += 1
+  isFileDragOver.value = true
+}
+
+function onLibraryDragOver(event: DragEvent) {
+  if (!hasFileDragPayload(event))
+    return
+  event.preventDefault()
+  if (event.dataTransfer)
+    event.dataTransfer.dropEffect = uploading.value ? 'none' : 'copy'
+}
+
+function onLibraryDragLeave(event: DragEvent) {
+  if (!hasFileDragPayload(event))
+    return
+  event.preventDefault()
+  fileDragDepth = Math.max(0, fileDragDepth - 1)
+  if (fileDragDepth === 0)
+    isFileDragOver.value = false
+}
+
+function resetFileDragState() {
+  fileDragDepth = 0
+  isFileDragOver.value = false
+}
+
+async function onLibraryDrop(event: DragEvent) {
+  event.preventDefault()
+  resetFileDragState()
+  if (uploading.value)
+    return
+
+  const dropped = Array.from(event.dataTransfer?.files || [])
+  if (!dropped.length)
+    return
+
+  const files = dropped.filter(isAcceptedLibraryFile)
+  if (!files.length) {
+    toast.error(
+      uploadPurpose.value === 'publication'
+        ? 'Use imagens ou vídeos (MP4/MOV) para peças finais'
+        : 'Formato não suportado. Use imagem, vídeo (MP4/MOV) ou PDF',
+    )
+    return
+  }
+
+  await uploadFiles(files)
+}
+
+async function uploadFromInput(event: Event) {
   const input = event.target as HTMLInputElement
   if (!input.files?.length)
     return
-  uploading.value = true
   const files = Array.from(input.files)
+  input.value = ''
+  await uploadFiles(files)
+}
+
+async function uploadFiles(files: File[]) {
+  if (!files.length || uploading.value)
+    return
+
+  uploading.value = true
   const placeholders: MediaLibraryUploadItem[] = files.map(file => ({
     id: `upload-${crypto.randomUUID()}`,
     name: file.name,
@@ -201,7 +299,6 @@ async function upload(event: Event) {
     }
 
     toast.success(uploadedRows.length > 1 ? 'Arquivos adicionados à biblioteca' : 'Arquivo adicionado à biblioteca')
-    input.value = ''
   }
   catch (error: any) {
     toast.error(error?.data?.statusMessage || error?.statusMessage || error?.message || 'Não foi possível enviar os arquivos')
@@ -226,7 +323,6 @@ async function upload(event: Event) {
     revokeUploadPreviews(placeholders)
     uploadingItems.value = []
     uploading.value = false
-    input.value = ''
   }
 }
 
@@ -322,14 +418,36 @@ function deleteFromPreview() {
 </script>
 
 <template>
-  <div class="space-y-6">
+  <div
+    class="relative space-y-6"
+    @dragenter="onLibraryDragEnter"
+    @dragover="onLibraryDragOver"
+    @dragleave="onLibraryDragLeave"
+    @drop="onLibraryDrop"
+  >
+    <div
+      v-if="isFileDragOver"
+      class="pointer-events-none absolute inset-0 z-40 flex items-center justify-center rounded-xl border-2 border-dashed border-primary bg-primary/10 backdrop-blur-[1px]"
+      aria-hidden="true"
+    >
+      <div class="flex flex-col items-center gap-2 rounded-2xl bg-background/95 px-6 py-5 shadow-lg ring-1 ring-border">
+        <Icon name="lucide:upload-cloud" class="h-10 w-10 text-primary" />
+        <p class="text-sm font-semibold">
+          Solte para enviar à biblioteca
+        </p>
+        <p class="text-xs text-muted-foreground">
+          {{ uploadPurpose === 'publication' ? 'Peças finais: imagens e vídeos' : 'Referências: imagens, vídeos ou PDF' }}
+        </p>
+      </div>
+    </div>
+
     <div class="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
       <div>
         <h1 class="text-2xl font-bold tracking-tight">
           Biblioteca
         </h1>
         <p class="mt-1 text-muted-foreground">
-          Organize peças finais e referências em um só lugar.
+          Organize peças finais e referências em um só lugar. Arraste arquivos para cá ou use o botão de envio.
         </p>
         <p
           v-if="revalidating"
@@ -361,9 +479,9 @@ function deleteFromPreview() {
             <input
               type="file"
               multiple
-              :accept="uploadPurpose === 'publication' ? 'image/*,video/mp4,video/quicktime' : 'image/*,video/mp4,video/quicktime,application/pdf'"
+              :accept="uploadAccept()"
               class="hidden"
-              @change="upload"
+              @change="uploadFromInput"
             >
           </label>
         </Button>
@@ -504,7 +622,7 @@ function deleteFromPreview() {
               multiple
               accept="image/*,video/mp4,video/quicktime,application/pdf"
               class="hidden"
-              @change="upload"
+              @change="uploadFromInput"
             >
           </label>
         </Button>
