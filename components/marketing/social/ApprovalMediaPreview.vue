@@ -144,21 +144,23 @@ function onMediaClick(event: MouseEvent) {
           type="button"
           size="icon"
           variant="secondary"
-          class="absolute left-2 top-1/2 z-20 h-9 w-9 -translate-y-1/2"
+          aria-label="Slide anterior"
+          class="absolute left-2 top-1/2 z-30 h-11 w-11 -translate-y-1/2 rounded-full border border-border/60 bg-background/90 text-foreground shadow-md hover:bg-background hover:shadow-lg focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40 sm:h-10 sm:w-10"
           :disabled="index === 0"
           @click.stop="index = Math.max(0, index - 1)"
         >
-          <Icon name="lucide:chevron-left" class="h-4 w-4" />
+          <Icon name="lucide:chevron-left" class="h-6 w-6" />
         </Button>
         <Button
           type="button"
           size="icon"
           variant="secondary"
-          class="absolute right-2 top-1/2 z-20 h-9 w-9 -translate-y-1/2"
+          aria-label="Próximo slide"
+          class="absolute right-2 top-1/2 z-30 h-11 w-11 -translate-y-1/2 rounded-full border border-border/60 bg-background/90 text-foreground shadow-md hover:bg-background hover:shadow-lg focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40 sm:h-10 sm:w-10"
           :disabled="index >= assets.length - 1"
           @click.stop="index = Math.min(assets.length - 1, index + 1)"
         >
-          <Icon name="lucide:chevron-right" class="h-4 w-4" />
+          <Icon name="lucide:chevron-right" class="h-6 w-6" />
         </Button>
         <div class="absolute bottom-3 left-1/2 z-20 flex -translate-x-1/2 gap-1.5">
           <span
