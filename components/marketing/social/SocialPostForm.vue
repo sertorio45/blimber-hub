@@ -14,11 +14,17 @@ import ProductionMetaFields from '~/components/marketing/content/ProductionMetaF
 import ScheduleSlotsEditor from '~/components/marketing/content/ScheduleSlotsEditor.vue'
 import SocialPostComposer from '~/components/marketing/social/SocialPostComposer.vue'
 import SocialPostPreviewPanel from '~/components/marketing/social/SocialPostPreviewPanel.vue'
+import { toast } from 'vue-sonner'
 import {
   buildCaptionWithHashtags,
   formatHashtagsInline,
   parseHashtags,
 } from '~/utils/social-hashtags'
+import {
+  isAcceptedMediaFile,
+  mediaFileAcceptAttr,
+  mediaFileRejectMessage,
+} from '~/utils/file-drop'
 
 const props = defineProps<{
   initialValue?: SocialPostInput
@@ -79,6 +85,25 @@ const publicationAssetIds = ref<string[]>(props.initialValue?.variants?.[0]?.ass
 const referenceAssetIds = ref(props.initialValue?.referenceAssetIds || [])
 const uploading = ref(false)
 const slideDirection = ref<'left' | 'right'>('left')
+
+const {
+  isDragOver: isPublicationDragOver,
+  onDragEnter: onPublicationDragEnter,
+  onDragOver: onPublicationDragOver,
+  onDragLeave: onPublicationDragLeave,
+  onDrop: takePublicationDrop,
+  reset: resetPublicationDrop,
+} = useFileDropZone({ disabled: uploading })
+const {
+  isDragOver: isReferenceDragOver,
+  onDragEnter: onReferenceDragEnter,
+  onDragOver: onReferenceDragOver,
+  onDragLeave: onReferenceDragLeave,
+  onDrop: takeReferenceDrop,
+  reset: resetReferenceDrop,
+} = useFileDropZone({ disabled: uploading })
+const publicationFileInput = ref<HTMLInputElement | null>(null)
+const referenceFileInput = ref<HTMLInputElement | null>(null)
 
 const steps = [
   { step: 1, title: 'Conteúdo', description: 'Título e legenda', icon: 'lucide:pen-line' },
@@ -387,19 +412,96 @@ function toggleReference(assetId: string) {
   referenceAssetIds.value = [...selected]
 }
 
-async function uploadFiles(event: Event, purpose: MediaAssetPurpose) {
+async function uploadFromInput(event: Event, purpose: MediaAssetPurpose) {
   const input = event.target as HTMLInputElement
   if (!input.files?.length)
     return
+  const files = Array.from(input.files)
+  input.value = ''
+  await uploadMediaFiles(files, purpose)
+}
+
+async function onPublicationDrop(event: DragEvent) {
+  const dropped = takePublicationDrop(event)
+  if (!dropped.length)
+    return
+  const files = dropped.filter(file => isAcceptedMediaFile(file, 'publication'))
+  if (!files.length) {
+    toast.error(mediaFileRejectMessage('publication'))
+    return
+  }
+  await uploadMediaFiles(files, 'publication')
+}
+
+async function onReferenceDrop(event: DragEvent) {
+  const dropped = takeReferenceDrop(event)
+  if (!dropped.length)
+    return
+  const files = dropped.filter(file => isAcceptedMediaFile(file, 'reference'))
+  if (!files.length) {
+    toast.error(mediaFileRejectMessage('reference'))
+    return
+  }
+  await uploadMediaFiles(files, 'reference')
+}
+
+function openPublicationFilePicker() {
+  if (uploading.value)
+    return
+  publicationFileInput.value?.click()
+}
+
+function openReferenceFilePicker() {
+  if (uploading.value)
+    return
+  referenceFileInput.value?.click()
+}
+
+async function uploadMediaFiles(files: File[], purpose: MediaAssetPurpose) {
+  if (!files.length || uploading.value)
+    return
+
   uploading.value = true
+  const uploadedIds: string[] = []
   try {
-    for (const file of Array.from(input.files))
-      await social.uploadAsset(file, purpose)
+    for (const file of files) {
+      const uploaded = await social.uploadAsset(file, purpose)
+      if (uploaded?.id)
+        uploadedIds.push(uploaded.id)
+    }
     await refreshAssets()
-    input.value = ''
+
+    if (purpose === 'publication' && uploadedIds.length) {
+      const next = [...publicationAssetIds.value]
+      for (const id of uploadedIds) {
+        if (!next.includes(id))
+          next.push(id)
+      }
+      publicationAssetIds.value = next
+    }
+    if (purpose === 'reference' && uploadedIds.length) {
+      const next = [...referenceAssetIds.value]
+      for (const id of uploadedIds) {
+        if (!next.includes(id))
+          next.push(id)
+      }
+      referenceAssetIds.value = next
+    }
+
+    toast.success(
+      uploadedIds.length > 1
+        ? purpose === 'publication' ? 'Peças finais enviadas' : 'Referências enviadas'
+        : purpose === 'publication' ? 'Peça final enviada' : 'Referência enviada',
+    )
+  }
+  catch (error: unknown) {
+    const message = error instanceof Error ? error.message : 'Não foi possível enviar o arquivo'
+    toast.error(message)
   }
   finally {
     uploading.value = false
+    resetPublicationDrop()
+    resetReferenceDrop()
   }
 }
 
@@ -999,26 +1101,57 @@ function submit() {
             </div>
           </CardHeader>
           <CardContent class="space-y-5">
-            <label
-              class="group min-h-32 flex flex-col cursor-pointer items-center justify-center border-2 rounded-xl border-dashed p-6 text-center transition-all hover:border-primary/50 hover:bg-primary/5"
-              :class="uploading ? 'border-primary/50 bg-primary/5' : 'border-border'"
+            <div
+              class="relative min-h-32 overflow-hidden border-2 rounded-xl border-dashed transition-all"
+              :class="[
+                uploading || isPublicationDragOver
+                  ? 'border-primary/50 bg-primary/5'
+                  : 'border-border hover:border-primary/50 hover:bg-primary/5',
+              ]"
+              @dragenter="onPublicationDragEnter"
+              @dragover="onPublicationDragOver"
+              @dragleave="onPublicationDragLeave"
+              @drop="onPublicationDrop"
             >
               <div
-                class="mb-3 h-12 w-12 flex items-center justify-center rounded-full bg-primary/10 transition-transform group-hover:scale-110"
+                v-if="isPublicationDragOver"
+                class="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-primary/10 backdrop-blur-[1px]"
+                aria-hidden="true"
               >
-                <Icon :name="uploading ? 'lucide:loader-circle' : 'lucide:upload-cloud'" class="h-6 w-6 text-primary" :class="{ 'animate-spin': uploading }" />
+                <div class="flex flex-col items-center gap-1.5 rounded-2xl bg-background/95 px-5 py-4 shadow-lg ring-1 ring-border">
+                  <Icon name="lucide:upload-cloud" class="h-8 w-8 text-primary" />
+                  <p class="text-sm font-semibold">
+                    Solte para enviar a peça final
+                  </p>
+                  <p class="text-xs text-muted-foreground">
+                    Imagens e vídeos (MP4/MOV)
+                  </p>
+                </div>
               </div>
-              <span class="text-sm font-medium">{{ uploading ? 'Enviando...' : 'Arraste ou clique para enviar' }}</span>
-              <span class="mt-1 text-xs text-muted-foreground">Imagens e vídeos de até 100 MB</span>
+              <button
+                type="button"
+                class="group min-h-32 w-full flex flex-col cursor-pointer items-center justify-center p-6 text-center disabled:cursor-not-allowed disabled:opacity-60"
+                :disabled="uploading"
+                @click="openPublicationFilePicker"
+              >
+                <div
+                  class="mb-3 h-12 w-12 flex items-center justify-center rounded-full bg-primary/10 transition-transform group-hover:scale-110"
+                >
+                  <Icon :name="uploading ? 'lucide:loader-circle' : 'lucide:upload-cloud'" class="h-6 w-6 text-primary" :class="{ 'animate-spin': uploading }" />
+                </div>
+                <span class="text-sm font-medium">{{ uploading ? 'Enviando...' : 'Arraste ou clique para enviar' }}</span>
+                <span class="mt-1 text-xs text-muted-foreground">Imagens e vídeos de até 100 MB</span>
+              </button>
               <input
+                ref="publicationFileInput"
                 type="file"
                 multiple
-                accept="image/*,video/mp4,video/quicktime"
+                :accept="mediaFileAcceptAttr('publication')"
                 class="hidden"
                 :disabled="uploading"
-                @change="uploadFiles($event, 'publication')"
+                @change="uploadFromInput($event, 'publication')"
               >
-            </label>
+            </div>
             <div class="grid grid-cols-2 gap-3 lg:grid-cols-6 sm:grid-cols-3">
               <button
                 v-for="asset in compatiblePublicationAssets()"
@@ -1068,20 +1201,56 @@ function submit() {
             </div>
           </CardHeader>
           <CardContent class="space-y-6">
-            <label
-              class="group min-h-24 flex cursor-pointer items-center justify-center gap-3 border-2 rounded-xl border-dashed p-4 transition-all hover:border-primary/50 hover:bg-primary/5"
+            <div
+              class="relative min-h-24 overflow-hidden border-2 rounded-xl border-dashed transition-all"
+              :class="[
+                uploading || isReferenceDragOver
+                  ? 'border-primary/50 bg-primary/5'
+                  : 'border-border hover:border-primary/50 hover:bg-primary/5',
+              ]"
+              @dragenter="onReferenceDragEnter"
+              @dragover="onReferenceDragOver"
+              @dragleave="onReferenceDragLeave"
+              @drop="onReferenceDrop"
             >
-              <Icon name="lucide:paperclip" class="h-5 w-5 text-muted-foreground transition-colors group-hover:text-primary" />
-              <span class="text-sm font-medium">{{ uploading ? 'Enviando...' : 'Adicionar referências' }}</span>
+              <div
+                v-if="isReferenceDragOver"
+                class="pointer-events-none absolute inset-0 z-10 flex items-center justify-center bg-primary/10 backdrop-blur-[1px]"
+                aria-hidden="true"
+              >
+                <div class="flex flex-col items-center gap-1.5 rounded-2xl bg-background/95 px-5 py-4 shadow-lg ring-1 ring-border">
+                  <Icon name="lucide:paperclip" class="h-7 w-7 text-primary" />
+                  <p class="text-sm font-semibold">
+                    Solte para enviar a referência
+                  </p>
+                  <p class="text-xs text-muted-foreground">
+                    Imagem, vídeo (MP4/MOV) ou PDF
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                class="group min-h-24 w-full flex cursor-pointer items-center justify-center gap-3 p-4 disabled:cursor-not-allowed disabled:opacity-60"
+                :disabled="uploading"
+                @click="openReferenceFilePicker"
+              >
+                <Icon
+                  :name="uploading ? 'lucide:loader-circle' : 'lucide:paperclip'"
+                  class="h-5 w-5 text-muted-foreground transition-colors group-hover:text-primary"
+                  :class="{ 'animate-spin text-primary': uploading }"
+                />
+                <span class="text-sm font-medium">{{ uploading ? 'Enviando...' : 'Arraste ou clique para adicionar referências' }}</span>
+              </button>
               <input
+                ref="referenceFileInput"
                 type="file"
                 multiple
-                accept="image/*,video/mp4,video/quicktime,application/pdf"
+                :accept="mediaFileAcceptAttr('reference')"
                 class="hidden"
                 :disabled="uploading"
-                @change="uploadFiles($event, 'reference')"
+                @change="uploadFromInput($event, 'reference')"
               >
-            </label>
+            </div>
             <div v-if="referenceAssets.length" class="grid grid-cols-2 gap-3 lg:grid-cols-6 sm:grid-cols-4">
               <button
                 v-for="asset in referenceAssets"

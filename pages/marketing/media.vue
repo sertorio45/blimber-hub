@@ -15,6 +15,11 @@ import {
   normalizeLibraryAsset,
   useMediaLibrary,
 } from '~/composables/marketing/useMediaLibrary'
+import {
+  isAcceptedMediaFile,
+  mediaFileAcceptAttr,
+  mediaFileRejectMessage,
+} from '~/utils/file-drop'
 
 definePageMeta({
   middleware: ['auth'],
@@ -30,13 +35,19 @@ const category = ref('all')
 const uploadPurpose = ref<'publication' | 'reference'>('publication')
 const uploading = ref(false)
 const uploadingItems = ref<MediaLibraryUploadItem[]>([])
-const isFileDragOver = ref(false)
 const previewDialogOpen = ref(false)
 const activeAsset = ref<LibraryAssetRow | null>(null)
 const newFolderName = ref('')
 const creatingFolder = ref(false)
-/** Nested dragenter/leave counter so child nodes don't flicker the overlay. */
-let fileDragDepth = 0
+
+const {
+  isDragOver: isFileDragOver,
+  onDragEnter: onLibraryDragEnter,
+  onDragOver: onLibraryDragOver,
+  onDragLeave: onLibraryDragLeave,
+  onDrop: takeLibraryDrop,
+  reset: resetFileDragState,
+} = useFileDropZone({ disabled: uploading })
 
 const selectedIds = ref<string[]>([])
 const deleteDialogOpen = ref(false)
@@ -179,85 +190,17 @@ function prependUploadedAssets(uploaded: LibraryAssetRow[]) {
 }
 
 function uploadAccept(): string {
-  return uploadPurpose.value === 'publication'
-    ? 'image/*,video/mp4,video/quicktime'
-    : 'image/*,video/mp4,video/quicktime,application/pdf'
-}
-
-function isAcceptedLibraryFile(file: File): boolean {
-  const mime = (file.type || '').toLowerCase()
-  if (mime.startsWith('image/'))
-    return true
-  if (mime === 'video/mp4' || mime === 'video/quicktime')
-    return true
-  if (uploadPurpose.value === 'reference' && mime === 'application/pdf')
-    return true
-
-  // Some OS/browsers omit MIME — fall back to extension.
-  const name = file.name.toLowerCase()
-  if (/\.(?:jpe?g|png|gif|webp|svg|heic|heif|avif|bmp)$/i.test(name))
-    return true
-  if (/\.(?:mp4|mov)$/i.test(name))
-    return true
-  if (uploadPurpose.value === 'reference' && name.endsWith('.pdf'))
-    return true
-  return false
-}
-
-function hasFileDragPayload(event: DragEvent): boolean {
-  const types = event.dataTransfer?.types
-  if (!types)
-    return false
-  return Array.from(types).includes('Files')
-}
-
-function onLibraryDragEnter(event: DragEvent) {
-  if (uploading.value || !hasFileDragPayload(event))
-    return
-  event.preventDefault()
-  fileDragDepth += 1
-  isFileDragOver.value = true
-}
-
-function onLibraryDragOver(event: DragEvent) {
-  if (!hasFileDragPayload(event))
-    return
-  event.preventDefault()
-  if (event.dataTransfer)
-    event.dataTransfer.dropEffect = uploading.value ? 'none' : 'copy'
-}
-
-function onLibraryDragLeave(event: DragEvent) {
-  if (!hasFileDragPayload(event))
-    return
-  event.preventDefault()
-  fileDragDepth = Math.max(0, fileDragDepth - 1)
-  if (fileDragDepth === 0)
-    isFileDragOver.value = false
-}
-
-function resetFileDragState() {
-  fileDragDepth = 0
-  isFileDragOver.value = false
+  return mediaFileAcceptAttr(uploadPurpose.value)
 }
 
 async function onLibraryDrop(event: DragEvent) {
-  event.preventDefault()
-  resetFileDragState()
-  if (uploading.value)
+  const dropped = takeLibraryDrop(event)
+  if (!dropped.length || uploading.value)
     return
 
-  const dropped = Array.from(event.dataTransfer?.files || [])
-  if (!dropped.length)
-    return
-
-  const files = dropped.filter(isAcceptedLibraryFile)
+  const files = dropped.filter(file => isAcceptedMediaFile(file, uploadPurpose.value))
   if (!files.length) {
-    toast.error(
-      uploadPurpose.value === 'publication'
-        ? 'Use imagens ou vídeos (MP4/MOV) para peças finais'
-        : 'Formato não suportado. Use imagem, vídeo (MP4/MOV) ou PDF',
-    )
+    toast.error(mediaFileRejectMessage(uploadPurpose.value))
     return
   }
 
