@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { WhatsAppProvider } from '~/types/whatsapp'
+import type { EvolutionRemoteInstanceView, WhatsAppProvider } from '~/types/whatsapp'
 
 import { toast } from 'vue-sonner'
 
@@ -28,7 +28,9 @@ const { isAvailable: embeddedSignupAvailable, prepare: prepareEmbeddedSignup, la
 const { userRole, fetchUserRole } = useRole()
 
 const isStaff = computed(() => userRole.value === 'admin' || userRole.value === 'funcionario')
-const showManualCloudForm = ref(false)
+const metaAvailable = computed(() => WHATSAPP_CLOUD_API_ENABLED && embeddedSignupAvailable.value)
+
+const showAdvanced = ref(false)
 const connectingMeta = ref(false)
 
 const provider = ref<WhatsAppProvider>('evolution')
@@ -46,12 +48,8 @@ const isDefault = ref(false)
 const saving = ref(false)
 const discovering = ref(false)
 
-// On the Cloud tab the popup does the submitting, unless the manual fallback is open.
-const showSubmitButton = computed(() =>
-  provider.value !== 'cloud_api'
-  || !embeddedSignupAvailable.value
-  || showManualCloudForm.value,
-)
+// The Meta popup submits on its own; the footer button only serves the manual paths.
+const advancedOpen = computed(() => showAdvanced.value || !metaAvailable.value)
 
 function resetForm() {
   name.value = ''
@@ -66,7 +64,7 @@ function resetForm() {
   isDefault.value = false
   provider.value = 'evolution'
   evolutionMode.value = 'link'
-  showManualCloudForm.value = false
+  showAdvanced.value = false
 }
 
 onMounted(() => {
@@ -75,8 +73,8 @@ onMounted(() => {
 
 // The SDK has to be ready before the click: FB.login must run synchronously inside
 // the handler or the browser blocks the popup.
-watch([open, provider], ([isOpen, currentProvider]) => {
-  if (isOpen && currentProvider === 'cloud_api' && embeddedSignupAvailable.value)
+watch(open, (isOpen) => {
+  if (isOpen && metaAvailable.value)
     prepareEmbeddedSignup().catch(() => {})
 })
 
@@ -100,7 +98,7 @@ async function handleMetaConnect() {
 
     toast.success(
       result.coexistence
-        ? 'WhatsApp conectado em coexistência — o número segue funcionando no celular'
+        ? 'WhatsApp conectado — o número segue funcionando no celular'
         : 'WhatsApp conectado com sucesso',
     )
 
@@ -214,162 +212,155 @@ async function handleSubmit() {
   <Dialog v-model:open="open">
     <DialogContent class="sm:max-w-lg">
       <DialogHeader>
-        <DialogTitle>Nova instância WhatsApp</DialogTitle>
+        <DialogTitle>Conectar WhatsApp</DialogTitle>
       </DialogHeader>
 
-      <div class="py-2 space-y-4">
-        <div class="space-y-2">
-          <Label for="instance-name">Nome no sistema</Label>
-          <Input id="instance-name" v-model="name" placeholder="Ex: Atendimento principal" />
+      <div class="py-2 space-y-5">
+        <div v-if="metaAvailable" class="border border-border/60 rounded-lg bg-muted/20 p-4 space-y-3">
+          <div class="space-y-1">
+            <p class="text-sm text-foreground font-medium">
+              WhatsApp oficial da Meta
+            </p>
+            <p class="text-xs text-muted-foreground leading-relaxed">
+              Você escolhe a conta e o número numa janela da Meta, sem token nem código. O número
+              continua funcionando no aplicativo WhatsApp Business do celular, e só assim o sistema
+              consegue identificar quais conversas vieram de anúncios.
+            </p>
+          </div>
+          <Button
+            type="button"
+            class="w-full"
+            :disabled="connectingMeta"
+            @click="handleMetaConnect"
+          >
+            {{ connectingMeta ? 'Conectando...' : 'Conectar com a Meta' }}
+          </Button>
         </div>
 
-        <Tabs v-model="provider">
-          <TabsList class="grid grid-cols-2 w-full">
-            <TabsTrigger value="evolution">
-              Evolution API
-            </TabsTrigger>
-            <TabsTrigger value="cloud_api" :disabled="!WHATSAPP_CLOUD_API_ENABLED">
-              Cloud API
-              <span
-                v-if="!WHATSAPP_CLOUD_API_ENABLED"
-                class="ml-2 rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground font-medium tracking-wide uppercase"
-              >
-                Em breve
-              </span>
-            </TabsTrigger>
-          </TabsList>
+        <div v-if="metaAvailable" class="flex justify-center">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            class="h-auto p-0 text-xs text-muted-foreground"
+            @click="showAdvanced = !showAdvanced"
+          >
+            {{ showAdvanced ? 'Ocultar outras formas de conectar' : 'Outras formas de conectar' }}
+          </Button>
+        </div>
 
-          <TabsContent value="evolution" class="mt-4 space-y-3">
-            <div class="space-y-2">
-              <Label for="api-url">URL da API</Label>
-              <Input id="api-url" v-model="apiUrl" placeholder="https://sua-evolution.com" />
-            </div>
-            <div class="space-y-2">
-              <Label for="api-token">Token (apikey)</Label>
-              <Input id="api-token" v-model="apiToken" type="password" autocomplete="off" />
-            </div>
+        <div v-if="advancedOpen" class="space-y-4">
+          <div class="space-y-2">
+            <Label for="instance-name">Nome no sistema</Label>
+            <Input id="instance-name" v-model="name" placeholder="Ex: Atendimento principal" />
+          </div>
 
-            <Tabs v-model="evolutionMode" class="w-full">
-              <TabsList class="grid grid-cols-2 w-full">
-                <TabsTrigger value="link">
-                  Vincular existente
-                </TabsTrigger>
-                <TabsTrigger value="create">
-                  Criar nova
-                </TabsTrigger>
-              </TabsList>
+          <Tabs v-model="provider">
+            <TabsList class="grid w-full" :class="isStaff ? 'grid-cols-2' : 'grid-cols-1'">
+              <TabsTrigger value="evolution">
+                Evolution API
+              </TabsTrigger>
+              <TabsTrigger v-if="isStaff" value="cloud_api">
+                Cloud API manual
+              </TabsTrigger>
+            </TabsList>
 
-              <TabsContent value="link" class="mt-3 space-y-3">
-                <p class="text-xs text-muted-foreground">
-                  Use quando a instância já está conectada na Evolution API. O sistema sincroniza status e webhook.
-                </p>
-                <div class="flex gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    class="shrink-0"
-                    :disabled="discovering"
-                    @click="handleDiscover"
-                  >
-                    {{ discovering ? 'Buscando...' : 'Buscar instâncias' }}
-                  </Button>
-                </div>
-                <div v-if="remoteInstances.length" class="space-y-2">
-                  <Label>Instâncias encontradas</Label>
-                  <Select v-model="evolutionInstanceName">
-                    <SelectTrigger>
-                      <SelectValue placeholder="Selecione uma instância" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem
-                        v-for="item in remoteInstances"
-                        :key="item.instanceName"
-                        :value="item.instanceName"
-                      >
-                        {{ formatRemoteLabel(item) }}
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div class="space-y-2">
-                  <Label for="evolution-instance-name">Nome na Evolution API</Label>
-                  <Input
-                    id="evolution-instance-name"
-                    v-model="evolutionInstanceName"
-                    placeholder="Ex: minha-instancia"
-                  />
-                </div>
-              </TabsContent>
-
-              <TabsContent value="create" class="mt-3">
-                <p class="text-xs text-muted-foreground">
-                  Cria uma nova instância na Evolution API e gera QR Code para conexão.
-                </p>
-              </TabsContent>
-            </Tabs>
-          </TabsContent>
-
-          <TabsContent value="cloud_api" class="mt-4 space-y-4">
-            <p class="text-xs text-muted-foreground">
-              API oficial da Meta. Necessária para capturar a origem de anúncios que clicam para o WhatsApp.
-            </p>
-
-            <div v-if="embeddedSignupAvailable" class="border rounded-lg p-4 space-y-3">
-              <div class="space-y-1">
-                <p class="text-sm font-medium">
-                  Conectar pela Meta
-                </p>
-                <p class="text-xs text-muted-foreground">
-                  Você escolhe a conta e o número numa janela da Meta. O número continua funcionando
-                  no aplicativo WhatsApp Business do celular.
-                </p>
+            <TabsContent value="evolution" class="mt-4 space-y-3">
+              <div class="space-y-2">
+                <Label for="api-url">URL da API</Label>
+                <Input id="api-url" v-model="apiUrl" placeholder="https://sua-evolution.com" />
               </div>
-              <Button
-                type="button"
-                class="w-full"
-                :disabled="connectingMeta"
-                @click="handleMetaConnect"
-              >
-                {{ connectingMeta ? 'Conectando...' : 'Conectar com a Meta' }}
-              </Button>
-            </div>
+              <div class="space-y-2">
+                <Label for="api-token">Token (apikey)</Label>
+                <Input id="api-token" v-model="apiToken" type="password" autocomplete="off" />
+              </div>
 
-            <div v-if="isStaff || !embeddedSignupAvailable" class="space-y-3">
-              <Button
-                v-if="embeddedSignupAvailable"
-                type="button"
-                variant="ghost"
-                size="sm"
-                class="h-auto p-0 text-xs text-muted-foreground"
-                @click="showManualCloudForm = !showManualCloudForm"
-              >
-                {{ showManualCloudForm ? 'Ocultar configuração manual' : 'Configuração manual (interno)' }}
-              </Button>
+              <Tabs v-model="evolutionMode" class="w-full">
+                <TabsList class="grid grid-cols-2 w-full">
+                  <TabsTrigger value="link">
+                    Vincular existente
+                  </TabsTrigger>
+                  <TabsTrigger value="create">
+                    Criar nova
+                  </TabsTrigger>
+                </TabsList>
 
-              <div v-if="showManualCloudForm || !embeddedSignupAvailable" class="space-y-3">
-                <div class="space-y-2">
-                  <Label for="cloud-phone-id">Phone Number ID</Label>
-                  <Input id="cloud-phone-id" v-model="cloudPhoneId" placeholder="Ex: 123456789012345" />
-                </div>
-                <div class="space-y-2">
-                  <Label for="cloud-business-id">WABA ID</Label>
-                  <Input id="cloud-business-id" v-model="cloudBusinessId" placeholder="ID da conta do WhatsApp Business" />
-                </div>
-                <div class="space-y-2">
-                  <Label for="cloud-access-token">Token de acesso permanente</Label>
-                  <Input id="cloud-access-token" v-model="cloudAccessToken" type="password" autocomplete="off" />
-                </div>
-                <div class="space-y-2">
-                  <Label for="cloud-app-secret">App Secret (opcional)</Label>
-                  <Input id="cloud-app-secret" v-model="cloudAppSecret" type="password" autocomplete="off" />
+                <TabsContent value="link" class="mt-3 space-y-3">
                   <p class="text-xs text-muted-foreground">
-                    Só é necessário quando o número foi cadastrado em outro app da Meta.
+                    Use quando a instância já está conectada na Evolution API. O sistema sincroniza status e webhook.
                   </p>
-                </div>
+                  <div class="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      class="shrink-0"
+                      :disabled="discovering"
+                      @click="handleDiscover"
+                    >
+                      {{ discovering ? 'Buscando...' : 'Buscar instâncias' }}
+                    </Button>
+                  </div>
+                  <div v-if="remoteInstances.length" class="space-y-2">
+                    <Label>Instâncias encontradas</Label>
+                    <Select v-model="evolutionInstanceName">
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione uma instância" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem
+                          v-for="item in remoteInstances"
+                          :key="item.instanceName"
+                          :value="item.instanceName"
+                        >
+                          {{ formatRemoteLabel(item) }}
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div class="space-y-2">
+                    <Label for="evolution-instance-name">Nome na Evolution API</Label>
+                    <Input
+                      id="evolution-instance-name"
+                      v-model="evolutionInstanceName"
+                      placeholder="Ex: minha-instancia"
+                    />
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="create" class="mt-3">
+                  <p class="text-xs text-muted-foreground">
+                    Cria uma nova instância na Evolution API e gera QR Code para conexão.
+                  </p>
+                </TabsContent>
+              </Tabs>
+            </TabsContent>
+
+            <TabsContent v-if="isStaff" value="cloud_api" class="mt-4 space-y-3">
+              <p class="text-xs text-muted-foreground">
+                Use apenas quando o número já foi cadastrado direto no painel da Meta.
+              </p>
+              <div class="space-y-2">
+                <Label for="cloud-phone-id">Phone Number ID</Label>
+                <Input id="cloud-phone-id" v-model="cloudPhoneId" placeholder="Ex: 123456789012345" />
               </div>
-            </div>
-          </TabsContent>
-        </Tabs>
+              <div class="space-y-2">
+                <Label for="cloud-business-id">WABA ID</Label>
+                <Input id="cloud-business-id" v-model="cloudBusinessId" placeholder="ID da conta do WhatsApp Business" />
+              </div>
+              <div class="space-y-2">
+                <Label for="cloud-access-token">Token de acesso permanente</Label>
+                <Input id="cloud-access-token" v-model="cloudAccessToken" type="password" autocomplete="off" />
+              </div>
+              <div class="space-y-2">
+                <Label for="cloud-app-secret">App Secret (opcional)</Label>
+                <Input id="cloud-app-secret" v-model="cloudAppSecret" type="password" autocomplete="off" />
+                <p class="text-xs text-muted-foreground">
+                  Só é necessário quando o número foi cadastrado em outro app da Meta.
+                </p>
+              </div>
+            </TabsContent>
+          </Tabs>
+        </div>
 
         <label class="flex items-center gap-2 text-sm">
           <input v-model="isDefault" type="checkbox" class="border rounded">
@@ -381,7 +372,7 @@ async function handleSubmit() {
         <Button variant="outline" @click="open = false">
           Cancelar
         </Button>
-        <Button v-if="showSubmitButton" :disabled="saving" @click="handleSubmit">
+        <Button v-if="advancedOpen" :disabled="saving" @click="handleSubmit">
           {{ saving ? 'Salvando...' : (provider === 'evolution' && evolutionMode === 'link' ? 'Vincular instância' : 'Criar instância') }}
         </Button>
       </DialogFooter>
