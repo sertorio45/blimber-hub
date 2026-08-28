@@ -15,7 +15,7 @@ function getAdminClient(): SupabaseClient {
 
 export async function broadcastWhatsAppEvent(
   tenantId: string,
-  event: 'message' | 'conversation',
+  event: 'message' | 'conversation' | 'instance',
   payload: Record<string, unknown>,
 ): Promise<void> {
   if (!tenantId)

@@ -487,6 +487,19 @@ async function submitLead() {
 
     toast.success('Lead criado com sucesso!')
 
+    // Silent CTWA attribution match by contact phone (does not change agent workflow).
+    if (contact.phone) {
+      try {
+        await $fetch(`/api/crm/lead/${lead.id}/ctwa-match`, {
+          method: 'POST',
+          body: { tenant_id: tenantId.value, phone: contact.phone },
+        })
+      }
+      catch (ctwaErr) {
+        console.warn('[CTWA] Match after lead create failed', ctwaErr)
+      }
+    }
+
     // Emitir evento para o componente pai (inclui dados do contato para exibição imediata)
     emit('lead-created', {
       ...lead,

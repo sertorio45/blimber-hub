@@ -3,6 +3,11 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { mapEvolutionConnectionState } from '~/server/utils/whatsapp/evolution-client'
 import { buildWhatsAppRemoteJid, findOrUpsertWhatsAppConversation, resolveEvolutionRemoteJid } from '~/server/utils/whatsapp/conversation-utils'
 import { normalizePhone } from '~/server/utils/whatsapp/contact-utils'
+import {
+  buildCtwaMessageMetadata,
+  extractCtwaReferral,
+  upsertWhatsappAttribution,
+} from '~/server/utils/whatsapp/ctwa-attribution'
 import { broadcastWhatsAppEvent } from '~/server/utils/whatsapp/realtime-broadcast'
 import {
   conversationHasActiveAgent,
@@ -188,6 +193,21 @@ export async function processEvolutionWebhook(
         : new Date().toISOString()
 
       const text = extractMessageText(item.message)
+      const referral = !fromMe
+        ? extractCtwaReferral(item as Record<string, unknown>)
+        || extractCtwaReferral((item.message || {}) as Record<string, unknown>)
+        : null
+      const metadata = referral ? buildCtwaMessageMetadata(referral) : {}
+
+      if (referral) {
+        await upsertWhatsappAttribution(client, {
+          tenantId,
+          instanceId,
+          phone,
+          referral,
+          receivedAt: timestamp,
+        })
+      }
 
       const contactId = await upsertContact(client, tenantId, phone, pushName)
       const conversationId = await findOrUpsertWhatsAppConversation(client, {
@@ -215,7 +235,7 @@ export async function processEvolutionWebhook(
         media_url: item.message?.imageMessage?.url || null,
         status: fromMe ? 'sent' : 'delivered',
         sent_at: timestamp,
-        metadata: {},
+        metadata,
       }).select('*').single()
 
       if (inserted) {
@@ -280,22 +300,120 @@ export async function processEvolutionWebhook(
   return { handled: false, type: 'ignored' }
 }
 
-export async function processCloudWebhook(
+/**
+ * Coexistence: messages the agent sends from the WhatsApp Business app on their phone
+ * arrive as echoes on a separate field. Without mirroring them the inbox only shows
+ * the customer's half of the conversation.
+ */
+async function processCloudMessageEchoes(
   client: SupabaseClient,
-  instance: Record<string, any>,
-  payload: Record<string, any>,
+  params: {
+    tenantId: string
+    instanceId: string
+    echoes: Record<string, any>[]
+  },
 ) {
-  const tenantId = instance.tenant_id as string
-  const instanceId = instance.id as string
-  const entry = payload.entry?.[0]
-  const changes = entry?.changes?.[0]
-  const value = changes?.value
+  const { tenantId, instanceId, echoes } = params
 
-  if (!value)
-    return { handled: false, type: 'ignored' }
+  for (const msg of echoes) {
+    const externalId = String(msg.id || '').trim()
+    if (!externalId)
+      continue
+
+    const { data: existingMsg } = await client
+      .from('whatsapp_message')
+      .select('id')
+      .eq('tenant_id', tenantId)
+      .eq('external_id', externalId)
+      .maybeSingle()
+
+    // Also dedupes against messages we sent through Cloud API ourselves.
+    if (existingMsg?.id)
+      continue
+
+    // On an echo the customer is the recipient, not the sender.
+    const phone = normalizePhone(String(msg.to || msg.recipient_id || ''))
+    if (!phone)
+      continue
+
+    const remoteJid = buildWhatsAppRemoteJid(phone)
+    const text = msg.text?.body || msg.button?.text || ''
+    const timestamp = msg.timestamp
+      ? new Date(Number(msg.timestamp) * 1000).toISOString()
+      : new Date().toISOString()
+
+    const contactId = await upsertContact(client, tenantId, phone, phone)
+    const conversationId = await findOrUpsertWhatsAppConversation(client, {
+      tenantId,
+      instanceId,
+      contactId,
+      remoteJid,
+      contactName: phone,
+      contactPhone: phone,
+      lastMessagePreview: text || `[${msg.type || 'mídia'}]`,
+      lastMessageAt: timestamp,
+      fromMe: true,
+    })
+
+    const { data: inserted } = await client.from('whatsapp_message').insert({
+      tenant_id: tenantId,
+      conversation_id: conversationId,
+      instance_id: instanceId,
+      contact_id: contactId,
+      external_id: externalId,
+      remote_jid: remoteJid,
+      from_me: true,
+      message_type: msg.type || 'text',
+      content: text,
+      status: 'sent',
+      sent_at: timestamp,
+      metadata: { source: 'smb_message_echo' },
+    }).select('*').single()
+
+    if (inserted)
+      await broadcastWhatsAppEvent(tenantId, 'message', inserted)
+  }
+}
+
+async function processCloudChangeValue(
+  client: SupabaseClient,
+  params: {
+    tenantId: string
+    instanceId: string
+    wabaId: string | null
+    field?: string | null
+    value: Record<string, any>
+  },
+) {
+  const { tenantId, instanceId, wabaId, field, value } = params
+
+  if (field === 'smb_message_echoes') {
+    const echoes: Record<string, any>[] = Array.isArray(value.message_echoes)
+      ? value.message_echoes
+      : Array.isArray(value.messages) ? value.messages : []
+
+    if (!echoes.length)
+      return null
+
+    await processCloudMessageEchoes(client, { tenantId, instanceId, echoes })
+    return 'message' as const
+  }
 
   if (value.messages?.length) {
     for (const msg of value.messages) {
+      const externalId = String(msg.id)
+
+      // Meta retries webhooks for up to 7 days and can fan out to several subscribers.
+      const { data: existingMsg } = await client
+        .from('whatsapp_message')
+        .select('id')
+        .eq('tenant_id', tenantId)
+        .eq('external_id', externalId)
+        .maybeSingle()
+
+      if (existingMsg?.id)
+        continue
+
       const phone = normalizePhone(String(msg.from || ''))
       const remoteJid = buildWhatsAppRemoteJid(phone)
       const contactName = value.contacts?.[0]?.profile?.name || phone
@@ -303,6 +421,19 @@ export async function processCloudWebhook(
       const timestamp = msg.timestamp
         ? new Date(Number(msg.timestamp) * 1000).toISOString()
         : new Date().toISOString()
+
+      const referral = extractCtwaReferral(msg as Record<string, unknown>)
+      const metadata = referral ? buildCtwaMessageMetadata(referral) : {}
+      if (referral) {
+        await upsertWhatsappAttribution(client, {
+          tenantId,
+          instanceId,
+          wabaId,
+          phone,
+          referral,
+          receivedAt: timestamp,
+        })
+      }
 
       const contactId = await upsertContact(client, tenantId, phone, contactName)
       const conversationId = await findOrUpsertWhatsAppConversation(client, {
@@ -322,14 +453,14 @@ export async function processCloudWebhook(
         conversation_id: conversationId,
         instance_id: instanceId,
         contact_id: contactId,
-        external_id: String(msg.id),
+        external_id: externalId,
         remote_jid: remoteJid,
         from_me: false,
         message_type: msg.type || 'text',
         content: text,
         status: 'delivered',
         sent_at: timestamp,
-        metadata: {},
+        metadata,
       }).select('*').single()
 
       if (inserted) {
@@ -337,7 +468,7 @@ export async function processCloudWebhook(
       }
     }
 
-    return { handled: true, type: 'message' }
+    return 'message' as const
   }
 
   if (value.statuses?.length) {
@@ -355,8 +486,48 @@ export async function processCloudWebhook(
         await broadcastWhatsAppEvent(tenantId, 'message', updated)
     }
 
-    return { handled: true, type: 'status' }
+    return 'status' as const
   }
 
-  return { handled: false, type: 'ignored' }
+  return null
+}
+
+export async function processCloudWebhook(
+  client: SupabaseClient,
+  instance: Record<string, any>,
+  payload: Record<string, any>,
+) {
+  const tenantId = instance.tenant_id as string
+  const instanceId = instance.id as string
+  const entries: Record<string, any>[] = Array.isArray(payload.entry) ? payload.entry : []
+
+  const types = new Set<string>()
+
+  // Meta batches multiple entries/changes per delivery; processing only the first drops messages.
+  for (const entry of entries) {
+    const wabaId = entry?.id ? String(entry.id) : null
+    const changes: Record<string, any>[] = Array.isArray(entry?.changes) ? entry.changes : []
+
+    for (const change of changes) {
+      const value = change?.value
+      if (!value)
+        continue
+
+      const handledType = await processCloudChangeValue(client, {
+        tenantId,
+        instanceId,
+        wabaId,
+        field: change?.field ? String(change.field) : null,
+        value,
+      })
+
+      if (handledType)
+        types.add(handledType)
+    }
+  }
+
+  if (!types.size)
+    return { handled: false, type: 'ignored' }
+
+  return { handled: true, type: types.has('message') ? 'message' : 'status' }
 }

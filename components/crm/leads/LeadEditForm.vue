@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { CrmCompanyLookupResult, CrmLeadLookupResult } from '~/types/crm'
+import type { CrmCompanyLookupResult, CrmLeadLookupResult, Lead } from '~/types/crm'
 import { Icon } from '#components'
 import { useSupabaseClient } from '#imports'
 import { computed, ref, watch } from 'vue'
@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/select'
 import CompanyAddressFields from '~/components/crm/company/CompanyAddressFields.vue'
 import CompanyNameAutofillInput from '~/components/crm/leads/CompanyNameAutofillInput.vue'
+import LeadCtwaOriginCard from '~/components/crm/leads/LeadCtwaOriginCard.vue'
 import LeadFunnelStageFields from '~/components/crm/leads/LeadFunnelStageFields.vue'
 // Removendo import de tabs temporariamente
 // import {
@@ -42,18 +43,17 @@ import { useCrmLeadWhatsapp } from '~/composables/crm/useCrmLeadWhatsapp'
 import { useTenant } from '~/composables/useTenant'
 import { toast } from 'vue-sonner'
 
-// Props
-interface Props {
-  lead: any
-}
+const props = defineProps<{
+  lead: Lead
+}>()
 
-const props = defineProps<Props>()
-
-// Define emits
 const emit = defineEmits<{
-  'lead-updated': [lead: any]
+  'lead-updated': [lead: Lead]
   'cancel': []
 }>()
+
+/** Local copy so CTWA match can refresh the origin card without waiting for parent. */
+const displayLead = ref<Lead>({ ...props.lead })
 
 const { tenantId } = useTenant()
 const supabase = useSupabaseClient()
@@ -351,8 +351,8 @@ const meetingForm = ref({
   agenda: '',
 })
 
-function resolveValuesInputs(lead: any): string[] {
-  const fromArray = normalizeLeadValues(lead?.values)
+function resolveValuesInputs(lead: Lead | null | undefined): string[] {
+  const fromArray = normalizeLeadValues((lead as Lead & { values?: number[] })?.values)
   if (fromArray.length)
     return fromArray.map(formatLeadValueInput)
   if (lead?.value)
@@ -374,18 +374,26 @@ function buildLeadValuePayload() {
 // Watch para pré-preencher todos os formulários quando os dados carregarem
 watch([() => props.lead, leadSources], () => {
   if (props.lead) {
+    displayLead.value = { ...props.lead }
+
     // Pré-preencher lead form
+    const leadExtra = props.lead as Lead & {
+      funnel_id?: string | null
+      sales_stage_id?: string | null
+      assigned_to?: string | null
+      values?: number[]
+    }
     leadForm.value = {
       name: props.lead.name || '',
       source: findLeadSourceId(props.lead.source_id || props.lead.source) || '',
-      funnel_id: props.lead.funnel_id || null,
-      sales_stage_id: props.lead.sales_stage_id || '',
+      funnel_id: leadExtra.funnel_id || null,
+      sales_stage_id: leadExtra.sales_stage_id || '',
       status: props.lead.status || 'new',
       priority: props.lead.priority || 'medium',
       valuesInputs: resolveValuesInputs(props.lead),
       closedValue: props.lead.value ? formatLeadValueInput(props.lead.value) : '',
       notes: props.lead.notes || '',
-      assigned_to: props.lead.assigned_to || props.lead.assignedTo || null,
+      assigned_to: leadExtra.assigned_to || props.lead.assignedTo || null,
     }
 
     whatsappConversationId.value = props.lead.whatsapp_conversation_id ?? null
@@ -508,13 +516,13 @@ async function updateLead() {
       throw new Error('Selecione um estágio de vendas')
     }
 
-    const leadResponse = await $fetch('/api/crm/lead', {
+    const leadResponse = await $fetch<{ statusCode?: number, body?: Lead } & Lead>('/api/crm/lead', {
       method: 'PUT',
       body: leadUpdateData,
     })
 
     // A API retorna { statusCode: 200, body: data }
-    const updatedLead = leadResponse.body || leadResponse
+    const updatedLead: Lead = (leadResponse.body || leadResponse) as Lead
 
     // 2. Criar/Atualizar Company (se preenchido) — before contacts so we can link company_id
     if (companyForm.value.name) {
@@ -633,6 +641,24 @@ async function updateLead() {
       }
     }
 
+    // Silent CTWA re-match if phone exists and lead still has no ctwa_clid.
+    const phoneForMatch = primaryContact.value.phone || props.lead?.phone
+    if (phoneForMatch && !props.lead?.meta_ctwa_clid && !updatedLead?.meta_ctwa_clid) {
+      try {
+        const ctwa = await $fetch<{ matched?: boolean; lead?: Lead }>(`/api/crm/lead/${props.lead.id}/ctwa-match`, {
+          method: 'POST',
+          body: { tenant_id: tenantId.value, phone: phoneForMatch },
+        })
+        if (ctwa?.matched && ctwa.lead) {
+          Object.assign(updatedLead, ctwa.lead)
+          displayLead.value = { ...displayLead.value, ...ctwa.lead }
+        }
+      }
+      catch (ctwaErr) {
+        console.warn('[CTWA] Match after lead update failed', ctwaErr)
+      }
+    }
+
     // Emitir evento para o componente pai
     toast.success('Lead atualizado com sucesso!')
     emit('lead-updated', updatedLead)
@@ -675,6 +701,8 @@ function cancel() {
 
     <!-- Edit Form with Custom Tabs -->
     <div v-else class="space-y-6">
+      <LeadCtwaOriginCard :lead="displayLead" />
+
       <!-- Custom Tab Navigation -->
       <div class="flex border-b border-border">
         <button

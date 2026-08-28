@@ -46,6 +46,9 @@ interface LeadRow {
   fbc: string | null
   fbp: string | null
   fbclid: string | null
+  meta_ctwa_clid: string | null
+  meta_waba_id: string | null
+  attribution_channel: string | null
 }
 
 interface ContactPii {
@@ -115,12 +118,16 @@ function buildFbc(fbclid?: string | null, existingFbc?: string | null) {
   return `fb.1.${Math.floor(Date.now() / 1000)}.${clickId}`
 }
 
-export function resolveMetaActionSource(_input?: {
+export function resolveMetaActionSource(input?: {
   source?: string | null
   metaLeadId?: string | null
+  metaCtwaClid?: string | null
   hasWhatsapp?: boolean
 }): MetaCapiActionSource {
-  // Meta CRM guide: CRM conversion events must use system_generated.
+  // CTWA / Business Messaging matching requires business_messaging + messaging_channel.
+  if (String(input?.metaCtwaClid || '').trim())
+    return 'business_messaging'
+  // Meta CRM Conversion Leads guide: system_generated for classic CRM events.
   return META_CRM_ACTION_SOURCE
 }
 
@@ -218,13 +225,15 @@ async function resolveLeadPii(
   }
 }
 
-function buildUserData(input: {
+export function buildUserData(input: {
   email?: string | null
   phone?: string | null
   name?: string | null
   fbc?: string | null
   fbp?: string | null
   metaLeadId?: string | null
+  metaCtwaClid?: string | null
+  wabaId?: string | null
 }) {
   const userData: Record<string, unknown> = {}
   const email = normalizeEmail(input.email)
@@ -246,12 +255,38 @@ function buildUserData(input: {
     userData.fbp = input.fbp
   if (input.metaLeadId)
     userData.lead_id = input.metaLeadId
+  // Meta requires whatsapp_business_account_id together with ctwa_clid on business_messaging events.
+  if (String(input.metaCtwaClid || '').trim()) {
+    userData.ctwa_clid = String(input.metaCtwaClid).trim()
+    if (String(input.wabaId || '').trim())
+      userData.whatsapp_business_account_id = String(input.wabaId).trim()
+  }
 
   return userData
 }
 
-function hasMinimumMatchData(userData: Record<string, unknown>) {
-  return Boolean(userData.em || userData.ph || userData.lead_id || userData.fbc)
+/**
+ * Meta answers rejected events with a generic "Invalid parameter"; the actionable
+ * reason lives in error_user_title/error_user_msg, so surface all of it.
+ */
+export function describeMetaError(error: any): string {
+  const metaError = error?.data?.error
+  const parts = [
+    metaError?.error_user_title,
+    metaError?.error_user_msg,
+    metaError?.message,
+    error?.statusMessage,
+    error?.message,
+  ]
+    .map(part => String(part || '').trim())
+    .filter(Boolean)
+
+  const unique = [...new Set(parts)]
+  return unique.length ? unique.join(' — ') : 'Falha ao enviar evento para a Meta'
+}
+
+export function hasMinimumMatchData(userData: Record<string, unknown>) {
+  return Boolean(userData.em || userData.ph || userData.lead_id || userData.fbc || userData.ctwa_clid)
 }
 
 async function fetchLeadRow(
@@ -261,12 +296,36 @@ async function fetchLeadRow(
 ): Promise<LeadRow | null> {
   const { data } = await client
     .from('crm_lead')
-    .select('id, tenant_id, name, source, value, status, closed_at, created_at, meta_lead_id, fbc, fbp, fbclid')
+    .select('id, tenant_id, name, source, value, status, closed_at, created_at, meta_lead_id, fbc, fbp, fbclid, meta_ctwa_clid, meta_waba_id, attribution_channel')
     .eq('id', leadId)
     .eq('tenant_id', tenantId)
     .maybeSingle()
 
   return (data as LeadRow | null) || null
+}
+
+/**
+ * WABA id for business_messaging events. Prefers the value captured with the click,
+ * falling back to the tenant's Cloud API instance when the lead predates that capture.
+ */
+async function resolveWabaId(
+  client: SupabaseClient,
+  tenantId: string,
+  lead: LeadRow,
+): Promise<string | null> {
+  if (lead.meta_waba_id)
+    return lead.meta_waba_id
+
+  const { data } = await client
+    .from('whatsapp_integration')
+    .select('cloud_business_id')
+    .eq('tenant_id', tenantId)
+    .eq('provider', 'cloud_api')
+    .not('cloud_business_id', 'is', null)
+    .limit(1)
+    .maybeSingle()
+
+  return (data?.cloud_business_id as string | null) || null
 }
 
 export async function enqueueMetaConversion(
@@ -301,7 +360,12 @@ export async function enqueueMetaConversion(
     return { enqueued: false, reason: 'lead_not_found' }
 
   const pii = await resolveLeadPii(client, input.tenantId, input.leadId)
-  const actionSource = META_CRM_ACTION_SOURCE
+  const actionSource = resolveMetaActionSource({
+    source: lead.source,
+    metaLeadId: lead.meta_lead_id,
+    metaCtwaClid: lead.meta_ctwa_clid,
+    hasWhatsapp: pii.hasWhatsapp,
+  })
   const eventTime = input.eventTime
     || (input.eventName === 'Purchase' ? lead.closed_at : lead.created_at)
     || new Date().toISOString()
@@ -318,6 +382,8 @@ export async function enqueueMetaConversion(
     fbc,
     fbp: lead.fbp,
     metaLeadId: lead.meta_lead_id,
+    metaCtwaClid: lead.meta_ctwa_clid,
+    wabaId: lead.meta_ctwa_clid ? await resolveWabaId(client, input.tenantId, lead) : null,
   })
 
   if (!hasMinimumMatchData(userData)) {
@@ -363,6 +429,7 @@ async function sendEventToMeta(input: {
     action_source: string
     user_data: Record<string, unknown>
     custom_data?: Record<string, unknown>
+    messaging_channel?: string
   }
 }) {
   const body: Record<string, unknown> = {
@@ -427,6 +494,8 @@ async function processSingleEvent(
     fbc,
     fbp: lead.fbp,
     metaLeadId: lead.meta_lead_id,
+    metaCtwaClid: lead.meta_ctwa_clid,
+    wabaId: lead.meta_ctwa_clid ? await resolveWabaId(client, row.tenant_id, lead) : null,
   })
 
   if (!hasMinimumMatchData(userData)) {
@@ -449,6 +518,13 @@ async function processSingleEvent(
     return { ok: false }
   }
 
+  const actionSource = resolveMetaActionSource({
+    source: lead.source,
+    metaLeadId: lead.meta_lead_id,
+    metaCtwaClid: lead.meta_ctwa_clid,
+    hasWhatsapp: pii.hasWhatsapp,
+  })
+
   const eventTimeUnix = Math.floor(new Date(row.event_time).getTime() / 1000)
   const customData: Record<string, unknown> = {
     lead_event_source: META_CRM_LEAD_EVENT_SOURCE,
@@ -461,21 +537,31 @@ async function processSingleEvent(
       customData.content_name = lead.name
   }
 
-  const payloadEvent = {
+  const payloadEvent: Record<string, unknown> = {
     event_name: row.event_name,
     event_time: eventTimeUnix,
     event_id: row.event_id,
-    action_source: META_CRM_ACTION_SOURCE,
+    action_source: actionSource,
     user_data: userData,
     custom_data: customData,
   }
+  if (actionSource === 'business_messaging')
+    payloadEvent.messaging_channel = 'whatsapp'
 
   try {
     const response = await sendEventToMeta({
       pixelId,
       accessToken,
       // Never attach test_event_code on real CRM sends — that forces Test Events (often labeled Web).
-      event: payloadEvent,
+      event: payloadEvent as {
+        event_name: string
+        event_time: number
+        event_id: string
+        action_source: string
+        user_data: Record<string, unknown>
+        custom_data?: Record<string, unknown>
+        messaging_channel?: string
+      },
     })
 
     await client.from('crm_meta_conversion_events').update({
@@ -493,16 +579,13 @@ async function processSingleEvent(
   catch (error: any) {
     const attempts = row.attempts + 1
     const failedPermanently = attempts >= MAX_ATTEMPTS
-    const message = error?.data?.error?.message
-      || error?.statusMessage
-      || error?.message
-      || 'Falha ao enviar evento para a Meta'
 
     await client.from('crm_meta_conversion_events').update({
       status: failedPermanently ? 'failed' : 'pending',
       attempts,
-      last_error: String(message).slice(0, 500),
+      last_error: describeMetaError(error).slice(0, 500),
       payload_snapshot: payloadEvent,
+      meta_response: error?.data || null,
       next_attempt_at: failedPermanently
         ? new Date().toISOString()
         : nextAttemptAt(attempts),
@@ -848,9 +931,16 @@ export async function syncPendingWonPurchases(
   return { candidates: 0, enqueued: 0, skipped: 0, skipped_reasons: [] as Array<{ lead_id: string, reason: string }> }
 }
 
+export interface MetaCapiTestEventOptions {
+  /** `ctwa` reproduces a Click-to-WhatsApp conversion (business_messaging + ctwa_clid + WABA id). */
+  mode?: 'default' | 'ctwa'
+  eventName?: MetaCapiEventName
+}
+
 export async function sendMetaCapiTestEvent(
   client: SupabaseClient,
   tenantId: string,
+  options: MetaCapiTestEventOptions = {},
 ) {
   const integration = await loadMetaIntegration(client, tenantId)
   if (!integration)
@@ -867,39 +957,68 @@ export async function sendMetaCapiTestEvent(
   if (!testCode)
     throw createErrorLike(400, 'Informe o código de teste do Gerenciador de Eventos (TEST...)')
 
+  const isCtwa = options.mode === 'ctwa'
+  const eventName: MetaCapiEventName = options.eventName || 'Lead'
+
+  let wabaId: string | null = null
+  if (isCtwa) {
+    const { data } = await client
+      .from('whatsapp_integration')
+      .select('cloud_business_id')
+      .eq('tenant_id', tenantId)
+      .eq('provider', 'cloud_api')
+      .not('cloud_business_id', 'is', null)
+      .limit(1)
+      .maybeSingle()
+    wabaId = (data?.cloud_business_id as string | null) || null
+
+    if (!wabaId)
+      throw createErrorLike(400, 'Conecte uma instância WhatsApp Cloud API (com WABA ID) antes de testar CTWA')
+  }
+
   const eventId = randomUUID()
   const eventTime = new Date().toISOString()
-  const payloadEvent = {
-    event_name: 'Lead',
+  const actionSource = isCtwa ? 'business_messaging' : META_CRM_ACTION_SOURCE
+  const payloadEvent: Record<string, unknown> = {
+    event_name: eventName,
     event_time: Math.floor(Date.now() / 1000),
     event_id: eventId,
-    action_source: META_CRM_ACTION_SOURCE,
-    user_data: {
-      em: [sha256('test@example.com')],
-      ph: [sha256('5511999999999')],
-    },
-    custom_data: {
-      lead_event_source: META_CRM_LEAD_EVENT_SOURCE,
-      event_source: META_CRM_EVENT_SOURCE,
-      test: true,
-    },
+    action_source: actionSource,
+    user_data: isCtwa
+      ? {
+          ctwa_clid: `test_ctwa_clid_${eventId.slice(0, 8)}`,
+          whatsapp_business_account_id: wabaId,
+        }
+      : {
+          em: [sha256('test@example.com')],
+          ph: [sha256('5511999999999')],
+        },
+    custom_data: isCtwa
+      ? { currency: 'BRL', value: 1, test: true }
+      : {
+          lead_event_source: META_CRM_LEAD_EVENT_SOURCE,
+          event_source: META_CRM_EVENT_SOURCE,
+          test: true,
+        },
   }
+  if (isCtwa)
+    payloadEvent.messaging_channel = 'whatsapp'
 
   try {
     const response = await sendEventToMeta({
       pixelId,
       accessToken,
       testEventCode: testCode,
-      event: payloadEvent,
+      event: payloadEvent as Parameters<typeof sendEventToMeta>[0]['event'],
     })
 
     await client.from('crm_meta_conversion_events').insert({
       tenant_id: tenantId,
       lead_id: null,
-      event_name: 'Lead',
+      event_name: eventName,
       event_id: eventId,
       event_time: eventTime,
-      action_source: META_CRM_ACTION_SOURCE,
+      action_source: actionSource,
       status: 'sent',
       attempts: 1,
       is_test: true,
@@ -913,18 +1032,15 @@ export async function sendMetaCapiTestEvent(
     return { eventId, response }
   }
   catch (error: any) {
-    const message = error?.data?.error?.message
-      || error?.statusMessage
-      || error?.message
-      || 'Falha ao enviar evento de teste'
+    const message = describeMetaError(error)
 
     await client.from('crm_meta_conversion_events').insert({
       tenant_id: tenantId,
       lead_id: null,
-      event_name: 'Lead',
+      event_name: eventName,
       event_id: eventId,
       event_time: eventTime,
-      action_source: META_CRM_ACTION_SOURCE,
+      action_source: actionSource,
       status: 'failed',
       attempts: 1,
       is_test: true,

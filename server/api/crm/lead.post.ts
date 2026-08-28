@@ -2,6 +2,7 @@ import { serverSupabaseServiceRole } from '#supabase/server'
 
 import { createError, defineEventHandler, readBody } from 'h3'
 
+import { applyCtwaAttributionToLead } from '~/server/utils/crm/apply-ctwa-attribution'
 import {
   ensureAdLeadSource,
   hasMetaCampaignAttribution,
@@ -29,6 +30,7 @@ export default defineEventHandler(async (event) => {
       fbc: body.fbc ?? null,
       fbp: body.fbp ?? null,
       fbclid: body.fbclid ?? null,
+      meta_ctwa_clid: body.meta_ctwa_clid ?? null,
     }
 
     let sourceId = body.source_id ?? null
@@ -64,6 +66,7 @@ export default defineEventHandler(async (event) => {
       fbc: attribution.fbc,
       fbp: attribution.fbp,
       fbclid: attribution.fbclid,
+      meta_ctwa_clid: attribution.meta_ctwa_clid,
     }
     if (!leadToInsert.name) {
       throw createError({ statusCode: 400, message: 'Nome é obrigatório' })
@@ -73,8 +76,23 @@ export default defineEventHandler(async (event) => {
       throw createError({ statusCode: 500, message: error.message || 'Falha ao criar lead' })
     }
 
-    // CAPI is semi-manual: only Purchase for selected won leads via sync UI.
-    return { statusCode: 201, body: data }
+    // Silent CTWA match by phone (body.phone or contact created separately).
+    const phone = typeof body.phone === 'string' ? body.phone : null
+    let ctwa: Awaited<ReturnType<typeof applyCtwaAttributionToLead>> | null = null
+    try {
+      ctwa = await applyCtwaAttributionToLead(client, {
+        tenantId,
+        leadId: data.id as string,
+        phone,
+        enqueueLeadEvent: true,
+        enrichGraph: true,
+      })
+    }
+    catch (err: any) {
+      console.error('[CTWA] Match on lead.create failed:', err?.message || err)
+    }
+
+    return { statusCode: 201, body: data, ctwa }
   }
   catch (error: any) {
     throw createError({ statusCode: error.statusCode || 500, message: error.message || 'Erro interno do servidor' })

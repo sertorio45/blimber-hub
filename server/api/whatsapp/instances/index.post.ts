@@ -17,7 +17,11 @@ import {
   resolveEvolutionRemoteInstance,
   syncEvolutionInstanceRecord,
 } from '~/server/utils/whatsapp/evolution-client'
-import { cloudApiGetPhoneNumber } from '~/server/utils/whatsapp/cloud-api-client'
+import {
+  cloudApiGetPhoneNumber,
+  cloudApiSetWebhookOverride,
+  cloudApiSubscribeApp,
+} from '~/server/utils/whatsapp/cloud-api-client'
 
 interface CreateInstanceBody {
   tenant_id?: string
@@ -31,6 +35,7 @@ interface CreateInstanceBody {
   cloud_phone_id?: string
   cloud_business_id?: string
   cloud_access_token?: string
+  cloud_app_secret?: string
 }
 
 export default defineEventHandler(async (event) => {
@@ -114,9 +119,18 @@ export default defineEventHandler(async (event) => {
         statusMessage: 'cloud_phone_id and cloud_access_token are required for Cloud API',
       })
     }
+    // WABA id is required: it drives the webhook override and the CAPI business_messaging payload.
+    if (!body.cloud_business_id?.trim()) {
+      throw createError({
+        statusCode: 400,
+        statusMessage: 'cloud_business_id (WABA ID) é obrigatório para Cloud API',
+      })
+    }
     integrationPayload.cloud_phone_id = body.cloud_phone_id.trim()
-    integrationPayload.cloud_business_id = body.cloud_business_id?.trim() || null
+    integrationPayload.cloud_business_id = body.cloud_business_id.trim()
     integrationPayload.cloud_access_token_encrypted = encryptSecret(body.cloud_access_token.trim())
+    if (body.cloud_app_secret?.trim())
+      integrationPayload.settings = { app_secret: body.cloud_app_secret.trim() }
   }
 
   const { data: integration, error: integrationError } = await client
@@ -176,10 +190,22 @@ export default defineEventHandler(async (event) => {
     }
 
     if (body.provider === 'cloud_api' && integration) {
+      const cloudAccessToken = body.cloud_access_token!.trim()
       const phone = await cloudApiGetPhoneNumber({
-        accessToken: body.cloud_access_token!.trim(),
+        accessToken: cloudAccessToken,
         phoneNumberId: body.cloud_phone_id!.trim(),
       })
+
+      // Subscribe first: Meta rejects an override on an unsubscribed WABA (error 100).
+      const wabaId = body.cloud_business_id!.trim()
+      await cloudApiSubscribeApp({ accessToken: cloudAccessToken, wabaId })
+      await cloudApiSetWebhookOverride({
+        accessToken: cloudAccessToken,
+        wabaId,
+        overrideCallbackUri: buildCloudWebhookUrl(event, instance.id),
+        verifyToken: webhookSecret,
+      })
+
       await client
         .from('whatsapp_instance')
         .update({
@@ -197,7 +223,11 @@ export default defineEventHandler(async (event) => {
     await client.from('whatsapp_instance').delete().eq('id', instance.id)
     throw createError({
       statusCode: 400,
-      statusMessage: providerError?.data?.message || providerError?.message || 'Provider connection failed',
+      statusMessage: providerError?.data?.error?.error_user_msg
+        || providerError?.data?.error?.message
+        || providerError?.data?.message
+        || providerError?.message
+        || 'Provider connection failed',
     })
   }
 

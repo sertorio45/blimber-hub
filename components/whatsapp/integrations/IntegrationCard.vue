@@ -28,11 +28,12 @@ const emit = defineEmits<{
 
 const providerLabel = computed(() => {
   if (props.instance.provider === 'cloud_api')
-    return 'Cloud API (Meta) · Em breve'
+    return 'Cloud API (Meta)'
   return 'Evolution API'
 })
 
-const isCloudStandby = computed(() => props.instance.provider === 'cloud_api')
+// Coexistence keeps the number working in the WhatsApp Business app on the phone.
+const isCoexistence = computed(() => Boolean(props.instance.metadata?.is_on_biz_app))
 </script>
 
 <template>
@@ -46,8 +47,8 @@ const isCloudStandby = computed(() => props.instance.provider === 'cloud_api')
           <Badge v-if="instance.isDefault" variant="secondary">
             Padrão
           </Badge>
-          <Badge v-if="isCloudStandby" variant="outline">
-            Em breve
+          <Badge v-if="isCoexistence" variant="outline">
+            Coexistência ativa
           </Badge>
         </div>
         <p class="text-sm text-muted-foreground">
@@ -58,8 +59,9 @@ const isCloudStandby = computed(() => props.instance.provider === 'cloud_api')
     </CardHeader>
 
     <CardContent class="space-y-4">
-      <p v-if="isCloudStandby" class="rounded-lg border border-dashed bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
-        Integração Cloud API oficial em standby. Use Evolution API para operação atual.
+      <p v-if="isCoexistence" class="rounded-lg border border-dashed bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+        O número continua funcionando no aplicativo WhatsApp Business do celular. Peça para a equipe
+        abrir o app pelo menos uma vez a cada duas semanas para manter a conexão.
       </p>
       <WebhookUrlCopy
         v-if="webhookUrl"
@@ -90,7 +92,7 @@ const isCloudStandby = computed(() => props.instance.provider === 'cloud_api')
         Configurar
       </Button>
       <Button
-        v-if="!isCloudStandby && instance.provider === 'evolution' && instance.status !== 'connected'"
+        v-if="instance.provider === 'evolution' && instance.status !== 'connected'"
         size="sm"
         :disabled="actionLoading"
         @click="emit('connect')"
@@ -98,7 +100,7 @@ const isCloudStandby = computed(() => props.instance.provider === 'cloud_api')
         Conectar
       </Button>
       <Button
-        v-if="!isCloudStandby && (instance.status === 'connected' || instance.status === 'connecting')"
+        v-if="instance.status === 'connected' || instance.status === 'connecting'"
         variant="outline"
         size="sm"
         :disabled="actionLoading"
@@ -107,7 +109,7 @@ const isCloudStandby = computed(() => props.instance.provider === 'cloud_api')
         Desconectar
       </Button>
       <Button
-        v-if="!isCloudStandby"
+        v-if="instance.provider === 'evolution'"
         variant="outline"
         size="sm"
         :disabled="actionLoading"
@@ -116,7 +118,6 @@ const isCloudStandby = computed(() => props.instance.provider === 'cloud_api')
         Sincronizar
       </Button>
       <Button
-        v-if="!isCloudStandby"
         variant="outline"
         size="sm"
         :disabled="actionLoading"

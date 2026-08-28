@@ -52,11 +52,13 @@ export function hasMetaCampaignAttribution(input: {
   fbclid?: string | null
   fbc?: string | null
   fbp?: string | null
+  meta_ctwa_clid?: string | null
 }): boolean {
   return Boolean(
     String(input.meta_lead_id || '').trim()
     || String(input.fbclid || '').trim()
     || String(input.fbc || '').trim()
-    || String(input.fbp || '').trim(),
+    || String(input.fbp || '').trim()
+    || String(input.meta_ctwa_clid || '').trim(),
   )
 }

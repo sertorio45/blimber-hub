@@ -45,6 +45,31 @@ export function useWhatsAppInstances() {
     return response
   }
 
+  async function createInstanceFromEmbeddedSignup(payload: {
+    code: string
+    waba_id?: string | null
+    phone_number_id?: string | null
+    coexistence?: boolean
+    name?: string
+    is_default?: boolean
+  }) {
+    const response = await $fetch<{
+      data: WhatsAppInstanceView
+      webhookUrl: string
+      coexistence: boolean
+    }>('/api/whatsapp/instances/embedded-signup', {
+      method: 'POST',
+      body: {
+        ...payload,
+        waba_id: payload.waba_id || undefined,
+        phone_number_id: payload.phone_number_id || undefined,
+        tenant_id: tenantId.value,
+      },
+    })
+    await refresh()
+    return response
+  }
+
   async function deleteInstance(id: string) {
     await $fetch(`/api/whatsapp/instances/${id}`, {
       method: 'DELETE',
@@ -100,13 +125,13 @@ export function useWhatsAppInstances() {
   async function discoverEvolutionInstances(payload: { api_url: string, api_token: string }) {
     return $fetch<{ data: import('~/types/whatsapp').EvolutionRemoteInstanceView[] }>(
       '/api/whatsapp/instances/discover',
-      {
-        method: 'POST',
-        body: {
-          ...payload,
-          tenant_id: tenantId.value,
-        },
+    {
+      method: 'POST',
+      body: {
+        ...payload,
+        tenant_id: tenantId.value,
       },
+    },
     )
   }
 
@@ -150,6 +175,7 @@ export function useWhatsAppInstances() {
     error,
     refresh,
     createInstance,
+    createInstanceFromEmbeddedSignup,
     updateInstance,
     deleteInstance,
     connectInstance,

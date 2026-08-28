@@ -16,6 +16,7 @@ import LeadEditForm from '~/components/crm/leads/LeadEditForm.vue'
 import LeadStepperForm from '~/components/crm/leads/LeadStepperForm.vue'
 import MoveLeadsFunnelDialog from '~/components/crm/leads/MoveLeadsFunnelDialog.vue'
 import MetaCapiSyncDialog from '~/components/crm/meta/MetaCapiSyncDialog.vue'
+import LeadCtwaOriginCard from '~/components/crm/leads/LeadCtwaOriginCard.vue'
 import MultiActionBar from '~/components/shared/MultiActionBar.vue'
 import { crmBadgeClass } from '~/utils/crm/badges'
 import Badge from '~/components/ui/badge/Badge.vue'
@@ -1747,6 +1748,8 @@ async function handleFunnelUpdated(payload: FunnelUpdatedPayload) {
               </p>
             </div>
           </div>
+
+          <LeadCtwaOriginCard :lead="selectedLead" />
 
           <div v-if="selectedLead.notes">
             <Label class="text-sm font-medium">Observações</Label>

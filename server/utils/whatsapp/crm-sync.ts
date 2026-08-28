@@ -273,7 +273,19 @@ export async function syncWhatsAppLeadToFunnel(
     conversationId: params.conversationId,
   })
 
-  // Meta CAPI is semi-manual (won + selected). No auto Lead event on create.
+  try {
+    const { applyCtwaAttributionToLead } = await import('~/server/utils/crm/apply-ctwa-attribution')
+    await applyCtwaAttributionToLead(client, {
+      tenantId,
+      leadId: lead.id,
+      phone: params.whatsappContact.phone || params.crmContact.phone || null,
+      enqueueLeadEvent: true,
+      enrichGraph: true,
+    })
+  }
+  catch (err: any) {
+    console.error('[CTWA] Match on WhatsApp CRM sync failed:', err?.message || err)
+  }
 
   return { lead, leadCreated: true }
 }

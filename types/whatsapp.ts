@@ -549,6 +549,7 @@ export interface CreateWhatsAppInstancePayload {
   cloud_phone_id?: string
   cloud_business_id?: string
   cloud_access_token?: string
+  cloud_app_secret?: string
 }
 
 export interface EvolutionRemoteInstanceView {

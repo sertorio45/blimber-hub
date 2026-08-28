@@ -161,6 +161,13 @@ export default defineNuxtConfig({
     ollamaDefaultModel: process.env.OLLAMA_DEFAULT_MODEL || 'qwen',
     ollamaCfAccessClientId: process.env.OLLAMA_CF_ACCESS_CLIENT_ID || '',
     ollamaCfAccessClientSecret: process.env.OLLAMA_CF_ACCESS_CLIENT_SECRET || '',
+
+    public: {
+      // Required by the WhatsApp Embedded Signup popup, which runs in the browser.
+      metaAppId: process.env.META_APP_ID || '',
+      metaWhatsappConfigId: process.env.META_WHATSAPP_CONFIG_ID || '',
+      metaGraphVersion: process.env.META_GRAPH_VERSION || 'v21.0',
+    },
   },
 
   supabase: {

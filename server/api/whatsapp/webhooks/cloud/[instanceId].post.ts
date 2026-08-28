@@ -1,3 +1,5 @@
+import process from 'node:process'
+
 import { createError, getQuery, readRawBody } from 'h3'
 
 import { processCloudWebhook } from '~/server/utils/whatsapp/webhook-processor'
@@ -25,7 +27,10 @@ export default defineEventHandler(async (event) => {
   const rawBody = await readRawBody(event, 'utf8')
   const signature = getHeader(event, 'x-hub-signature-256')
 
-  const appSecret = integration?.settings?.app_secret as string | undefined
+  // Payloads are signed with the Blimber app secret; the per-instance value is only
+  // an override for tenants onboarded under a different Meta app.
+  const appSecret = (integration?.settings?.app_secret as string | undefined)
+    || process.env.META_APP_SECRET
   if (appSecret && rawBody && !verifyCloudWebhookSignature(rawBody, signature, appSecret)) {
     throw createError({ statusCode: 401, statusMessage: 'Invalid signature' })
   }

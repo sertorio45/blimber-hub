@@ -1,5 +1,5 @@
-/** WhatsApp Cloud API (Meta oficial) — standby até nova fase. */
-export const WHATSAPP_CLOUD_API_ENABLED = false
+/** WhatsApp Cloud API (Meta oficial) — necessário para capturar ctwa_clid de anúncios CTWA. */
+export const WHATSAPP_CLOUD_API_ENABLED = true
 
 export const WHATSAPP_FLOW_TRIGGER_LABELS: Record<string, string> = {
   message_received: 'Mensagem recebida',

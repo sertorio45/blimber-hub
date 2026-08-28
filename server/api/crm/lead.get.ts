@@ -30,6 +30,18 @@ const LEAD_BOARD_COLUMNS = [
   'closed_at',
   'created_at',
   'updated_at',
+  'meta_ctwa_clid',
+  'meta_waba_id',
+  'meta_source_id',
+  'meta_campaign_id',
+  'meta_adset_id',
+  'meta_ad_id',
+  'meta_campaign_name',
+  'meta_adset_name',
+  'meta_ad_name',
+  'attribution_method',
+  'attribution_date',
+  'attribution_channel',
   'crm_contact(email, phone, name, position)',
 ].join(', ')
 

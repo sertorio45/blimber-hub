@@ -343,7 +343,7 @@ async function saveSettings() {
   }
 }
 
-async function sendTest() {
+async function sendTest(mode: 'default' | 'ctwa' = 'default') {
   if (!tenantId.value)
     return
   testing.value = true
@@ -357,9 +357,13 @@ async function sendTest() {
 
     await $fetch('/api/crm/meta-capi/test', {
       method: 'POST',
-      body: { tenant_id: tenantId.value },
+      body: { tenant_id: tenantId.value, mode },
     })
-    toast.success('Evento de teste enviado. Confira no Gerenciador de Eventos.')
+    toast.success(
+      mode === 'ctwa'
+        ? 'Evento CTWA de teste aceito pela Meta. Confira no Gerenciador de Eventos.'
+        : 'Evento de teste enviado. Confira no Gerenciador de Eventos.',
+    )
     await loadAll()
   }
   catch (error: any) {
@@ -695,9 +699,13 @@ onMounted(() => {
                 <Icon name="lucide:save" class="mr-2 h-4 w-4" />
                 {{ saving ? 'Salvando...' : 'Salvar' }}
               </Button>
-              <Button variant="outline" :disabled="testing || saving" @click="sendTest">
+              <Button variant="outline" :disabled="testing || saving" @click="sendTest('default')">
                 <Icon name="lucide:flask-conical" class="mr-2 h-4 w-4" />
                 {{ testing ? 'Enviando...' : 'Evento de teste' }}
+              </Button>
+              <Button variant="outline" :disabled="testing || saving" @click="sendTest('ctwa')">
+                <Icon name="lucide:message-circle" class="mr-2 h-4 w-4" />
+                Teste CTWA (WhatsApp)
               </Button>
               <Button variant="default" :disabled="saving" @click="syncPending">
                 <Icon name="lucide:share-2" class="mr-2 h-4 w-4" />

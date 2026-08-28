@@ -26,7 +26,10 @@ export default defineEventHandler(async (event) => {
   const client = await serverSupabaseServiceRole(event)
 
   try {
-    const result = await sendMetaCapiTestEvent(client, tenantId)
+    const result = await sendMetaCapiTestEvent(client, tenantId, {
+      mode: body?.mode === 'ctwa' ? 'ctwa' : 'default',
+      eventName: body?.event_name === 'Purchase' ? 'Purchase' : 'Lead',
+    })
     return { data: result }
   }
   catch (error: any) {

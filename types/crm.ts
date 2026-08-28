@@ -28,6 +28,18 @@ export interface Lead {
   fbc?: string | null
   fbp?: string | null
   fbclid?: string | null
+  meta_ctwa_clid?: string | null
+  meta_waba_id?: string | null
+  meta_source_id?: string | null
+  meta_campaign_id?: string | null
+  meta_adset_id?: string | null
+  meta_ad_id?: string | null
+  meta_campaign_name?: string | null
+  meta_adset_name?: string | null
+  meta_ad_name?: string | null
+  attribution_method?: string | null
+  attribution_date?: string | null
+  attribution_channel?: string | null
   meta_capi_status?: 'pending' | 'processing' | 'sent' | 'failed' | 'skipped' | null
   meta_capi_event?: string | null
   meta_capi_error?: string | null
