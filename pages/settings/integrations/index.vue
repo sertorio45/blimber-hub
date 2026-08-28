@@ -49,10 +49,14 @@ const moduleLinks = computed(() => [
   {
     id: 'whatsapp',
     title: 'WhatsApp',
-    description: 'Instâncias Evolution / Cloud API para atendimento.',
-    to: '/whatsapp/integrations',
+    // Not gated by the module: connecting the official number is what enables ad
+    // attribution, which CRM-only tenants need even without the inbox.
+    description: hasModule('whatsapp')
+      ? 'Conecte números oficiais da Meta para atendimento e atribuição de anúncios.'
+      : 'Conecte o número oficial da Meta para medir as vendas vindas dos anúncios.',
+    to: '/settings/integrations/whatsapp',
     icon: 'message' as const,
-    available: hasModule('whatsapp'),
+    available: true,
   },
 ].filter(i => i.available))
 </script>
@@ -73,10 +77,10 @@ const moduleLinks = computed(() => [
     <section v-if="moduleLinks.length" class="space-y-4">
       <div>
         <h2 class="text-lg text-foreground font-semibold tracking-tight">
-          Módulos
+          Canais e conversões
         </h2>
         <p class="mt-1 text-sm text-muted-foreground">
-          Configurações específicas de cada módulo contratado.
+          Conexões que alimentam o rastreamento de resultados e o atendimento.
         </p>
       </div>
 
