@@ -36,6 +36,11 @@ export type MarketingMvpOverviewCounts = {
    * A post with 3 dates contributes 3 here; contents_by_mvp_status.agendado still counts 1.
    */
   schedules_upcoming: number
+  /**
+   * Slots the calendar shows as scheduled but that have no active job.
+   * Anything above zero means those posts will never publish.
+   */
+  schedules_without_job: number
 }
 
 export function emptyMarketingMvpOverviewCounts(): MarketingMvpOverviewCounts {
@@ -53,5 +58,6 @@ export function emptyMarketingMvpOverviewCounts(): MarketingMvpOverviewCounts {
     campaigns_active: 0,
     publication_jobs_open: 0,
     schedules_upcoming: 0,
+    schedules_without_job: 0,
   }
 }
