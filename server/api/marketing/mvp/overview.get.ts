@@ -27,6 +27,7 @@ export default defineEventHandler(async (event) => {
     campaignsRes,
     jobsRes,
     schedulesRes,
+    orphanSchedulesRes,
   ] = await Promise.all([
     client
       .from('marketing_mvp_contents')
@@ -53,6 +54,10 @@ export default defineEventHandler(async (event) => {
       .eq('tenant_id', tenantId)
       .in('status', ['planned', 'queued'])
       .gte('scheduled_at', nowIso),
+    client
+      .from('marketing_schedules_missing_jobs')
+      .select('schedule_id', { count: 'exact', head: true })
+      .eq('tenant_id', tenantId),
   ])
 
   const firstError = contentsRes.error
@@ -60,6 +65,7 @@ export default defineEventHandler(async (event) => {
     || campaignsRes.error
     || jobsRes.error
     || schedulesRes.error
+    || orphanSchedulesRes.error
 
   if (firstError) {
     throw createError({
@@ -82,6 +88,7 @@ export default defineEventHandler(async (event) => {
     campaigns_active: campaignsRes.count || 0,
     publication_jobs_open: jobsRes.count || 0,
     schedules_upcoming: schedulesRes.count || 0,
+    schedules_without_job: orphanSchedulesRes.count || 0,
   }
 
   return { data: payload }

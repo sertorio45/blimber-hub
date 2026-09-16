@@ -528,22 +528,102 @@ async function notifyStageApprovers(
   })))
 }
 
+function formatScheduleForNotification(iso: string, timezone?: string | null) {
+  try {
+    return new Intl.DateTimeFormat('pt-BR', {
+      dateStyle: 'short',
+      timeStyle: 'short',
+      timeZone: timezone || 'America/Sao_Paulo',
+    }).format(new Date(iso))
+  }
+  catch {
+    return iso
+  }
+}
+
 async function notifyScheduleReady(
   client: any,
-  input: { tenantId: string, postId: string, postTitle: string, versionId: string, userId: string | null },
+  input: {
+    tenantId: string
+    postId: string
+    postTitle: string
+    versionId: string
+    userId: string | null
+    autoScheduled?: boolean
+    scheduledAt?: string | null
+    timezone?: string | null
+  },
 ) {
   if (!input.userId)
     return
+
+  const when = input.autoScheduled && input.scheduledAt
+    ? formatScheduleForNotification(input.scheduledAt, input.timezone)
+    : null
+
   await createSocialNotification(client, {
     tenantId: input.tenantId,
     userId: input.userId,
     type: 'approved',
-    title: 'Arte aprovada',
-    body: `${input.postTitle} está aprovada e pronta para agendar.`,
+    title: input.autoScheduled ? 'Arte aprovada e agendada' : 'Arte aprovada',
+    body: when
+      ? `${input.postTitle} foi aprovada pelo cliente e agendada para ${when}.`
+      : `${input.postTitle} está aprovada e pronta para agendar.`,
     actionUrl: `/marketing/content/${input.postId}`,
-    metadata: { postId: input.postId, versionId: input.versionId },
+    metadata: {
+      postId: input.postId,
+      versionId: input.versionId,
+      autoScheduled: Boolean(input.autoScheduled),
+    },
     idempotencyKey: `schedule_ready:${input.postId}:${input.versionId}`,
   })
+}
+
+/**
+ * Client approval is the last editorial gate. If a planned date already exists,
+ * enqueue publication_jobs so the cron publishes without a second staff click.
+ * Failures must not roll back the approval.
+ */
+async function tryEnqueueAfterClientApproval(
+  client: any,
+  input: { tenantId: string, postId: string, userId?: string | null },
+): Promise<{ scheduled: boolean, scheduledAt: string | null, timezone: string | null }> {
+  const { data: post } = await client
+    .from('social_posts')
+    .select('id, scheduled_at, publication_status, timezone, created_by')
+    .eq('tenant_id', input.tenantId)
+    .eq('id', input.postId)
+    .maybeSingle()
+
+  const blocked = ['publishing', 'published', 'partially_published', 'deletion_pending', 'deleted']
+  if (!post?.scheduled_at || blocked.includes(String(post.publication_status || ''))) {
+    return {
+      scheduled: false,
+      scheduledAt: post?.scheduled_at || null,
+      timezone: post?.timezone || null,
+    }
+  }
+
+  try {
+    await enqueueApprovedPost(client, {
+      tenantId: input.tenantId,
+      postId: input.postId,
+      scheduledAt: post.scheduled_at,
+      userId: input.userId || (post.created_by ? String(post.created_by) : undefined),
+    })
+    return {
+      scheduled: true,
+      scheduledAt: post.scheduled_at,
+      timezone: post.timezone || null,
+    }
+  }
+  catch {
+    return {
+      scheduled: false,
+      scheduledAt: post.scheduled_at,
+      timezone: post.timezone || null,
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -740,12 +820,25 @@ export async function advanceApprovalStage(client: any, input: AdvanceInput) {
       .eq('tenant_id', input.tenantId)
       .eq('id', request.post_id)
 
+    const closingStage = String(input.stage?.stage_type || request.stage || 'client')
+    let enqueue = { scheduled: false, scheduledAt: null as string | null, timezone: null as string | null }
+    if (closingStage === 'client') {
+      enqueue = await tryEnqueueAfterClientApproval(client, {
+        tenantId: input.tenantId,
+        postId: request.post_id,
+        userId: post?.created_by ? String(post.created_by) : null,
+      })
+    }
+
     await notifyScheduleReady(client, {
       tenantId: input.tenantId,
       postId: request.post_id,
       postTitle: post?.title || 'Publicação',
       versionId: request.version_id,
       userId: post?.created_by ? String(post.created_by) : null,
+      autoScheduled: enqueue.scheduled,
+      scheduledAt: enqueue.scheduledAt,
+      timezone: enqueue.timezone,
     })
 
     const { emitSocialAutomation } = await import('~/server/utils/social-automations')
@@ -756,10 +849,10 @@ export async function advanceApprovalStage(client: any, input: AdvanceInput) {
       postId: request.post_id,
       entityType: 'approval_request',
       entityId: request.id,
-      payload: { versionId: request.version_id },
+      payload: { versionId: request.version_id, autoScheduled: enqueue.scheduled },
     })
 
-    return { status: 'approved' as const, nextStage: null }
+    return { status: 'approved' as const, nextStage: null, autoScheduled: enqueue.scheduled }
   }
 
   // Otherwise open the next stage in the same run group.
@@ -1688,4 +1781,3 @@ export async function submitBatchApprovalDecisions(client: any, input: BatchDeci
     results,
   }
 }
-

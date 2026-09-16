@@ -6,6 +6,7 @@ import {
   type MarketingMvpStatus,
 } from '~/types/marketing-mvp'
 import MarketingMvpStatusBadge from '~/components/marketing/MarketingMvpStatusBadge.vue'
+import { Alert, AlertDescription, AlertTitle } from '~/components/ui/alert'
 import { useMarketingAudience } from '~/composables/marketing/useMarketingAudience'
 import {
   isImageAsset,
@@ -200,6 +201,19 @@ const statusCards = computed(() => {
         </button>
       </CardContent>
     </Card>
+
+    <Alert v-if="!isClientExperience && overview.schedules_without_job > 0" variant="destructive">
+      <AlertTitle>Agendamento sem fila de publicação</AlertTitle>
+      <AlertDescription>
+        {{ overview.schedules_without_job === 1
+          ? 'Uma publicação aparece como agendada no calendário, mas não tem nada na fila — ela não vai sair na data.'
+          : `${overview.schedules_without_job} publicações aparecem como agendadas no calendário, mas não têm nada na fila — elas não vão sair nas datas.` }}
+        Reagende a data para recriar a fila.
+        <NuxtLink to="/marketing/calendar" class="font-medium underline underline-offset-4">
+          Abrir calendário
+        </NuxtLink>
+      </AlertDescription>
+    </Alert>
 
     <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
       <component

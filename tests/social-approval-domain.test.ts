@@ -143,6 +143,58 @@ describe('social approval domain', () => {
     expect(result.status).toBe('approved')
     expect(post(db).editorial_status).toBe('approved')
     expect(post(db).approved_version_id).toBe(started.versionId)
+    expect(post(db).publication_status).toBe('scheduled')
+    expect(db.publication_jobs).toHaveLength(1)
+    expect(db.publication_jobs![0]!.status).toBe('pending')
+    expect(db.publication_jobs![0]!.scheduled_at).toBe(post(db).scheduled_at)
+  })
+
+  it('1b. client approval without a planned date stays approved, not queued', async () => {
+    db = makeDb({ scheduled_at: null })
+    client = createFakeDomainClient(db)
+
+    const started = await startApprovalWorkflow(client, {
+      tenantId: ids.tenant,
+      postId: ids.post,
+      userId: ids.author,
+      approverIds: [ids.client],
+    })
+
+    await submitApprovalDecision(client, {
+      tenantId: ids.tenant,
+      requestId: started.request!.id,
+      userId: ids.client,
+      decision: 'approved',
+      capabilities: ['marketing.social.approval.client'],
+    })
+
+    expect(post(db).editorial_status).toBe('approved')
+    expect(post(db).publication_status).toBe('not_scheduled')
+    expect(db.publication_jobs).toHaveLength(0)
+  })
+
+  it('1c. client approval still succeeds when enqueue cannot run', async () => {
+    const started = await startApprovalWorkflow(client, {
+      tenantId: ids.tenant,
+      postId: ids.post,
+      userId: ids.author,
+      approverIds: [ids.client],
+    })
+
+    db.social_accounts![0]!.is_active = false
+
+    const result = await submitApprovalDecision(client, {
+      tenantId: ids.tenant,
+      requestId: started.request!.id,
+      userId: ids.client,
+      decision: 'approved',
+      capabilities: ['marketing.social.approval.client'],
+    })
+
+    expect(result.status).toBe('approved')
+    expect(post(db).editorial_status).toBe('approved')
+    expect(post(db).publication_status).toBe('not_scheduled')
+    expect(db.publication_jobs).toHaveLength(0)
   })
 
   it('2. agency flow: internal approval advances to the client stage', async () => {
@@ -163,6 +215,8 @@ describe('social approval domain', () => {
     })
     expect(advance.status).toBe('advanced')
     expect(post(db).editorial_status).toBe('client_review')
+    expect(post(db).publication_status).toBe('not_scheduled')
+    expect(db.publication_jobs).toHaveLength(0)
 
     // A brand new request was opened in the same run group for the client stage.
     const clientRequest = db.approval_requests!.find(r => r.stage === 'client' && r.run_status === 'pending')!
@@ -178,6 +232,8 @@ describe('social approval domain', () => {
     })
     expect(final.status).toBe('approved')
     expect(post(db).editorial_status).toBe('approved')
+    expect(post(db).publication_status).toBe('scheduled')
+    expect(db.publication_jobs).toHaveLength(1)
   })
 
   it('2b. client capability cannot close an internal stage even if assigned', async () => {

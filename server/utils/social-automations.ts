@@ -61,7 +61,7 @@ export const SOCIAL_AUTOMATION_CATALOG: Array<{
   {
     triggerKey: 'editorial.approved',
     title: 'Conteúdo aprovado',
-    description: 'Libera o card para agendamento no Kanban operacional.',
+    description: 'Move o Kanban. Se a publicação já foi enfileirada na aprovação do cliente, não cria tarefa de agendar.',
   },
   {
     triggerKey: 'publication.failed',
@@ -187,7 +187,7 @@ async function ensureTask(
 async function loadPost(client: any, tenantId: string, postId: string) {
   const { data } = await client
     .from('social_posts')
-    .select('id, title, created_by, production_status, copy_owner_id, design_owner_id, publish_owner_id, assigned_to')
+    .select('id, title, created_by, production_status, publication_status, copy_owner_id, design_owner_id, publish_owner_id, assigned_to')
     .eq('tenant_id', tenantId)
     .eq('id', postId)
     .maybeSingle()
@@ -450,6 +450,21 @@ async function handleEditorialApproved(client: any, input: AutomationEmitInput) 
     return 'skipped: post não encontrado'
 
   const actor = String(input.actorId || post.created_by)
+  const alreadyQueued = String(post.publication_status || '') === 'scheduled'
+
+  if (alreadyQueued) {
+    if (!['scheduled', 'published'].includes(String(post.production_status))) {
+      await moveProductionCard(client, {
+        postId,
+        tenantId: input.tenantId,
+        toStatus: 'scheduled',
+        userId: actor,
+        note: 'Automação: aprovado pelo cliente e enfileirado',
+      })
+    }
+    return 'produção agendada automaticamente após aprovação do cliente'
+  }
+
   if (!['approved', 'scheduled', 'published'].includes(String(post.production_status))) {
     await moveProductionCard(client, {
       postId,
