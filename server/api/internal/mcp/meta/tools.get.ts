@@ -30,6 +30,13 @@ const TOOL_INPUT_HINTS: Record<MetaToolName, string[]> = {
     'countryCode?',
   ],
   meta_list_custom_audiences: ['tenantId', 'adAccountId?', 'limit?'],
+  meta_list_saved_audiences: [
+    'tenantId',
+    'adAccountId?',
+    'name? (exato, ex. "CIDADE PIN 2")',
+    'nameContains?',
+    'limit?',
+  ],
   meta_create_custom_audience: [
     'tenantId',
     'sourceType (INSTAGRAM|FACEBOOK_PAGE|WEBSITE|LEAD_FORM|CUSTOMER_LIST|LOOKALIKE)',
@@ -112,7 +119,7 @@ const TOOL_INPUT_HINTS: Record<MetaToolName, string[]> = {
     'tenantId',
     'campaignId',
     'name',
-    'targetingTemplate (BR_*) XOR targeting (custom geo/idade/gênero/interesses/audiences)',
+    'targetingTemplate (BR_*) XOR targeting (custom) XOR savedAudienceId (público salvo)',
     'billingEvent (IMPRESSIONS|LINK_CLICKS)',
     'optimizationGoal',
     'dailyBudget|lifetimeBudget (+ endTime se lifetime)',
@@ -159,7 +166,7 @@ const TOOL_INPUT_HINTS: Record<MetaToolName, string[]> = {
   meta_update_adset_targeting: [
     'tenantId',
     'adsetId',
-    'targetingTemplate (BR_*) XOR targeting (custom)',
+    'targetingTemplate (BR_*) XOR targeting (custom) XOR savedAudienceId',
     'confirmTenantId (=tenantId)',
     'confirm (=true)',
     'dryRun? (default true)',

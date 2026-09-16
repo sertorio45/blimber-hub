@@ -86,6 +86,7 @@ Sem `searchTenants` (canônico na Ação Marketing).
 | `searchInterests` | `GET /api/gpt/meta/targeting/interests` |
 | `searchGeolocations` | `GET /api/gpt/meta/targeting/geolocations` |
 | `listCustomAudiences` | `GET /api/gpt/meta/custom-audiences` |
+| `listSavedAudiences` | `GET /api/gpt/meta/saved-audiences` |
 | `listCampaigns` | `GET /api/gpt/meta/campaigns` |
 | `createCampaign` | `POST /api/gpt/meta/campaigns` |
 | `getCampaign` | `GET /api/gpt/meta/campaigns/{campaignId}` |

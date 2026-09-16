@@ -42,6 +42,7 @@ export {
   metaListCreatives,
   metaListCampaigns,
   metaListCustomAudiences,
+  metaListSavedAudiences,
   metaListIntegrations,
   metaSearchGeolocations,
   metaSearchInterests,
@@ -227,6 +228,16 @@ export {
   type MetaGraphTargeting,
   type ResolvedAdsetTargeting,
 } from './targeting-templates'
+export {
+  META_SAVED_AUDIENCE_DETAIL_FIELDS,
+  META_SAVED_AUDIENCE_LIST_FIELDS,
+  filterSavedAudiencesByName,
+  listSavedAudiencesFromGraph,
+  mapSavedAudienceRow,
+  refineTargetingSourceXor,
+  resolveSavedAudienceTargeting,
+  type MetaSavedAudienceRow,
+} from './saved-audiences'
 export {
   MetaAdsToolError,
   type MetaCampaignStatusUpdate,

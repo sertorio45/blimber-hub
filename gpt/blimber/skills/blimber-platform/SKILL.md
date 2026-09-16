@@ -110,7 +110,7 @@ Publicar agora: `publishPost` (mesmo confirm/dryRun). Cancelar agenda: `unschedu
 | Tool / operationId | Uso |
 |--------------------|-----|
 | `listMetaTools` / `listIntegrations` / `listAdAccounts` | catálogo / status / contas |
-| `searchInterests` / `searchGeolocations` / `listCustomAudiences` | IDs de interesse/cidade/audiences para targeting |
+| `searchInterests` / `searchGeolocations` / `listCustomAudiences` / `listSavedAudiences` | IDs de interesse/cidade/audiences; Saved Audience → `savedAudienceId` |
 | `listCampaigns` / `getCampaign` / `createCampaign` / `updateCampaignStatus` | campanhas Meta |
 | `listAdsets` / `createAdset` / `updateAdsetStatus` / `updateAdsetBudget` / `updateAdsetTargeting` | adsets |
 | `listAds` / `createAd` / `updateAdStatus` / `updateAdCreativeCopy` / `updateAdMedia` / `updateAdTracking` | anúncios (`createAd.creativeType`: IMAGE\|VIDEO\|CAROUSEL; tracking Pixel/Dataset) |

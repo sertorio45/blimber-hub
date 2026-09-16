@@ -27,6 +27,7 @@ Ads no ChatGPT = `openapi-ads.yaml` (host `ads.*`). Pack standalone `gpt/blimber
 - `GET/POST /api/gpt/meta/adsets` + `POST …/{adsetId}/status|budget|targeting`
 - `GET/POST /api/gpt/meta/ads` + `POST …/{adId}/status|creative-copy|media`
 - `GET/POST /api/gpt/meta/custom-audiences` — listar / criar públicos
+- `GET /api/gpt/meta/saved-audiences` — Saved Audiences (Ads Manager); filtre por `name` → `savedAudienceId`
 - `POST /api/gpt/meta/insights`
 - `POST /api/gpt/meta/bulk-delete/preview` + `execute`
 - `POST /api/gpt/meta/invoke`

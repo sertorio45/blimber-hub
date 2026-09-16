@@ -102,6 +102,11 @@ import {
   resolveAdsetTargeting,
 } from './targeting-templates'
 import {
+  filterSavedAudiencesByName,
+  listSavedAudiencesFromGraph,
+  resolveSavedAudienceTargeting,
+} from './saved-audiences'
+import {
   assertBulkDeletePreviewToken,
   issueBulkDeletePreviewToken,
   normalizeBulkDeleteIds,
@@ -339,6 +344,23 @@ export const metaListCustomAudiencesSchema = tenantContextSchema.extend({
   limit: z.number().int().min(1).max(200).optional().default(50),
 })
 
+/** List Saved Audiences (Ads Manager) — id, name, targeting for reuse on adsets. */
+export const metaListSavedAudiencesSchema = tenantContextSchema.extend({
+  limit: z.number().int().min(1).max(200).optional().default(50),
+  name: z
+    .string()
+    .min(1)
+    .max(200)
+    .optional()
+    .describe('Nome exato do público salvo (case-insensitive). Ex.: "CIDADE PIN 2".'),
+  nameContains: z
+    .string()
+    .min(1)
+    .max(200)
+    .optional()
+    .describe('Filtro parcial por nome (case-insensitive).'),
+})
+
 /**
  * Optional dry-run for pause/activate tools.
  * Default false (retrocompatível na campanha; espelho em adset/ad).
@@ -455,7 +477,15 @@ export const metaCreateAdsetSchema = tenantContextSchema
       .describe('Preset BR_* (geo+idade). XOR com targeting — não envie os dois.'),
     targeting: metaCustomTargetingSchema
       .optional()
-      .describe('Targeting Graph customizado (geo/idade/gênero/interesses/audiences). XOR com targetingTemplate.'),
+      .describe('Targeting Graph customizado (geo/idade/gênero/interesses/audiences). XOR com targetingTemplate e savedAudienceId.'),
+    savedAudienceId: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        'ID de um Saved Audience da ad account. Reutiliza o targeting salvo sem recriar segmentação. '
+        + 'XOR com targetingTemplate e targeting. Obtenha o id via meta_list_saved_audiences (filtre por name).',
+      ),
     advantageAudience: z
       .union([z.literal(0), z.literal(1)])
       .optional()
@@ -1014,10 +1044,18 @@ export const metaUpdateAdsetTargetingSchema = tenantContextSchema
     targetingTemplate: z
       .enum(META_ADSET_TARGETING_TEMPLATE_IDS)
       .optional()
-      .describe('Preset BR_* (geo+idade). XOR com targeting.'),
+      .describe('Preset BR_* (geo+idade). XOR com targeting / savedAudienceId.'),
     targeting: metaCustomTargetingSchema
       .optional()
-      .describe('Targeting Graph customizado. XOR com targetingTemplate.'),
+      .describe('Targeting Graph customizado. XOR com targetingTemplate / savedAudienceId.'),
+    savedAudienceId: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        'ID de Saved Audience — aplica o targeting salvo no adset sem recriar segmentação. '
+        + 'XOR com targetingTemplate / targeting.',
+      ),
     advantageAudience: z
       .union([z.literal(0), z.literal(1)])
       .optional()
@@ -1440,6 +1478,7 @@ export type MetaToolName =
   | 'meta_search_interests'
   | 'meta_search_geolocations'
   | 'meta_list_custom_audiences'
+  | 'meta_list_saved_audiences'
   | 'meta_create_custom_audience'
   | 'meta_create_custom_audiences_batch'
   | 'meta_update_custom_audience'
@@ -1757,6 +1796,44 @@ export async function metaListCustomAudiences(
     adAccountId: creds.adAccountId,
     customAudiences,
     paging: res?.paging || null,
+  }
+}
+
+/**
+ * List Saved Audiences (Ads Manager presets) for the tenant ad account.
+ * Optional name / nameContains to locate e.g. "CIDADE PIN 2".
+ */
+export async function metaListSavedAudiences(
+  ctx: MetaToolContext,
+  raw: unknown,
+) {
+  const input = metaListSavedAudiencesSchema.parse(raw)
+  const creds = await withCreds(ctx, input.tenantId, input.adAccountId)
+  const graph = fetchGraph(ctx)
+  const listed = await listSavedAudiencesFromGraph({
+    graph,
+    creds,
+    limit: input.limit,
+  })
+  const savedAudiences = filterSavedAudiencesByName(listed.savedAudiences, {
+    name: input.name,
+    nameContains: input.nameContains,
+  })
+
+  return {
+    tenantId: input.tenantId,
+    adAccountId: creds.adAccountId,
+    savedAudiences,
+    matched: savedAudiences.length,
+    listed: listed.savedAudiences.length,
+    paging: listed.paging,
+    notes: [
+      'Use savedAudiences[].id como savedAudienceId em meta_create_adset / meta_update_adset_targeting.',
+      'A Graph não aceita saved_audience_id no POST do adset — o MCP reutiliza o targeting salvo intacto.',
+      input.name || input.nameContains
+        ? `Filtro aplicado: ${input.name ? `name="${input.name}"` : ''}${input.name && input.nameContains ? ' · ' : ''}${input.nameContains ? `nameContains="${input.nameContains}"` : ''}`
+        : null,
+    ].filter(Boolean),
   }
 }
 
@@ -2703,11 +2780,47 @@ export async function metaCreateAdset(
   const destinationType: MetaAdDestinationType = input.destinationType ?? 'WEBSITE'
   const creds = await withCreds(ctx, input.tenantId, input.adAccountId)
   const graph = fetchGraph(ctx)
-  const resolved = resolveAdsetTargeting({
-    targetingTemplate: input.targetingTemplate,
-    targeting: input.targeting,
-    advantageAudience: input.advantageAudience,
-  })
+
+  let resolvedTargeting: Record<string, unknown>
+  let targetingTemplate: string | null = null
+  let targetingSummary: string
+  let targetingSource: 'template' | 'custom' | 'saved_audience'
+  let advantageAudienceValue: 0 | 1
+  let targetingNote: string
+  let advantageNote: string
+  let savedAudienceMeta: { id: string, name: string } | null = null
+
+  if (input.savedAudienceId) {
+    const saved = await resolveSavedAudienceTargeting({
+      graph,
+      creds,
+      savedAudienceId: input.savedAudienceId,
+      advantageAudience: input.advantageAudience,
+    })
+    resolvedTargeting = saved.targeting as Record<string, unknown>
+    targetingSummary = saved.summary
+    targetingSource = 'saved_audience'
+    advantageAudienceValue = saved.advantageAudience
+    targetingNote = `savedAudienceId: ${saved.summary}`
+    advantageNote = `advantage_audience=${saved.advantageAudience}`
+    savedAudienceMeta = { id: saved.savedAudience.id, name: saved.savedAudience.name }
+  }
+  else {
+    const resolved = resolveAdsetTargeting({
+      targetingTemplate: input.targetingTemplate,
+      targeting: input.targeting,
+      advantageAudience: input.advantageAudience,
+    })
+    resolvedTargeting = resolved.targeting as Record<string, unknown>
+    targetingTemplate = resolved.targetingTemplate
+    targetingSummary = resolved.summary
+    targetingSource = resolved.source
+    advantageAudienceValue = resolved.advantageAudience
+    targetingNote = resolved.source === 'template'
+      ? `targetingTemplate: ${resolved.targetingTemplate} — ${resolved.summary}`
+      : `targeting: custom — ${resolved.summary}`
+    advantageNote = `advantage_audience=${resolved.advantageAudience}`
+  }
 
   let pageId: string | null = null
   let whatsappPhone: string | undefined
@@ -2771,7 +2884,7 @@ export async function metaCreateAdset(
     billingEvent: input.billingEvent,
     optimizationGoal: input.optimizationGoal,
     status,
-    targeting: resolved.targeting,
+    targeting: resolvedTargeting,
     destinationType,
     pageId: pageId ?? undefined,
     whatsappPhoneNumber: whatsappPhone,
@@ -2811,11 +2924,11 @@ export async function metaCreateAdset(
     else if (dryRun)
       budgetNotes.push('Informe campaignObjective no dry-run para validar matriz de destino; na execução a Graph confirma.')
   }
-
-  const targetingNote = resolved.source === 'template'
-    ? `targetingTemplate: ${resolved.targetingTemplate} — ${resolved.summary}`
-    : `targeting: custom — ${resolved.summary}`
-  const advantageNote = `advantage_audience=${resolved.advantageAudience}`
+  if (savedAudienceMeta) {
+    budgetNotes.push(
+      `Segmentação do Saved Audience "${savedAudienceMeta.name}" (${savedAudienceMeta.id}) reutilizada sem recriação.`,
+    )
+  }
 
   const run = await withDryRun(
     dryRun,
@@ -2866,11 +2979,13 @@ export async function metaCreateAdset(
         isDynamicCreative: input.isDynamicCreative === true,
         pageId,
         whatsappPhoneNumber: whatsappPhone ?? null,
-        targetingTemplate: resolved.targetingTemplate,
-        targeting: resolved.targeting,
-        targetingSummary: resolved.summary,
-        targetingSource: resolved.source,
-        advantageAudience: resolved.advantageAudience,
+        targetingTemplate,
+        targeting: resolvedTargeting,
+        targetingSummary,
+        targetingSource,
+        advantageAudience: advantageAudienceValue,
+        savedAudienceId: savedAudienceMeta?.id ?? null,
+        savedAudienceName: savedAudienceMeta?.name ?? null,
         dailyBudget: input.dailyBudget ?? null,
         lifetimeBudget: input.lifetimeBudget ?? null,
         startTime: input.startTime ?? null,
@@ -2894,10 +3009,12 @@ export async function metaCreateAdset(
       after: {
         preview: run.preview,
         campaignId: input.campaignId,
-        targetingTemplate: resolved.targetingTemplate,
-        targeting: resolved.targeting,
-        targetingSource: resolved.source,
-        advantageAudience: resolved.advantageAudience,
+        targetingTemplate,
+        targeting: resolvedTargeting,
+        targetingSource,
+        advantageAudience: advantageAudienceValue,
+        savedAudienceId: savedAudienceMeta?.id ?? null,
+        savedAudienceName: savedAudienceMeta?.name ?? null,
         destinationType,
         isDynamicCreative: input.isDynamicCreative === true,
         pageId,
@@ -2921,11 +3038,13 @@ export async function metaCreateAdset(
       isDynamicCreative: input.isDynamicCreative === true,
       pageId,
       whatsappPhoneNumber: whatsappPhone ?? null,
-      targetingTemplate: resolved.targetingTemplate,
-      targeting: resolved.targeting,
-      targetingSummary: resolved.summary,
-      targetingSource: resolved.source,
-      advantageAudience: resolved.advantageAudience,
+      targetingTemplate,
+      targeting: resolvedTargeting,
+      targetingSummary,
+      targetingSource,
+      advantageAudience: advantageAudienceValue,
+      savedAudienceId: savedAudienceMeta?.id ?? null,
+      savedAudienceName: savedAudienceMeta?.name ?? null,
       dailyBudget: input.dailyBudget ?? null,
       lifetimeBudget: input.lifetimeBudget ?? null,
       startTime: input.startTime ?? null,
@@ -3799,7 +3918,7 @@ export async function metaUpdateAdsetBudget(
 }
 
 /**
- * Update adset targeting via BR_* preset or custom targeting. dryRun default true.
+ * Update adset targeting via BR_* preset, custom targeting, or Saved Audience. dryRun default true.
  */
 export async function metaUpdateAdsetTargeting(
   ctx: MetaToolContext,
@@ -3811,11 +3930,47 @@ export async function metaUpdateAdsetTargeting(
   const dryRun = resolveDryRun(input.dryRun, true)
   const creds = await withCreds(ctx, input.tenantId, input.adAccountId)
   const graph = fetchGraph(ctx)
-  const resolved = resolveAdsetTargeting({
-    targetingTemplate: input.targetingTemplate,
-    targeting: input.targeting,
-    advantageAudience: input.advantageAudience,
-  })
+
+  let resolvedTargeting: Record<string, unknown>
+  let targetingTemplate: string | null = null
+  let targetingSummary: string
+  let targetingSource: 'template' | 'custom' | 'saved_audience'
+  let advantageAudienceValue: 0 | 1
+  let targetingNote: string
+  let advantageNote: string
+  let savedAudienceMeta: { id: string, name: string } | null = null
+
+  if (input.savedAudienceId) {
+    const saved = await resolveSavedAudienceTargeting({
+      graph,
+      creds,
+      savedAudienceId: input.savedAudienceId,
+      advantageAudience: input.advantageAudience,
+    })
+    resolvedTargeting = saved.targeting as Record<string, unknown>
+    targetingSummary = saved.summary
+    targetingSource = 'saved_audience'
+    advantageAudienceValue = saved.advantageAudience
+    targetingNote = `savedAudienceId: ${saved.summary}`
+    advantageNote = `advantage_audience=${saved.advantageAudience}`
+    savedAudienceMeta = { id: saved.savedAudience.id, name: saved.savedAudience.name }
+  }
+  else {
+    const resolved = resolveAdsetTargeting({
+      targetingTemplate: input.targetingTemplate,
+      targeting: input.targeting,
+      advantageAudience: input.advantageAudience,
+    })
+    resolvedTargeting = resolved.targeting as Record<string, unknown>
+    targetingTemplate = resolved.targetingTemplate
+    targetingSummary = resolved.summary
+    targetingSource = resolved.source
+    advantageAudienceValue = resolved.advantageAudience
+    targetingNote = resolved.source === 'template'
+      ? `targetingTemplate: ${resolved.targetingTemplate} — ${resolved.summary}`
+      : `targeting: custom — ${resolved.summary}`
+    advantageNote = `advantage_audience=${resolved.advantageAudience}`
+  }
 
   const adset = await graph(metaGraphUrl(creds.apiVersion, `/${input.adsetId}`), {
     query: {
@@ -3831,11 +3986,7 @@ export async function metaUpdateAdsetTargeting(
   })
 
   const beforeTargeting = adset?.targeting ?? null
-  const graphBody = { targeting: resolved.targeting }
-  const targetingNote = resolved.source === 'template'
-    ? `targetingTemplate: ${resolved.targetingTemplate} — ${resolved.summary}`
-    : `targeting: custom — ${resolved.summary}`
-  const advantageNote = `advantage_audience=${resolved.advantageAudience}`
+  const graphBody = { targeting: resolvedTargeting }
 
   const run = await withDryRun(
     dryRun,
@@ -3864,17 +4015,21 @@ export async function metaUpdateAdsetTargeting(
         adAccountId: creds.adAccountId,
         adsetId: input.adsetId,
         adsetName: adset?.name ? String(adset.name) : null,
-        targetingTemplate: resolved.targetingTemplate,
-        targeting: resolved.targeting,
-        targetingSummary: resolved.summary,
-        targetingSource: resolved.source,
-        advantageAudience: resolved.advantageAudience,
+        targetingTemplate,
+        targeting: resolvedTargeting,
+        targetingSummary,
+        targetingSource,
+        advantageAudience: advantageAudienceValue,
+        savedAudienceId: savedAudienceMeta?.id ?? null,
+        savedAudienceName: savedAudienceMeta?.name ?? null,
         before: { targeting: beforeTargeting },
         after: {
-          targetingTemplate: resolved.targetingTemplate,
-          targeting: resolved.targeting,
-          targetingSource: resolved.source,
-          advantageAudience: resolved.advantageAudience,
+          targetingTemplate,
+          targeting: resolvedTargeting,
+          targetingSource,
+          advantageAudience: advantageAudienceValue,
+          savedAudienceId: savedAudienceMeta?.id ?? null,
+          savedAudienceName: savedAudienceMeta?.name ?? null,
         },
         success: Boolean(updated?.success ?? true),
         dryRun: false as const,
@@ -3892,10 +4047,12 @@ export async function metaUpdateAdsetTargeting(
       dryRun: true,
       before: { targeting: beforeTargeting },
       after: {
-        targetingTemplate: resolved.targetingTemplate,
-        targeting: resolved.targeting,
-        targetingSource: resolved.source,
-        advantageAudience: resolved.advantageAudience,
+        targetingTemplate,
+        targeting: resolvedTargeting,
+        targetingSource,
+        advantageAudience: advantageAudienceValue,
+        savedAudienceId: savedAudienceMeta?.id ?? null,
+        savedAudienceName: savedAudienceMeta?.name ?? null,
         preview: run.preview,
       },
     })
@@ -3904,17 +4061,21 @@ export async function metaUpdateAdsetTargeting(
       adAccountId: creds.adAccountId,
       adsetId: input.adsetId,
       adsetName: adset?.name ? String(adset.name) : null,
-      targetingTemplate: resolved.targetingTemplate,
-      targeting: resolved.targeting,
-      targetingSummary: resolved.summary,
-      targetingSource: resolved.source,
-      advantageAudience: resolved.advantageAudience,
+      targetingTemplate,
+      targeting: resolvedTargeting,
+      targetingSummary,
+      targetingSource,
+      advantageAudience: advantageAudienceValue,
+      savedAudienceId: savedAudienceMeta?.id ?? null,
+      savedAudienceName: savedAudienceMeta?.name ?? null,
       before: { targeting: beforeTargeting },
       after: {
-        targetingTemplate: resolved.targetingTemplate,
-        targeting: resolved.targeting,
-        targetingSource: resolved.source,
-        advantageAudience: resolved.advantageAudience,
+        targetingTemplate,
+        targeting: resolvedTargeting,
+        targetingSource,
+        advantageAudience: advantageAudienceValue,
+        savedAudienceId: savedAudienceMeta?.id ?? null,
+        savedAudienceName: savedAudienceMeta?.name ?? null,
       },
       success: true as const,
       dryRun: true as const,
@@ -3933,10 +4094,12 @@ export async function metaUpdateAdsetTargeting(
       dryRun: false,
       before: { targeting: beforeTargeting },
       after: {
-        targetingTemplate: resolved.targetingTemplate,
-        targeting: resolved.targeting,
-        targetingSource: resolved.source,
-        advantageAudience: resolved.advantageAudience,
+        targetingTemplate,
+        targeting: resolvedTargeting,
+        targetingSource,
+        advantageAudience: advantageAudienceValue,
+        savedAudienceId: savedAudienceMeta?.id ?? null,
+        savedAudienceName: savedAudienceMeta?.name ?? null,
         success: result.success,
         adAccountId: creds.adAccountId,
       },
@@ -5978,6 +6141,7 @@ export const META_TOOL_HANDLERS: Record<MetaToolName, ToolHandler> = {
   meta_search_interests: metaSearchInterests,
   meta_search_geolocations: metaSearchGeolocations,
   meta_list_custom_audiences: metaListCustomAudiences,
+  meta_list_saved_audiences: metaListSavedAudiences,
   meta_create_custom_audience: metaCreateCustomAudience,
   meta_create_custom_audiences_batch: metaCreateCustomAudiencesBatch,
   meta_update_custom_audience: metaUpdateCustomAudience,
@@ -6040,6 +6204,7 @@ export const META_TOOL_SCHEMAS: Record<MetaToolName, z.ZodTypeAny> = {
   meta_search_interests: metaSearchInterestsSchema,
   meta_search_geolocations: metaSearchGeolocationsSchema,
   meta_list_custom_audiences: metaListCustomAudiencesSchema,
+  meta_list_saved_audiences: metaListSavedAudiencesSchema,
   meta_create_custom_audience: metaCreateCustomAudienceSchema,
   meta_create_custom_audiences_batch: metaCreateCustomAudiencesBatchSchema,
   meta_update_custom_audience: metaUpdateCustomAudienceSchema,
@@ -6111,6 +6276,8 @@ export const META_TOOL_DESCRIPTIONS: Record<MetaToolName, string> = {
     'Busca cidades/regiões Meta (key+name+country_code) via Graph adgeolocation. Use key em targeting.geo_locations.cities|regions.',
   meta_list_custom_audiences:
     'Lista custom audiences da ad account (id+name+subtype+contagem). Use ids em targeting.custom_audiences.',
+  meta_list_saved_audiences:
+    'Lista Saved Audiences (Ads Manager) da ad account: id, nome e targeting. Filtre por name (exato) ou nameContains. Use o id como savedAudienceId em meta_create_adset / meta_update_adset_targeting — a Graph não aceita saved_audience_id no POST; o MCP reutiliza o targeting salvo intacto.',
   meta_create_custom_audience:
     'Cria público Meta (INSTAGRAM|FACEBOOK_PAGE|WEBSITE|LEAD_FORM|CUSTOMER_LIST|LOOKALIKE). event amigável; dryRun default true; confirm+confirmTenantId. Alias ads_meta_create_custom_audience.',
   meta_create_custom_audiences_batch:
@@ -6130,13 +6297,13 @@ export const META_TOOL_DESCRIPTIONS: Record<MetaToolName, string> = {
   meta_create_campaign:
     'Cria campanha (Outcome_*). Default PAUSED + dryRun=true. Exige confirm+confirmTenantId. ACTIVE exige confirmActive. Budget opcional com teto env.',
   meta_create_adset:
-    'Cria adset (BR_* ou targeting custom). PAUSED+dryRun. destinationType WEBSITE|WHATSAPP|MESSENGER|INSTAGRAM_DIRECT. isDynamicCreative opcional (DYNAMIC_CREATIVE_LEGACY, só WEBSITE). Exige confirm+budget+campaignId.',
+    'Cria adset (BR_* | targeting custom | savedAudienceId). PAUSED+dryRun. destinationType WEBSITE|WHATSAPP|MESSENGER|INSTAGRAM_DIRECT. isDynamicCreative opcional (DYNAMIC_CREATIVE_LEGACY, só WEBSITE). Exige confirm+budget+campaignId. Para público salvo: meta_list_saved_audiences → savedAudienceId.',
   meta_create_ad:
     'Cria Ad+Creative. creativeId XOR creativeType IMAGE|VIDEO|CAROUSEL|DYNAMIC_CREATIVE_LEGACY|CATALOG. IMAGE: imageUrl|imageHash|assetId|sourceBase64 (biblioteca). Normaliza imagens (EXIF, alpha, WebP). Destinos WEBSITE|WHATSAPP|MESSENGER|INSTAGRAM_DIRECT. trackingSpecs/pixelId/offlineDatasetId/conversionDomain opcionais. Advantage+ degreesOfFreedomSpec. PAUSED+dryRun.',
   meta_update_adset_budget:
     'Atualiza budget do adset (daily|lifetime). dryRun default true. Teto META_GPT_BUDGET_* + confirmBudgetIncrease se aumento % alto.',
   meta_update_adset_targeting:
-    'Atualiza targeting do adset (BR_* ou targeting custom). dryRun default true. XOR targetingTemplate|targeting.',
+    'Atualiza targeting do adset (BR_* | targeting custom | savedAudienceId). dryRun default true. XOR targetingTemplate|targeting|savedAudienceId.',
   meta_update_ad_creative_copy:
     'Atualiza copy do ad (message/headline/description/CTA/link) via novo AdCreative + swap. dryRun default true. Exige Page.',
   meta_update_ad_media:

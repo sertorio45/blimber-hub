@@ -70,6 +70,7 @@ Passo a passo numerado, prompts e troubleshooting: **[Tutorial](./gpt-blimber-me
 | GET | `/api/gpt/meta/targeting/interests?...` | `searchInterests` |
 | GET | `/api/gpt/meta/targeting/geolocations?...` | `searchGeolocations` |
 | GET | `/api/gpt/meta/custom-audiences?...` | `listCustomAudiences` |
+| GET | `/api/gpt/meta/saved-audiences?...` | `listSavedAudiences` |
 | GET | `/api/gpt/meta/campaigns?...` | `listCampaigns` |
 | POST | `/api/gpt/meta/campaigns` | `createCampaign` |
 | GET | `/api/gpt/meta/campaigns/{id}?tenantId=` | `getCampaign` |
@@ -97,7 +98,7 @@ Contrato completo: `gpt/blimber/openapi-ads.yaml` (host `ads.blimber.com.br`). `
 ## Limitações
 
 - Sem CAPI, Brand Center / geração de imagem por IA  
-- Targeting de adset: presets `BR_*` **ou** objeto `targeting` customizado (XOR; geo obrigatório). IDs via `searchInterests` / `searchGeolocations` / `listCustomAudiences`  
+- Targeting de adset: presets `BR_*` **ou** `targeting` custom **ou** `savedAudienceId` (XOR). Saved: `listSavedAudiences` → id. Custom IDs via `searchInterests` / `searchGeolocations` / `listCustomAudiences`  
 - Create/edit ad: `creativeId` XOR criativo tipado; mídia via `imageHash`/`videoId` **ou** upload HTTPS (`imageUrl`/`videoUrl`) com SSRF check  
 - Bulk delete: **só IDs explícitos** (nunca por nome); preview + `previewToken` obrigatórios  
 - Timeout ~45s / payloads texto < ~100k (limites OpenAI)  

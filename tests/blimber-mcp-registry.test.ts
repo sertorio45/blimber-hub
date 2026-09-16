@@ -239,6 +239,9 @@ const EXPECTED_ROUTE_FILES: Record<string, string[]> = {
   '/api/gpt/meta/custom-audiences': [
     'server/api/gpt/meta/custom-audiences.get.ts',
   ],
+  '/api/gpt/meta/saved-audiences': [
+    'server/api/gpt/meta/saved-audiences.get.ts',
+  ],
   '/api/gpt/meta/campaigns': [
     'server/api/gpt/meta/campaigns/index.get.ts',
     'server/api/gpt/meta/campaigns/index.post.ts',
@@ -430,6 +433,7 @@ describe('blimber unified MCP registry + openapi', () => {
       'searchInterests',
       'searchGeolocations',
       'listCustomAudiences',
+      'listSavedAudiences',
       'createCustomAudience',
       'listCampaigns',
       'createCampaign',

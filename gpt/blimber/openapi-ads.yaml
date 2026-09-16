@@ -206,6 +206,61 @@ paths:
         "400":
           description: Requisição inválida — erro de validação ou da ferramenta
 
+  /api/gpt/meta/saved-audiences:
+    get:
+      operationId: listSavedAudiences
+      summary: Listar Saved Audiences (Ads Manager)
+      description: >
+        Lista públicos salvos da ad account (id, nome, targeting). Filtre por
+        name (exato, ex. "CIDADE PIN 2") ou nameContains. Use o id como
+        savedAudienceId em createAdset / updateAdsetTargeting — a Graph não
+        aceita saved_audience_id no POST; o MCP reutiliza o targeting intacto.
+      parameters:
+        - name: tenantId
+          in: query
+          required: true
+          schema:
+            type: string
+            format: uuid
+          description: UUID do tenant (empresa) no Blimber. Obrigatório — nunca misture tenants.
+        - name: adAccountId
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Conta de anúncios sem prefixo act_. Usa a da integração se omitido.
+        - name: name
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Nome exato do público salvo (case-insensitive).
+        - name: nameContains
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Filtro parcial por nome (case-insensitive).
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+      responses:
+        "200":
+          description: Saved audiences (id, name, targeting, run_status, contagens)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkToolResponse"
+        "401":
+          description: Não autorizado — API key ausente ou inválida
+        "400":
+          description: Requisição inválida — erro de validação ou da ferramenta
+
   /api/gpt/meta/integrations:
     get:
       operationId: listIntegrations
@@ -464,9 +519,10 @@ paths:
       operationId: createAdset
       summary: Criar adset (PAUSED)
       description: >
-        Cria adset (BR_* XOR targeting). PAUSED+dryRun. WEBSITE|WHATSAPP.
-        isDynamicCreative opcional (DYNAMIC_CREATIVE_LEGACY; só WEBSITE).
+        Cria adset (BR_* XOR targeting XOR savedAudienceId). PAUSED+dryRun.
+        WEBSITE|WHATSAPP. isDynamicCreative opcional (DYNAMIC_CREATIVE_LEGACY; só WEBSITE).
         Exige confirm+budget+campaignId. ACTIVE exige confirmActive.
+        Público salvo: listSavedAudiences → savedAudienceId.
       x-openai-isConsequential: true
       requestBody:
         required: true
@@ -625,8 +681,9 @@ paths:
       operationId: updateAdsetTargeting
       summary: Atualizar targeting do adset
       description: >
-        targetingTemplate BR_* OU targeting customizado (XOR). dryRun default true.
-        confirm + confirmTenantId.
+        targetingTemplate BR_* OU targeting customizado OU savedAudienceId (XOR).
+        dryRun default true. confirm + confirmTenantId.
+        Público salvo: listSavedAudiences → savedAudienceId (targeting reutilizado intacto).
       x-openai-isConsequential: true
       parameters:
         - name: adsetId
@@ -1411,9 +1468,15 @@ components:
         targetingTemplate:
           type: string
           enum: [BR_18_65, BR_25_54, BR_18_34, BR_35_65]
-          description: Preset geo+idade. XOR com targeting — envie um OU outro.
+          description: Preset geo+idade. XOR com targeting / savedAudienceId — envie apenas um.
         targeting:
           $ref: "#/components/schemas/MetaCustomTargeting"
+        savedAudienceId:
+          type: string
+          minLength: 1
+          description: >
+            ID de Saved Audience (listSavedAudiences). Reutiliza o targeting salvo
+            sem recriar segmentação. XOR com targetingTemplate e targeting.
         advantageAudience:
           type: integer
           enum: [0, 1]
@@ -1863,9 +1926,15 @@ components:
         targetingTemplate:
           type: string
           enum: [BR_18_65, BR_25_54, BR_18_34, BR_35_65]
-          description: Preset BR_*. XOR com targeting.
+          description: Preset BR_*. XOR com targeting / savedAudienceId.
         targeting:
           $ref: "#/components/schemas/MetaCustomTargeting"
+        savedAudienceId:
+          type: string
+          minLength: 1
+          description: >
+            ID de Saved Audience — aplica o targeting salvo no adset sem recriar
+            segmentação. XOR com targetingTemplate / targeting.
         advantageAudience:
           type: integer
           enum: [0, 1]
@@ -2233,6 +2302,7 @@ components:
             - meta_search_interests
             - meta_search_geolocations
             - meta_list_custom_audiences
+            - meta_list_saved_audiences
             - meta_create_custom_audience
             - meta_create_custom_audiences_batch
             - meta_update_custom_audience

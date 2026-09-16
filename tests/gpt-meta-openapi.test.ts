@@ -35,6 +35,9 @@ const EXPECTED_ROUTE_FILES: Record<string, string[]> = {
     'server/api/gpt/meta/custom-audiences.get.ts',
     'server/api/gpt/meta/custom-audiences.post.ts',
   ],
+  '/api/gpt/meta/saved-audiences': [
+    'server/api/gpt/meta/saved-audiences.get.ts',
+  ],
   '/api/gpt/meta/campaigns': [
     'server/api/gpt/meta/campaigns/index.get.ts',
     'server/api/gpt/meta/campaigns/index.post.ts',
@@ -202,6 +205,7 @@ describe('gpt/blimber Ads OpenAPI (openapi-ads.yaml)', () => {
     expect(yaml).toContain('operationId: searchInterests')
     expect(yaml).toContain('operationId: searchGeolocations')
     expect(yaml).toContain('operationId: listCustomAudiences')
+    expect(yaml).toContain('operationId: listSavedAudiences')
     expect(yaml).toContain('operationId: createCustomAudience')
     expect(yaml).not.toContain('operationId: searchTenants')
     expect(yaml).not.toContain('/api/gpt/meta/tenants')
@@ -209,6 +213,7 @@ describe('gpt/blimber Ads OpenAPI (openapi-ads.yaml)', () => {
     expect(yaml).toContain('/api/gpt/meta/targeting/interests')
     expect(yaml).toContain('/api/gpt/meta/targeting/geolocations')
     expect(yaml).toContain('/api/gpt/meta/custom-audiences')
+    expect(yaml).toContain('/api/gpt/meta/saved-audiences')
     expect(yaml).toContain('meta_update_adset_status')
     expect(yaml).toContain('meta_update_ad_status')
     expect(yaml).toContain('meta_create_campaign')
@@ -223,7 +228,9 @@ describe('gpt/blimber Ads OpenAPI (openapi-ads.yaml)', () => {
     expect(yaml).toContain('meta_search_interests')
     expect(yaml).toContain('meta_search_geolocations')
     expect(yaml).toContain('meta_list_custom_audiences')
+    expect(yaml).toContain('meta_list_saved_audiences')
     expect(yaml).toContain('meta_create_custom_audience')
+    expect(yaml).toContain('savedAudienceId')
     expect(yaml).toContain('CreateCampaignBody')
     expect(yaml).toContain('CreateAdsetBody')
     expect(yaml).toContain('CreateAdBody')

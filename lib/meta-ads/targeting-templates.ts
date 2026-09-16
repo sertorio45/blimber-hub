@@ -416,24 +416,34 @@ export function resolveAdsetTargeting(
   }
 }
 
-/** Shared XOR refine for create/update schemas (Portuguese messages). */
+/**
+ * Shared XOR refine for create/update schemas (Portuguese messages).
+ * Exactly one of targetingTemplate | targeting | savedAudienceId.
+ */
 export function refineTargetingXor(
-  data: { targetingTemplate?: string | null, targeting?: unknown },
+  data: {
+    targetingTemplate?: string | null
+    targeting?: unknown
+    savedAudienceId?: string | null
+  },
   ctx: z.RefinementCtx,
 ): void {
   const hasTemplate = data.targetingTemplate != null && data.targetingTemplate !== ''
   const hasCustom = data.targeting != null
-  if (hasTemplate && hasCustom) {
+  const hasSaved = data.savedAudienceId != null && String(data.savedAudienceId).trim() !== ''
+  const count = [hasTemplate, hasCustom, hasSaved].filter(Boolean).length
+
+  if (count > 1) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: 'Informe targetingTemplate OU targeting, não ambos.',
-      path: ['targeting'],
+      message: 'Informe apenas um de: targetingTemplate, targeting ou savedAudienceId.',
+      path: hasSaved ? ['savedAudienceId'] : ['targeting'],
     })
   }
-  if (!hasTemplate && !hasCustom) {
+  if (count === 0) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      message: 'Informe targetingTemplate (BR_*) ou targeting (objeto customizado).',
+      message: 'Informe targetingTemplate (BR_*), targeting (custom) ou savedAudienceId (público salvo).',
       path: ['targetingTemplate'],
     })
   }

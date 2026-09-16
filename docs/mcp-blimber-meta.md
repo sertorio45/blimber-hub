@@ -95,6 +95,7 @@ Prefira as rotas REST `/api/gpt/meta/*` documentadas no OpenAPI.
 | `meta_search_interests` | read | Busca interesses (id) para targeting |
 | `meta_search_geolocations` | read | Busca cidades/regiões (key) |
 | `meta_list_custom_audiences` | read | Custom audiences da ad account |
+| `meta_list_saved_audiences` | read | Saved Audiences (id/nome/targeting); filtro por nome |
 | `meta_create_custom_audience` | write | Cria público IG/Page/Website/Lead/Lista/LAL (dryRun default true) |
 | `meta_create_custom_audiences_batch` | write | Sequencial succeeded/failed (via invoke) |
 | `meta_update_custom_audience` | write | Nome/descrição/rule |
@@ -104,10 +105,10 @@ Prefira as rotas REST `/api/gpt/meta/*` documentadas no OpenAPI.
 | `meta_update_adset_status` | write | ACTIVE/PAUSED (confirmação) |
 | `meta_update_ad_status` | write | ACTIVE/PAUSED (confirmação) |
 | `meta_create_campaign` | write | Criar campanha (PAUSED / dryRun default true) |
-| `meta_create_adset` | write | Criar adset com `BR_*` ou `targeting` custom |
+| `meta_create_adset` | write | Criar adset com `BR_*`, `targeting` custom ou `savedAudienceId` |
 | `meta_create_ad` | write | Criar AdCreative + Ad; `trackingSpecs` opcional (Pixel/Dataset) |
 | `meta_update_adset_budget` | write | Budget adset (dryRun default true) |
-| `meta_update_adset_targeting` | write | Targeting BR_* |
+| `meta_update_adset_targeting` | write | Targeting BR_* / custom / savedAudienceId |
 | `meta_update_ad_creative_copy` | write | Copy via novo creative |
 | `meta_update_ad_media` | write | imageUrl\|imageHash via novo creative |
 | `meta_update_ad_tracking` | write | Substitui tracking_specs (invoke) |

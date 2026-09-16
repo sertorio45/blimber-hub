@@ -51,13 +51,14 @@ description: >-
 | `meta_get_campaign` | Detalhe |
 | `meta_create_campaign` | Criar campanha (PAUSED / dryRun default true) |
 | `meta_list_adsets` | Conjuntos de anúncios |
-| `meta_create_adset` | Criar adset (`BR_18_65` / `BR_*` **ou** `targeting` custom; destination WEBSITE\|WHATSAPP\|MESSENGER\|INSTAGRAM_DIRECT; `isDynamicCreative` opcional p/ DYNAMIC_CREATIVE_LEGACY) |
+| `meta_create_adset` | Criar adset (`BR_18_65` / `BR_*` **ou** `targeting` custom **ou** `savedAudienceId`; destination WEBSITE\|WHATSAPP\|MESSENGER\|INSTAGRAM_DIRECT; `isDynamicCreative` opcional p/ DYNAMIC_CREATIVE_LEGACY) |
 | `meta_update_adset_budget` | Budget adset (dryRun default true) |
-| `meta_update_adset_targeting` | Targeting `BR_*` **ou** `targeting` custom (XOR) |
+| `meta_update_adset_targeting` | Targeting `BR_*` **ou** `targeting` custom **ou** `savedAudienceId` (XOR) |
 | `meta_list_ads` | Anúncios |
 | `meta_search_interests` | Busca interesses Meta (id) para targeting custom |
 | `meta_search_geolocations` | Busca cidades/regiões (key) para geo_locations |
 | `meta_list_custom_audiences` | Lista custom audiences da ad account |
+| `meta_list_saved_audiences` | Lista Saved Audiences (id, nome, targeting). Filtre por `name` / `nameContains` (ex. "CIDADE PIN 2") → use `savedAudienceId` |
 | `meta_create_custom_audience` | Cria público IG/Page/Website/Lead/Lista/LAL (dryRun true). Alias `ads_meta_create_custom_audience` |
 | `meta_create_custom_audiences_batch` | Vários públicos em sequência (`succeeded`/`failed`) |
 | `meta_update_custom_audience` / `meta_delete_custom_audience` | Update/delete (confirmDelete; recusa se em uso) |
@@ -80,13 +81,14 @@ description: >-
 | `meta_update_adset_status` | ACTIVE / PAUSED |
 | `meta_update_ad_status` | ACTIVE / PAUSED |
 
-OpenAPI: `gpt/blimber/openapi-ads.yaml` (`createCampaign`, `createAdset`, `createAd`, `updateAdTracking`, `searchInterests`, `searchGeolocations`, `listCustomAudiences`, `createCustomAudience`, `updateAdsetStatus`, `updateAdsetBudget`, `updateAdCreativeCopy`, `previewBulkDelete`, `executeBulkDelete`, …; overflow via `invokeMetaTool`: capabilities, upload, catalogs, pixels, datasets, audience update/delete/usage/batch, experiments list/eligibility/create/get/stop)  
+OpenAPI: `gpt/blimber/openapi-ads.yaml` (`createCampaign`, `createAdset`, `createAd`, `updateAdTracking`, `searchInterests`, `searchGeolocations`, `listCustomAudiences`, `listSavedAudiences`, `createCustomAudience`, `updateAdsetStatus`, `updateAdsetBudget`, `updateAdCreativeCopy`, `previewBulkDelete`, `executeBulkDelete`, …; overflow via `invokeMetaTool`: capabilities, upload, catalogs, pixels, datasets, audience update/delete/usage/batch, experiments list/eligibility/create/get/stop)  
 Catálogo: `GET /api/gpt/meta/tools`
 
 `createAd.creativeType`: IMAGE (default) | VIDEO | CAROUSEL | DYNAMIC_CREATIVE_LEGACY | CATALOG — ou `creativeId` XOR. Upload HTTPS opcional (`imageUrl`/`videoUrl`) com SSRF; IMAGE também aceita `assetId` da Biblioteca (download interno → `imageHash`). dryRun não faz upload.  
 `createAd.destinationType`: WEBSITE | WHATSAPP | MESSENGER | INSTAGRAM_DIRECT. IMAGE/VIDEO/CAROUSEL em todos; DYNAMIC_CREATIVE_LEGACY e CATALOG só WEBSITE. Carousel WhatsApp usa CTA `WHATSAPP_MESSAGE` + `https://api.whatsapp.com/send` (nunca wa.me).  
 `createAd.trackingSpecs`: opcional. Graph `action.type`: `offsite_conversion` + `fbPixel` (Pixel de site); `offline_conversion` + `dataset` (Dataset offline); `leadgen_quality_conversion` + pixel ou dataset. Atalhos: `pixelId`, `offlineDatasetId`. Campo extra oficial: `conversionDomain`. Listar IDs: `meta_list_pixels` / `meta_list_datasets` (invoke). Ad existente: `updateAdTracking` / `meta_update_ad_tracking` (merge; `replaceTrackingSpecs` para overwrite). IDs só da ad account do tenant.  
 `createAdset.isDynamicCreative`: opcional → `is_dynamic_creative=true` (só WEBSITE; ads com DYNAMIC_CREATIVE_LEGACY).  
+`createAdset` / `updateAdsetTargeting`: XOR `targetingTemplate` | `targeting` | `savedAudienceId`. Com Saved Audience, o MCP busca o targeting na Graph e envia intacto (a API oficial não aceita `saved_audience_id` no POST do adset).  
 `createAdset` / `updateAdsetTargeting.advantageAudience`: opcional `0|1` (default `0`) → `targeting_automation.advantage_audience`.
 
 **Clarificações:**
@@ -102,7 +104,7 @@ Catálogo: `GET /api/gpt/meta/tools`
 1. `searchTenants` (se não houver UUID) → confirmar cliente  
 2. `meta_list_integrations` → confirmar Meta pronto / write_readiness  
 3. `meta_list_campaigns` / adsets / ads ou `meta_get_insights`  
-4. Targeting custom: `meta_search_interests` / `meta_search_geolocations` / `meta_list_custom_audiences` → IDs em `targeting`. Criar públicos: `meta_create_custom_audience` (dryRun → confirm). Depois `meta_create_adset` ou `meta_update_adset_targeting`  
+4. Targeting: presets `BR_*`, **ou** custom (`meta_search_interests` / `meta_search_geolocations` / `meta_list_custom_audiences`), **ou** Saved Audience (`meta_list_saved_audiences` por nome → `savedAudienceId`). Criar públicos custom: `meta_create_custom_audience` (dryRun → confirm). Depois `meta_create_adset` ou `meta_update_adset_targeting`  
 5. Pausar/ativar: listar ou detalhar → confirmação → tool de status (`dryRun` opcional)  
 6. Criar/editar: preview (`dryRun` default) → confirmar → `dryRun: false`  
 7. Bulk delete: `meta_preview_bulk_delete` → listar IDs ao usuário → `meta_execute_bulk_delete`

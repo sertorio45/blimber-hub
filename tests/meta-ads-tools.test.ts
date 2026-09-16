@@ -11,6 +11,7 @@ import {
   metaGetInsights,
   metaListCampaigns,
   metaListCustomAudiences,
+  metaListSavedAudiences,
   metaListIntegrations,
   metaPreviewBulkDelete,
   metaSearchGeolocations,
@@ -239,6 +240,56 @@ describe('meta-ads MCP tools', () => {
     })
     const [url, init] = graphFetch.mock.calls[0]!
     expect(String(url)).toContain('/act_987654321/customaudiences')
+    expect(init?.query?.access_token).toBe(token)
+    expect(JSON.stringify(result)).not.toContain(token)
+  })
+
+  it('lists saved audiences and filters by exact name', async () => {
+    const token = 'meta-saved-audience-token'
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret(token),
+      ad_account_id: '987654321',
+      api_version: 'v20.0',
+    })
+    const graphFetch = vi.fn(async () => ({
+      data: [
+        {
+          id: 'SA_1',
+          name: 'CIDADE PIN 2',
+          targeting: {
+            geo_locations: { cities: [{ key: '267029886' }] },
+            age_min: 25,
+            age_max: 54,
+          },
+          run_status: 'ACTIVE',
+        },
+        {
+          id: 'SA_2',
+          name: 'Outro público',
+          targeting: { geo_locations: { countries: ['BR'] } },
+          run_status: 'ACTIVE',
+        },
+      ],
+    }))
+
+    const result = await metaListSavedAudiences(
+      { client, graphFetch },
+      { tenantId: 'tenant-1', name: 'cidade pin 2', limit: 50 },
+    )
+
+    expect(result.adAccountId).toBe('987654321')
+    expect(result.listed).toBe(2)
+    expect(result.matched).toBe(1)
+    expect(result.savedAudiences).toHaveLength(1)
+    expect(result.savedAudiences[0]).toMatchObject({
+      id: 'SA_1',
+      name: 'CIDADE PIN 2',
+    })
+    expect(result.savedAudiences[0]!.targeting).toMatchObject({
+      geo_locations: { cities: [{ key: '267029886' }] },
+    })
+    const [url, init] = graphFetch.mock.calls[0]!
+    expect(String(url)).toContain('/act_987654321/saved_audiences')
     expect(init?.query?.access_token).toBe(token)
     expect(JSON.stringify(result)).not.toContain(token)
   })
@@ -798,6 +849,94 @@ describe('meta-ads MCP tools', () => {
     expect((result as any).preview?.notes?.some((n: string) => n.includes('BR_25_54'))).toBe(true)
     expect((result as any).preview?.notes?.some((n: string) => n.includes('advantage_audience=0'))).toBe(true)
     expect(graphFetch).not.toHaveBeenCalled()
+  })
+
+  it('create adset with savedAudienceId reuses targeting without recreating schema', async () => {
+    const token = 'tok-saved'
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret(token),
+      ad_account_id: '555',
+      api_version: 'v20.0',
+    })
+    const savedTargeting = {
+      geo_locations: {
+        cities: [{ key: '267029886', name: 'Pinheiros', radius: 10, distance_unit: 'kilometer' }],
+      },
+      age_min: 25,
+      age_max: 54,
+      flexible_spec: [{ interests: [{ id: '6003139266461', name: 'Cosmetics' }] }],
+    }
+    const graphFetch = vi.fn(async (url: string) => {
+      const path = String(url)
+      if (path.includes('/saved_audiences')) {
+        return { data: [{ id: 'SA_PIN' }] }
+      }
+      if (path.includes('/SA_PIN')) {
+        return {
+          id: 'SA_PIN',
+          name: 'CIDADE PIN 2',
+          targeting: savedTargeting,
+          run_status: 'ACTIVE',
+          account_id: '555',
+        }
+      }
+      throw new Error(`unexpected graph url: ${path}`)
+    })
+
+    const result = await metaCreateAdset(
+      { client, graphFetch },
+      {
+        tenantId: 'tenant-1',
+        campaignId: 'cmp_1',
+        name: 'Adset Saved',
+        savedAudienceId: 'SA_PIN',
+        billingEvent: 'IMPRESSIONS',
+        optimizationGoal: 'LINK_CLICKS',
+        dailyBudget: 8000,
+        confirmTenantId: 'tenant-1',
+        confirm: true,
+      },
+    )
+
+    expect(result.success).toBe(true)
+    expect((result as any).dryRun).toBe(true)
+    expect((result as any).targetingSource).toBe('saved_audience')
+    expect((result as any).savedAudienceId).toBe('SA_PIN')
+    expect((result as any).savedAudienceName).toBe('CIDADE PIN 2')
+    expect((result as any).targetingTemplate).toBeNull()
+    expect((result as any).targeting).toMatchObject({
+      ...savedTargeting,
+      targeting_automation: { advantage_audience: 0 },
+    })
+    expect((result as any).preview?.body?.targeting).toMatchObject({
+      geo_locations: savedTargeting.geo_locations,
+      flexible_spec: savedTargeting.flexible_spec,
+    })
+    expect((result as any).preview?.notes?.some((n: string) => n.includes('CIDADE PIN 2'))).toBe(true)
+    // Ownership list + detail GET — no adset POST on dry-run
+    expect(graphFetch.mock.calls.every(([, init]) => init?.method !== 'POST')).toBe(true)
+  })
+
+  it('create adset rejects savedAudienceId together with targetingTemplate', async () => {
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret('tok'),
+      ad_account_id: '555',
+    })
+    await expect(metaCreateAdset(
+      { client, graphFetch: vi.fn() },
+      {
+        tenantId: 'tenant-1',
+        campaignId: 'cmp_1',
+        name: 'Adset XOR',
+        targetingTemplate: 'BR_18_65',
+        savedAudienceId: 'SA_1',
+        billingEvent: 'IMPRESSIONS',
+        optimizationGoal: 'LINK_CLICKS',
+        dailyBudget: 5000,
+        confirmTenantId: 'tenant-1',
+        confirm: true,
+      },
+    )).rejects.toBeTruthy()
   })
 
   it('create adset isDynamicCreative dryRun previews is_dynamic_creative', async () => {
@@ -2144,6 +2283,58 @@ describe('meta-ads MCP tools', () => {
       targeting_automation: { advantage_audience: 0 },
     })
     expect((result as any).advantageAudience).toBe(0)
+    expect(graphFetch.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(0)
+  })
+
+  it('update adset targeting with savedAudienceId reuses saved targeting', async () => {
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret('tok'),
+      ad_account_id: '555',
+      api_version: 'v20.0',
+    })
+    const savedTargeting = {
+      geo_locations: { cities: [{ key: '267029886' }] },
+      age_min: 30,
+      age_max: 45,
+    }
+    const graphFetch = vi.fn(async (url: string) => {
+      const path = String(url)
+      if (path.includes('/saved_audiences'))
+        return { data: [{ id: 'SA_PIN' }] }
+      if (path.includes('/SA_PIN')) {
+        return {
+          id: 'SA_PIN',
+          name: 'CIDADE PIN 2',
+          targeting: savedTargeting,
+          run_status: 'ACTIVE',
+        }
+      }
+      return {
+        id: 'adset_1',
+        name: 'Adset',
+        account_id: '555',
+        targeting: { geo_locations: { countries: ['BR'] }, age_min: 18, age_max: 65 },
+      }
+    })
+
+    const result = await metaUpdateAdsetTargeting(
+      { client, graphFetch },
+      {
+        tenantId: 'tenant-1',
+        adsetId: 'adset_1',
+        savedAudienceId: 'SA_PIN',
+        confirmTenantId: 'tenant-1',
+        confirm: true,
+      },
+    )
+
+    expect((result as any).dryRun).toBe(true)
+    expect((result as any).targetingSource).toBe('saved_audience')
+    expect((result as any).savedAudienceId).toBe('SA_PIN')
+    expect((result as any).after.targeting).toMatchObject({
+      ...savedTargeting,
+      targeting_automation: { advantage_audience: 0 },
+    })
     expect(graphFetch.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(0)
   })
 
