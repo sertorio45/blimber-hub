@@ -3,6 +3,7 @@ import {
   resultActionPriorityForMetaTemplate,
 } from '~/server/utils/marketing-reports'
 import type { MetaReportTemplateId } from '~/types/marketing-reports'
+import { metaAdsAllTimeSince } from '~/lib/marketing/reports-hub'
 
 /** Hub reports use Brazil civil dates so Graph `time_range` matches Ads Manager. */
 export const MARKETING_INSIGHTS_TIMEZONE = 'America/Sao_Paulo'
@@ -73,6 +74,24 @@ export function addCalendarDays(ymd: string, days: number): string {
   return utc.toISOString().slice(0, 10)
 }
 
+/** Civil-month shift in UTC (used for Meta Insights 37-month maximum). */
+export function addCalendarMonths(ymd: string, months: number): string {
+  const [year, month, day] = ymd.split('-').map(Number)
+  const utc = new Date(Date.UTC(year, (month || 1) - 1 + months, day || 1))
+  return utc.toISOString().slice(0, 10)
+}
+
+/**
+ * Earliest `since` allowed by Meta Ads Insights (error 3018 / date_preset=maximum).
+ * @deprecated Prefer `metaAdsAllTimeSince` from reports-hub — kept for local tests/helpers.
+ */
+export function metaInsightsMaximumSince(
+  todayYmd: string,
+  maxMonths: number = 37,
+): string {
+  return metaAdsAllTimeSince(todayYmd, maxMonths)
+}
+
 /**
  * Inclusive civil window in America/Sao_Paulo.
  * `last_7d` = today + previous 6 days (7 days including today).
@@ -99,6 +118,14 @@ export function resolveMetaInsightsWindow(
   if (datePreset === 'yesterday') {
     const y = addCalendarDays(today, -1)
     return { preset: 'yesterday', since: y, until: y }
+  }
+
+  if (datePreset === 'all') {
+    return {
+      preset: 'all',
+      since: metaAdsAllTimeSince(today),
+      until: today,
+    }
   }
 
   const offset = LAST_N_INCLUSIVE_OFFSET[datePreset]

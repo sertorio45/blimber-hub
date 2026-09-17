@@ -50,6 +50,15 @@ describe('resolveMetaInsightsWindow (America/Sao_Paulo)', () => {
     })
   })
 
+  it('maps all to Meta maximum lookback (~37 months), not 2004', () => {
+    const now = new Date('2026-08-17T15:00:00.000Z')
+    expect(resolveMetaInsightsWindow('all', '', '', now)).toEqual({
+      preset: 'all',
+      since: '2023-07-18',
+      until: '2026-08-17',
+    })
+  })
+
   it('sends Graph time_range instead of date_preset last_7d (which excludes today)', () => {
     const window = resolveMetaInsightsWindow('last_7d', '', '', new Date('2026-08-17T15:00:00.000Z'))
     expect(buildMetaInsightsDateQuery(window)).toEqual({

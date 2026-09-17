@@ -433,6 +433,9 @@ async function restoreEditLayout() {
                 <SelectItem value="last_90d">
                   Últimos 90 dias
                 </SelectItem>
+                <SelectItem value="all">
+                  Todo período
+                </SelectItem>
                 <SelectItem value="custom">
                   Período personalizado
                 </SelectItem>

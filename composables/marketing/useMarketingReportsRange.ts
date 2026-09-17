@@ -2,8 +2,10 @@ import type { LocationQueryRaw } from 'vue-router'
 import type { MarketingReportRangePreset } from '~/lib/marketing/reports-hub'
 import {
   DEFAULT_MARKETING_REPORT_RANGE,
+  clampMarketingReportRangeForTab,
   defaultCustomDateRange,
   parseMarketingReportRange,
+  resolveMarketingReportTab,
 } from '~/lib/marketing/reports-hub'
 
 export function useMarketingReportsRange() {
@@ -20,7 +22,11 @@ export function useMarketingReportsRange() {
     date_end?: string
   }) {
     const query: LocationQueryRaw = { ...currentQuery() }
-    const range = patch.range ?? parseMarketingReportRange(query.range)
+    const tab = resolveMarketingReportTab(route.path)
+    const range = clampMarketingReportRangeForTab(
+      tab.id,
+      patch.range ?? parseMarketingReportRange(query.range),
+    )
 
     query.range = range
 
@@ -40,7 +46,13 @@ export function useMarketingReportsRange() {
   }
 
   const datePreset = computed({
-    get: (): MarketingReportRangePreset => parseMarketingReportRange(route.query.range),
+    get: (): MarketingReportRangePreset => {
+      const tab = resolveMarketingReportTab(route.path)
+      return clampMarketingReportRangeForTab(
+        tab.id,
+        parseMarketingReportRange(route.query.range),
+      )
+    },
     set: (value: MarketingReportRangePreset | string) => {
       void patchRange({ range: parseMarketingReportRange(value) })
     },
@@ -64,6 +76,17 @@ export function useMarketingReportsRange() {
     if (value === 'custom' && (!dateStart.value || !dateEnd.value))
       void patchRange({ range: 'custom' })
   })
+
+  // If URL has range=all on social, rewrite to last_90d.
+  watch(
+    () => [route.path, route.query.range] as const,
+    ([path, range]) => {
+      const tab = resolveMarketingReportTab(path)
+      if (tab.id === 'social' && String(range || '') === 'all')
+        void patchRange({ range: 'last_90d' })
+    },
+    { immediate: true },
+  )
 
   return {
     datePreset,

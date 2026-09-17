@@ -12,12 +12,62 @@ export const MARKETING_REPORT_RANGE_PRESETS = [
   'last_14d',
   'last_30d',
   'last_90d',
+  'all',
   'custom',
 ] as const
 
 export type MarketingReportRangePreset = typeof MARKETING_REPORT_RANGE_PRESETS[number]
 
 export const DEFAULT_MARKETING_REPORT_RANGE: MarketingReportRangePreset = 'last_7d'
+
+/**
+ * GA4 “Todo período” floor (Data API has no ALL_TIME).
+ * Meta Ads uses a separate 37-month clamp (Graph error 3018 / date_preset=maximum).
+ */
+export const MARKETING_REPORT_ALL_TIME_SINCE = '2004-01-01'
+
+/** Meta Ads Insights max lookback (`date_preset=maximum` / error 3018). */
+export const META_INSIGHTS_MAX_LOOKBACK_MONTHS = 37
+
+function addUtcCalendarMonths(ymd: string, months: number): string {
+  const [year, month, day] = ymd.split('-').map(Number)
+  const utc = new Date(Date.UTC(year, (month || 1) - 1 + months, day || 1))
+  return utc.toISOString().slice(0, 10)
+}
+
+function addUtcCalendarDays(ymd: string, days: number): string {
+  const [year, month, day] = ymd.split('-').map(Number)
+  const utc = new Date(Date.UTC(year, (month || 1) - 1, (day || 1) + days))
+  return utc.toISOString().slice(0, 10)
+}
+
+/**
+ * Earliest Insights `since` for Meta Ads “Todo período”.
+ * One day after −37 months to stay inside Graph error 3018.
+ */
+export function metaAdsAllTimeSince(
+  todayYmd: string,
+  maxMonths: number = META_INSIGHTS_MAX_LOOKBACK_MONTHS,
+): string {
+  return addUtcCalendarDays(addUtcCalendarMonths(todayYmd, -maxMonths), 1)
+}
+
+/** Presets shown on Redes sociais (Page/IG Insights — no lifetime / all). */
+export const MARKETING_SOCIAL_REPORT_RANGE_PRESETS = [
+  'today',
+  'yesterday',
+  'last_7d',
+  'last_14d',
+  'last_30d',
+  'last_90d',
+  'custom',
+] as const satisfies readonly MarketingReportRangePreset[]
+
+export function isMarketingSocialReportRangePreset(
+  value: string,
+): value is typeof MARKETING_SOCIAL_REPORT_RANGE_PRESETS[number] {
+  return (MARKETING_SOCIAL_REPORT_RANGE_PRESETS as readonly string[]).includes(value)
+}
 
 export const PAID_ADS_REPORT_SOURCES = ['meta', 'google_ads'] as const
 export type PaidAdsReportSource = typeof PAID_ADS_REPORT_SOURCES[number]
@@ -27,6 +77,16 @@ export interface MarketingReportTab {
   title: string
   path: string
   description: string
+}
+
+/** Clamp hub range when entering the social tab (organic APIs reject all-time). */
+export function clampMarketingReportRangeForTab(
+  tabId: MarketingReportTab['id'],
+  range: MarketingReportRangePreset,
+): MarketingReportRangePreset {
+  if (tabId === 'social' && range === 'all')
+    return 'last_90d'
+  return range
 }
 
 export const MARKETING_REPORT_TABS: MarketingReportTab[] = [
@@ -88,7 +148,11 @@ export function withReportsRangeQuery(
   path: string,
   query: LocationQuery | LocationQueryRaw,
 ): { path: string, query: LocationQueryRaw } {
-  const range = parseMarketingReportRange(queryString(query, 'range'))
+  const tab = resolveMarketingReportTab(path)
+  const range = clampMarketingReportRangeForTab(
+    tab.id,
+    parseMarketingReportRange(queryString(query, 'range')),
+  )
   const next: LocationQueryRaw = { range }
 
   if (range === 'custom') {

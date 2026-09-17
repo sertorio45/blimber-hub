@@ -8,6 +8,7 @@ import {
   buildGoogleAdsSeriesMaps,
   parseGoogleAdsConversionActionId,
 } from '~/lib/marketing/google-ads-report-scope'
+import { MARKETING_REPORT_ALL_TIME_SINCE, metaAdsAllTimeSince } from '~/lib/marketing/reports-hub'
 import {
   // Alias avoids Nitro dual auto-import of the same symbol from google-ads + this file.
   extractGoogleAdsErrorMessage,
@@ -33,7 +34,12 @@ export function utcYmd(d: Date) {
   return d.toISOString().slice(0, 10)
 }
 
-export function buildGoogleDateWhere(datePreset: string, dateStart: string, dateEnd: string) {
+export function buildGoogleDateWhere(
+  datePreset: string,
+  dateStart: string,
+  dateEnd: string,
+  options?: { selectDateSegment?: boolean },
+) {
   if (datePreset === 'custom' && dateStart && dateEnd)
     return `segments.date BETWEEN '${dateStart}' AND '${dateEnd}'`
   if (datePreset === 'today')
@@ -42,6 +48,16 @@ export function buildGoogleDateWhere(datePreset: string, dateStart: string, date
     const d = new Date()
     d.setUTCDate(d.getUTCDate() - 1)
     return `segments.date = '${utcYmd(d)}'`
+  }
+  if (datePreset === 'all') {
+    // GAQL: ALL_TIME is valid only when segments.date is NOT in SELECT.
+    // Daily series selects segments.date → must use a finite BETWEEN window.
+    if (options?.selectDateSegment) {
+      const today = utcYmd(new Date())
+      const since = metaAdsAllTimeSince(today)
+      return `segments.date BETWEEN '${since}' AND '${today}'`
+    }
+    return 'segments.date DURING ALL_TIME'
   }
   const map: Record<string, string> = {
     last_7d: 'LAST_7_DAYS',
@@ -60,6 +76,8 @@ export function buildGa4DateRange(datePreset: string, dateStart: string, dateEnd
     return { startDate: 'today', endDate: 'today' }
   if (datePreset === 'yesterday')
     return { startDate: 'yesterday', endDate: 'yesterday' }
+  if (datePreset === 'all')
+    return { startDate: MARKETING_REPORT_ALL_TIME_SINCE, endDate: 'today' }
   const map: Record<string, { startDate: string, endDate: string }> = {
     last_7d: { startDate: '7daysAgo', endDate: 'today' },
     last_14d: { startDate: '14daysAgo', endDate: 'today' },
@@ -116,6 +134,8 @@ export function previousAbsoluteDateRange(start: string, end: string): { start: 
 }
 
 export function buildGooglePreviousDateWhere(datePreset: string, dateStart: string, dateEnd: string) {
+  if (datePreset === 'all')
+    return null
   const abs = resolveAbsoluteDateRange(datePreset, dateStart, dateEnd)
   const prev = previousAbsoluteDateRange(abs.start, abs.end)
   return `segments.date BETWEEN '${prev.start}' AND '${prev.end}'`
@@ -423,11 +443,18 @@ export async function fetchGoogleAdsReportData(
   // Direct access only — no login-customer-id / platform MCC header.
   const headers = googleAdsSearchHeaders(accessToken, developerToken)
   const dateWhere = buildGoogleDateWhere(dateOpts.datePreset, dateOpts.dateStart, dateOpts.dateEnd)
+  const seriesDateWhere = buildGoogleDateWhere(
+    dateOpts.datePreset,
+    dateOpts.dateStart,
+    dateOpts.dateEnd,
+    { selectDateSegment: true },
+  )
   const previousDateWhere = buildGooglePreviousDateWhere(
     dateOpts.datePreset,
     dateOpts.dateStart,
     dateOpts.dateEnd,
   )
+  const skipPreviousPeriod = previousDateWhere == null
 
   const campaignSelect = `
       campaign.id,
@@ -451,13 +478,15 @@ export async function fetchGoogleAdsReportData(
       AND campaign.status != 'REMOVED'
   `
 
-  const previousCampaignQuery = `
+  const previousCampaignQuery = previousDateWhere
+    ? `
     SELECT
       ${campaignSelect}
     FROM campaign
     WHERE ${previousDateWhere}
       AND campaign.status != 'REMOVED'
   `
+    : null
 
   // Campaign-level daily series so the board can filter by selected campaign
   // without mixing account totals into campaign KPIs.
@@ -471,7 +500,7 @@ export async function fetchGoogleAdsReportData(
       metrics.conversions,
       metrics.conversions_value
     FROM campaign
-    WHERE ${dateWhere}
+    WHERE ${seriesDateWhere}
       AND campaign.status != 'REMOVED'
   `
 
@@ -502,7 +531,9 @@ export async function fetchGoogleAdsReportData(
     = await Promise.all([
       runGoogleAdsSearch(customerId, headers, campaignQuery),
       runGoogleAdsSearch(customerId, headers, dailyQuery),
-      runGoogleAdsSearch(customerId, headers, previousCampaignQuery),
+      previousCampaignQuery
+        ? runGoogleAdsSearch(customerId, headers, previousCampaignQuery)
+        : Promise.resolve({ results: [] as any[], error: null as string | null }),
       runGoogleAdsSearch(customerId, headers, conversionActionQuery),
       runGoogleAdsSearch(customerId, headers, configuredActionsQuery),
     ])
@@ -527,7 +558,7 @@ export async function fetchGoogleAdsReportData(
       message: dailyResult.error,
     })
   }
-  if (previousResult.error) {
+  if (!skipPreviousPeriod && previousResult.error) {
     console.warn('[marketing-reports] google_ads previous period skipped', {
       customerId,
       message: previousResult.error,
@@ -551,13 +582,16 @@ export async function fetchGoogleAdsReportData(
   const metrics = aggregateGoogleCampaigns(campaigns)
   const allowedCampaignIds = campaigns.map(c => c.id).filter(Boolean)
 
-  const previousCampaigns = filterGoogleByTemplate(
-    previousResult.results.map(mapGoogleCampaignRow),
-    templateId,
-  )
-  const previous_metrics = previousResult.error && !previousResult.results.length
+  const previous_metrics = skipPreviousPeriod
     ? null
-    : aggregateGoogleCampaigns(previousCampaigns)
+    : (previousResult.error && !previousResult.results.length
+        ? null
+        : aggregateGoogleCampaigns(
+            filterGoogleByTemplate(
+              previousResult.results.map(mapGoogleCampaignRow),
+              templateId,
+            ),
+          ))
 
   const deltas = previous_metrics
     ? buildMetricDeltas(
@@ -922,9 +956,14 @@ export async function fetchAnalyticsReportData(
   }
 
   const dateRange = buildGa4DateRange(dateOpts.datePreset, dateOpts.dateStart, dateOpts.dateEnd)
-  const absolute = resolveAbsoluteDateRange(dateOpts.datePreset, dateOpts.dateStart, dateOpts.dateEnd)
-  const previousAbs = previousAbsoluteDateRange(absolute.start, absolute.end)
-  const previousRange = { startDate: previousAbs.start, endDate: previousAbs.end }
+  const skipPreviousPeriod = dateOpts.datePreset === 'all'
+  const previousRange = skipPreviousPeriod
+    ? null
+    : (() => {
+        const absolute = resolveAbsoluteDateRange(dateOpts.datePreset, dateOpts.dateStart, dateOpts.dateEnd)
+        const previousAbs = previousAbsoluteDateRange(absolute.start, absolute.end)
+        return { startDate: previousAbs.start, endDate: previousAbs.end }
+      })()
   const templateMetricNames = (template.analytics?.metricNames || []).map(toGa4ApiMetricName)
 
   // Universal metrics only (≤10). Ecommerce goes in a separate request.
@@ -1016,12 +1055,14 @@ export async function fetchAnalyticsReportData(
           metricAggregations: ['TOTAL'],
         }, 'ecommerce')
       : Promise.resolve({ data: null, error: null as string | null }),
-    runGa4Report(`${baseUrl}:runReport`, accessToken, {
-      dateRanges: [previousRange],
-      metrics: coreMetrics.map(name => ({ name })),
-      metricAggregations: ['TOTAL'],
-    }, 'totals-previous'),
-    ecommerceMetrics.length
+    previousRange
+      ? runGa4Report(`${baseUrl}:runReport`, accessToken, {
+          dateRanges: [previousRange],
+          metrics: coreMetrics.map(name => ({ name })),
+          metricAggregations: ['TOTAL'],
+        }, 'totals-previous')
+      : Promise.resolve({ data: null, error: null as string | null }),
+    previousRange && ecommerceMetrics.length
       ? runGa4Report(`${baseUrl}:runReport`, accessToken, {
           dateRanges: [previousRange],
           metrics: ecommerceMetrics.map(name => ({ name })),

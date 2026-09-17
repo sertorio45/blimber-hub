@@ -21,6 +21,15 @@ describe('meta-organic-insights', () => {
     expect(window.metaPeriod).toBe('day')
   })
 
+  it('resolveOrganicDateWindow remaps all to last_90d (IG/Page Insights limit)', () => {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const window = resolveOrganicDateWindow('all', '', '', 'day')
+    const expected = resolveOrganicDateWindow('last_90d', '', '', 'day')
+    expect(window).toEqual(expected)
+    expect(window.preset).toBe('last_90d')
+  })
+
   it('previousOrganicWindow shifts back by equal span', () => {
     const current = resolveOrganicDateWindow('last_7d', '', '', 'day')
     const prev = previousOrganicWindow(current)

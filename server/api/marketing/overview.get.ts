@@ -433,6 +433,7 @@ function parseDatePresetQuery(query: Record<string, unknown>) {
       'last_14d',
       'last_30d',
       'last_90d',
+      'all',
       'custom',
       'today',
       'yesterday',

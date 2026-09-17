@@ -25,6 +25,7 @@ export type MarketingDatePreset =
   | 'last_14d'
   | 'last_30d'
   | 'last_90d'
+  | 'all'
   | 'custom'
 
 export interface MarketingOverviewQuery {

@@ -69,6 +69,12 @@ function tabLocation(path: string) {
             <SelectItem value="last_90d">
               Últimos 90 dias
             </SelectItem>
+            <SelectItem
+              v-if="activeTab.id !== 'social'"
+              value="all"
+            >
+              Todo período
+            </SelectItem>
             <SelectItem value="custom">
               Período personalizado
             </SelectItem>

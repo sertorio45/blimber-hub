@@ -70,6 +70,9 @@ export function resolveOrganicDateWindow(
     }
   }
 
+  // Page/IG Insights: no lifetime window (≈90 days/request). Remap "all" → last_90d.
+  const effectivePreset = preset === 'all' ? 'last_90d' : preset
+
   const normalized = [
     'today',
     'yesterday',
@@ -77,8 +80,8 @@ export function resolveOrganicDateWindow(
     'last_14d',
     'last_30d',
     'last_90d',
-  ].includes(preset)
-    ? preset
+  ].includes(effectivePreset)
+    ? effectivePreset
     : 'last_7d'
 
   if (normalized === 'today') {
@@ -310,18 +313,23 @@ export async function fetchMetaOrganicReport(
     ctx.period.date_end || '',
     ctx.period.meta_period,
   )
-  const previousWindow = previousOrganicWindow(window)
+  const skipPreviousPeriod = window.preset === 'all'
+  const previousWindow = skipPreviousPeriod ? null : previousOrganicWindow(window)
   const metricKeys = organicMetricApiNames(ctx.platform)
 
   try {
     const [currentRows, previousRows] = await Promise.all([
       fetchGraphInsights(ctx, window),
-      fetchGraphInsights(ctx, previousWindow).catch(() => []),
+      previousWindow
+        ? fetchGraphInsights(ctx, previousWindow).catch(() => [])
+        : Promise.resolve([]),
     ])
 
     const series = mapGraphInsightsToSeries(currentRows, metricKeys, window.until)
     const metrics = aggregateOrganicMetrics(series, ctx.platform)
-    const previousSeries = mapGraphInsightsToSeries(previousRows, metricKeys, previousWindow.until)
+    const previousSeries = previousWindow
+      ? mapGraphInsightsToSeries(previousRows, metricKeys, previousWindow.until)
+      : []
     const previous_metrics = previousSeries.length
       ? aggregateOrganicMetrics(previousSeries, ctx.platform)
       : null
@@ -385,7 +393,8 @@ export function parseOrganicReportsQuery(query: Record<string, unknown>): {
     'last_90d',
     'custom',
   ].includes(preset)) {
-    preset = 'last_7d'
+    // Remap unsupported all-time (and unknown presets) to last_90d for organic.
+    preset = preset === 'all' ? 'last_90d' : 'last_7d'
   }
 
   return {

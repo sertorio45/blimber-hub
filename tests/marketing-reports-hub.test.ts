@@ -12,12 +12,18 @@ describe('marketing reports hub', () => {
     expect(parseMarketingReportRange(undefined)).toBe('last_7d')
     expect(parseMarketingReportRange('nope')).toBe('last_7d')
     expect(parseMarketingReportRange('last_30d')).toBe('last_30d')
+    expect(parseMarketingReportRange('all')).toBe('all')
   })
 
   it('keeps range when switching tabs', () => {
     const next = withReportsRangeQuery(MARKETING_REPORTS_ADS_PATH, { range: 'last_30d', foo: '1' })
     expect(next.path).toBe('/marketing/reports/ads')
     expect(next.query).toEqual({ range: 'last_30d' })
+  })
+
+  it('preserves all-time range across tabs', () => {
+    const next = withReportsRangeQuery(MARKETING_REPORTS_ADS_PATH, { range: 'all' })
+    expect(next.query).toEqual({ range: 'all' })
   })
 
   it('resolves tabs and falls back to ads on the hub index', () => {
