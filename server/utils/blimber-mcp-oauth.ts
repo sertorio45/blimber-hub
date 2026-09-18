@@ -10,7 +10,12 @@ export const BLIMBER_MCP_OAUTH_SCOPES = [BLIMBER_MCP_OAUTH_SCOPE] as const
 
 const AUTH_CODE_TTL_SECONDS = 300
 const ACCESS_TOKEN_TTL_SECONDS = 3600
+/** ChatGPT MCP can silently renew access without full OAuth reconnect. */
+const REFRESH_TOKEN_TTL_SECONDS = 90 * 24 * 60 * 60
 const CIMD_FETCH_TIMEOUT_MS = 8000
+
+export const MCP_OAUTH_ACCESS_TOKEN_TTL_SECONDS = ACCESS_TOKEN_TTL_SECONDS
+export const MCP_OAUTH_REFRESH_TOKEN_TTL_SECONDS = REFRESH_TOKEN_TTL_SECONDS
 
 type JwtPayload = Record<string, unknown>
 
@@ -97,7 +102,7 @@ export function buildAuthorizationServerMetadata(baseUrl: string) {
     token_endpoint: `${issuer}/token`,
     registration_endpoint: `${issuer}/register`,
     response_types_supported: ['code'],
-    grant_types_supported: ['authorization_code'],
+    grant_types_supported: ['authorization_code', 'refresh_token'],
     code_challenge_methods_supported: ['S256'],
     token_endpoint_auth_methods_supported: ['none'],
     client_id_metadata_document_supported: true,
@@ -291,22 +296,81 @@ export function exchangeAuthorizationCode(input: {
 
   const scope = String(payload.scope || BLIMBER_MCP_OAUTH_SCOPE)
   const baseUrl = String(payload.iss || '').replace(/\/api\/mcp\/oauth$/, '')
-  const resource = resolveMcpResourceUrl(baseUrl || resolveMcpPublicBaseUrl())
+  const resolvedBase = baseUrl || resolveMcpPublicBaseUrl()
+  const resource = resolveMcpResourceUrl(resolvedBase)
 
+  return issueMcpOAuthTokenPair({
+    baseUrl: resolvedBase,
+    clientId: input.clientId,
+    scope,
+    resource,
+  })
+}
+
+export function issueMcpOAuthTokenPair(input: {
+  baseUrl: string
+  clientId: string
+  scope: string
+  resource: string
+}) {
+  const issuer = resolveMcpOAuthIssuer(input.baseUrl)
   const accessToken = signMcpOAuthJwt({
     typ: 'access',
-    iss: resolveMcpOAuthIssuer(baseUrl || resolveMcpPublicBaseUrl()),
-    aud: resource,
+    iss: issuer,
+    aud: input.resource,
     sub: input.clientId,
-    scope,
+    scope: input.scope,
+    jti: base64UrlEncode(randomBytes(12)),
   }, ACCESS_TOKEN_TTL_SECONDS)
+
+  const refreshToken = signMcpOAuthJwt({
+    typ: 'refresh',
+    iss: issuer,
+    aud: input.resource,
+    sub: input.clientId,
+    scope: input.scope,
+    jti: base64UrlEncode(randomBytes(12)),
+  }, REFRESH_TOKEN_TTL_SECONDS)
 
   return {
     access_token: accessToken,
-    token_type: 'Bearer',
+    refresh_token: refreshToken,
+    token_type: 'Bearer' as const,
     expires_in: ACCESS_TOKEN_TTL_SECONDS,
-    scope,
+    scope: input.scope,
   }
+}
+
+/**
+ * Exchange a refresh JWT for a new access + refresh pair (90-day refresh TTL).
+ */
+export function exchangeRefreshToken(input: {
+  refreshToken: string
+  clientId: string
+  resource: string
+}) {
+  const payload = verifyMcpOAuthJwt(input.refreshToken)
+  if (!payload || payload.typ !== 'refresh')
+    throw createError({ statusCode: 400, statusMessage: 'refresh_token inválido ou expirado' })
+
+  if (payload.sub !== input.clientId)
+    throw createError({ statusCode: 400, statusMessage: 'client_id não corresponde ao refresh_token' })
+
+  const audience = payload.aud
+  const audiences = Array.isArray(audience) ? audience : [audience]
+  if (!audiences.map(String).includes(input.resource))
+    throw createError({ statusCode: 400, statusMessage: 'resource não corresponde ao refresh_token' })
+
+  const scope = String(payload.scope || BLIMBER_MCP_OAUTH_SCOPE)
+  const baseUrl = String(payload.iss || '').replace(/\/api\/mcp\/oauth$/, '')
+  const resolvedBase = baseUrl || resolveMcpPublicBaseUrl()
+
+  return issueMcpOAuthTokenPair({
+    baseUrl: resolvedBase,
+    clientId: input.clientId,
+    scope,
+    resource: input.resource,
+  })
 }
 
 export function verifyMcpAccessToken(token: string, resourceUrl: string) {
@@ -417,7 +481,7 @@ export function registerDynamicOAuthClient(redirectUris: string[]) {
     client_id: clientId,
     client_id_issued_at: issuedAt,
     token_endpoint_auth_method: 'none',
-    grant_types: ['authorization_code'],
+    grant_types: ['authorization_code', 'refresh_token'],
     response_types: ['code'],
     redirect_uris: valid,
   }

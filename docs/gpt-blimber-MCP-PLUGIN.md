@@ -34,7 +34,7 @@ O ChatGPT descobre automaticamente:
 2. Ao usar uma tool pela primeira vez, o ChatGPT abre o fluxo OAuth 2.1 (authorization code + PKCE).
 3. Você verá a página **“Conectar Blimber Hub MCP”** no navegador.
 4. Cole a **`BLIMBER_MCP_API_KEY`** (a mesma das GPT Actions) e confirme.
-5. O servidor emite um **access token OAuth** de curta duração (~1 h) para o ChatGPT usar em `Authorization: Bearer …` nas chamadas MCP.
+5. O servidor emite um **access token** (~1 h) e um **refresh token** (**90 dias**) para o ChatGPT renovar a sessão sem novo consentimento.
 
 > **GPT Actions (OpenAPI)** continuam com **API Key Bearer** — rotas `/api/gpt/*` **não mudaram**.
 
@@ -122,8 +122,8 @@ Backend compartilhado — escolha um ou use os dois no mesmo ecossistema.
 ## Limitações
 
 1. **Vercel serverless:** endpoint em modo **stateless** + respostas JSON (`enableJsonResponse: true`) — **um transport+server MCP novo por request** (exigência do SDK; singleton quebra `tools/list` no ChatGPT).
-2. **OAuth pragmático:** não é login Supabase/Google — você valida `BLIMBER_MCP_API_KEY` uma vez na tela de consentimento; tokens OAuth são JWT HS256 de curta duração.
-3. **Sem refresh token:** ao expirar (~1 h), reconecte pelo fluxo OAuth no ChatGPT.
+2. **OAuth pragmático:** não é login Supabase/Google — você valida `BLIMBER_MCP_API_KEY` uma vez na tela de consentimento; access JWT ~1 h + refresh JWT **90 dias**.
+3. **Refresh token:** o ChatGPT pode renovar o access automaticamente até o refresh expirar (~90 dias); depois disso, reconecte o OAuth no plugin.
 4. **Upload:** `createPost.sourceUrls`/`sourceBase64` no mesmo call, ou `marketing_upload_asset` / `uploadMediaAsset` (HTTPS ou base64 pequeno); sem multipart no MCP.
 5. **Google Ads:** apenas stub `ads_google_status`.
 6. **CRM:** não exposto (planned no registry).

@@ -7,7 +7,9 @@ import {
   buildProtectedResourceMetadata,
   createAuthorizationCode,
   exchangeAuthorizationCode,
+  exchangeRefreshToken,
   isChatGptRedirectUri,
+  MCP_OAUTH_REFRESH_TOKEN_TTL_SECONDS,
   protectedResourceMetadataPath,
   authorizationServerMetadataPath,
   registerDynamicOAuthClient,
@@ -62,6 +64,7 @@ describe('blimber MCP OAuth', () => {
     expect(metadata.registration_endpoint).toBe(`${BASE_URL}/api/mcp/oauth/register`)
     expect(metadata.code_challenge_methods_supported).toEqual(['S256'])
     expect(metadata.client_id_metadata_document_supported).toBe(true)
+    expect(metadata.grant_types_supported).toEqual(['authorization_code', 'refresh_token'])
     expect(metadata.token_endpoint_auth_methods_supported).toEqual(['none'])
     expect(authorizationServerMetadataPath()).toBe('/.well-known/oauth-authorization-server/api/mcp/oauth')
   })
@@ -98,7 +101,7 @@ describe('blimber MCP OAuth', () => {
     expect(verifyPkce('wrong-verifier', challenge)).toBe(false)
   })
 
-  it('exchanges authorization code for access token with PKCE', () => {
+  it('exchanges authorization code for access + refresh tokens with PKCE', () => {
     const redirectUri = 'https://chatgpt.com/connector/oauth/test-callback'
     const verifier = 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk'
     const challenge = 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM'
@@ -122,7 +125,79 @@ describe('blimber MCP OAuth', () => {
 
     expect(tokenResponse.token_type).toBe('Bearer')
     expect(tokenResponse.access_token.split('.')).toHaveLength(3)
+    expect(tokenResponse.refresh_token.split('.')).toHaveLength(3)
+    expect(tokenResponse.expires_in).toBe(3600)
     expect(verifyMcpAccessToken(tokenResponse.access_token, RESOURCE)?.clientId).toBe(clientId)
+
+    const refreshPayload = verifyMcpOAuthJwt(tokenResponse.refresh_token)
+    expect(refreshPayload?.typ).toBe('refresh')
+    expect(refreshPayload?.sub).toBe(clientId)
+    expect(refreshPayload?.aud).toBe(RESOURCE)
+    expect(MCP_OAUTH_REFRESH_TOKEN_TTL_SECONDS).toBe(90 * 24 * 60 * 60)
+  })
+
+  it('exchanges refresh_token for a new access + refresh pair', () => {
+    const redirectUri = 'https://chatgpt.com/connector/oauth/test-callback'
+    const verifier = 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk'
+    const challenge = 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM'
+    const clientId = 'test-client-id'
+
+    const code = createAuthorizationCode({
+      baseUrl: BASE_URL,
+      clientId,
+      redirectUri,
+      codeChallenge: challenge,
+      resource: RESOURCE,
+    })
+
+    const initial = exchangeAuthorizationCode({
+      code,
+      clientId,
+      redirectUri,
+      codeVerifier: verifier,
+      resource: RESOURCE,
+    })
+
+    const renewed = exchangeRefreshToken({
+      refreshToken: initial.refresh_token,
+      clientId,
+      resource: RESOURCE,
+    })
+
+    expect(renewed.access_token).toBeTruthy()
+    expect(renewed.refresh_token).toBeTruthy()
+    expect(renewed.access_token).not.toBe(initial.access_token)
+    expect(verifyMcpAccessToken(renewed.access_token, RESOURCE)?.clientId).toBe(clientId)
+    expect(verifyMcpOAuthJwt(renewed.refresh_token)?.typ).toBe('refresh')
+  })
+
+  it('rejects refresh_token with mismatched client_id', () => {
+    const redirectUri = 'https://chatgpt.com/connector/oauth/test-callback'
+    const verifier = 'dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk'
+    const challenge = 'E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM'
+    const clientId = 'test-client-id'
+
+    const code = createAuthorizationCode({
+      baseUrl: BASE_URL,
+      clientId,
+      redirectUri,
+      codeChallenge: challenge,
+      resource: RESOURCE,
+    })
+
+    const initial = exchangeAuthorizationCode({
+      code,
+      clientId,
+      redirectUri,
+      codeVerifier: verifier,
+      resource: RESOURCE,
+    })
+
+    expect(() => exchangeRefreshToken({
+      refreshToken: initial.refresh_token,
+      clientId: 'other-client',
+      resource: RESOURCE,
+    })).toThrow()
   })
 
   it('accepts ChatGPT redirect URIs for DCR and rejects arbitrary hosts', () => {
@@ -136,6 +211,7 @@ describe('blimber MCP OAuth', () => {
 
     expect(registration.client_id).toBeTruthy()
     expect(registration.token_endpoint_auth_method).toBe('none')
+    expect(registration.grant_types).toContain('refresh_token')
   })
 
   it('builds WWW-Authenticate challenge with resource metadata URL', () => {
