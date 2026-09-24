@@ -2103,6 +2103,104 @@ describe('meta-ads MCP tools', () => {
     )).rejects.toBeInstanceOf(Error)
   })
 
+  it('create adset INSTAGRAM_PROFILE dryRun uses profile identity and PROFILE_VISIT', async () => {
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret('tok'),
+      ad_account_id: '555',
+      instagram_business_account_id: 'ig_123',
+      instagram_username: 'blimber.test',
+    })
+    const graphFetch = vi.fn()
+
+    const result = await metaCreateAdset(
+      { client, graphFetch },
+      {
+        tenantId: 'tenant-1',
+        campaignId: 'cmp_traffic',
+        name: 'Visitas ao perfil',
+        targetingTemplate: 'BR_18_65',
+        billingEvent: 'IMPRESSIONS',
+        optimizationGoal: 'PROFILE_VISIT',
+        destinationType: 'INSTAGRAM_PROFILE',
+        campaignObjective: 'OUTCOME_TRAFFIC',
+        dailyBudget: 2000,
+        confirmTenantId: 'tenant-1',
+        confirm: true,
+      },
+    )
+
+    expect(result.success).toBe(true)
+    expect((result as any).preview?.body).toMatchObject({
+      destination_type: 'INSTAGRAM_PROFILE',
+      optimization_goal: 'PROFILE_VISIT',
+      promoted_object: { instagram_user_id: 'ig_123' },
+    })
+    expect(graphFetch).not.toHaveBeenCalled()
+  })
+
+  it('rejects incompatible Instagram profile objective/optimization pair', async () => {
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret('tok'),
+      ad_account_id: '555',
+      instagram_business_account_id: 'ig_123',
+    })
+
+    await expect(metaCreateAdset(
+      { client, graphFetch: vi.fn() },
+      {
+        tenantId: 'tenant-1',
+        campaignId: 'cmp_sales',
+        name: 'Perfil inválido',
+        targetingTemplate: 'BR_18_65',
+        billingEvent: 'IMPRESSIONS',
+        optimizationGoal: 'PROFILE_VISIT',
+        destinationType: 'INSTAGRAM_PROFILE',
+        campaignObjective: 'OUTCOME_SALES',
+        dailyBudget: 2000,
+        confirmTenantId: 'tenant-1',
+        confirm: true,
+      },
+    )).rejects.toBeInstanceOf(Error)
+  })
+
+  it('create ad INSTAGRAM_PROFILE dryRun resolves connected profile URL and identity', async () => {
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret('tok'),
+      page_access_token_enc: encryptSecret('page-tok'),
+      ad_account_id: '555',
+      page_id: 'page_1',
+      instagram_business_account_id: 'ig_123',
+      instagram_username: 'blimber.test',
+    })
+    const graphFetch = vi.fn()
+
+    const result = await metaCreateAd(
+      { client, graphFetch },
+      {
+        tenantId: 'tenant-1',
+        adsetId: 'adset_profile',
+        name: 'Criativo perfil',
+        destinationType: 'INSTAGRAM_PROFILE',
+        creativeType: 'IMAGE',
+        message: 'Conheça nosso perfil',
+        imageHash: 'hash_1',
+        confirmTenantId: 'tenant-1',
+        confirm: true,
+        dryRun: true,
+      },
+    )
+
+    expect((result as any).preview?.body?.creative?.object_story_spec).toMatchObject({
+      page_id: 'page_1',
+      instagram_user_id: 'ig_123',
+      link_data: {
+        link: 'https://www.instagram.com/blimber.test/',
+        image_hash: 'hash_1',
+      },
+    })
+    expect(graphFetch).not.toHaveBeenCalled()
+  })
+
   it('create adset WHATSAPP rejects LINK_CLICKS billingEvent', async () => {
     const client = createIntegrationClient({
       access_token_enc: encryptSecret('tok'),

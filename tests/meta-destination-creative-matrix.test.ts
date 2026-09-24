@@ -10,22 +10,22 @@ import {
 } from '~/lib/meta-ads'
 
 const ALLOWED: Record<string, readonly string[]> = {
-  IMAGE: ['WEBSITE', 'WHATSAPP', 'MESSENGER', 'INSTAGRAM_DIRECT'],
-  VIDEO: ['WEBSITE', 'WHATSAPP', 'MESSENGER', 'INSTAGRAM_DIRECT'],
-  CAROUSEL: ['WEBSITE', 'WHATSAPP', 'MESSENGER', 'INSTAGRAM_DIRECT'],
+  IMAGE: ['WEBSITE', 'WHATSAPP', 'MESSENGER', 'INSTAGRAM_DIRECT', 'INSTAGRAM_PROFILE'],
+  VIDEO: ['WEBSITE', 'WHATSAPP', 'MESSENGER', 'INSTAGRAM_DIRECT', 'INSTAGRAM_PROFILE'],
+  CAROUSEL: ['WEBSITE', 'WHATSAPP', 'MESSENGER', 'INSTAGRAM_DIRECT', 'INSTAGRAM_PROFILE'],
   DYNAMIC_CREATIVE_LEGACY: ['WEBSITE'],
   CATALOG: ['WEBSITE'],
 }
 
 function sampleBody(creativeType: string, destinationType: string) {
-  const messaging = destinationType !== 'WEBSITE'
+  const messaging = ['WHATSAPP', 'MESSENGER', 'INSTAGRAM_DIRECT'].includes(destinationType)
   return buildMetaCreateAdCreativeBodyByType({
     creativeName: 'T',
     pageId: 'page_1',
     creativeType: creativeType as any,
     destinationType: destinationType as any,
-    instagramUserId: destinationType === 'INSTAGRAM_DIRECT' ? 'ig_1' : undefined,
-    website: destinationType === 'WEBSITE'
+    instagramUserId: destinationType === 'INSTAGRAM_DIRECT' || destinationType === 'INSTAGRAM_PROFILE' ? 'ig_1' : undefined,
+    website: destinationType === 'WEBSITE' || destinationType === 'INSTAGRAM_PROFILE'
       ? {
           message: 'Hi',
           linkUrl: 'https://example.com',
@@ -36,8 +36,8 @@ function sampleBody(creativeType: string, destinationType: string) {
     videoId: creativeType === 'VIDEO' ? 'vid_1' : undefined,
     childAttachments: creativeType === 'CAROUSEL'
       ? [
-          { name: 'A', imageHash: 'h1', ...(destinationType === 'WEBSITE' ? { link: 'https://example.com/a' } : {}) },
-          { name: 'B', imageHash: 'h2', ...(destinationType === 'WEBSITE' ? { link: 'https://example.com/b' } : {}) },
+          { name: 'A', imageHash: 'h1', ...(!messaging ? { link: 'https://example.com/a' } : {}) },
+          { name: 'B', imageHash: 'h2', ...(!messaging ? { link: 'https://example.com/b' } : {}) },
         ]
       : undefined,
     assetFeed: creativeType === 'DYNAMIC_CREATIVE_LEGACY'
@@ -102,11 +102,30 @@ describe('creativeType × destination matrix', () => {
     expect(ig.destination_type).toBe('INSTAGRAM_DIRECT')
   })
 
+  it('uses the connected Instagram identity for INSTAGRAM_PROFILE adsets', () => {
+    const profile = buildMetaCreateAdsetGraphBody({
+      name: 'Visitas ao perfil',
+      campaignId: 'c1',
+      billingEvent: 'IMPRESSIONS',
+      optimizationGoal: 'PROFILE_VISIT',
+      status: 'PAUSED',
+      targeting: { geo_locations: { countries: ['BR'] } },
+      destinationType: 'INSTAGRAM_PROFILE',
+      instagramUserId: 'ig_1',
+      dailyBudget: 1000,
+    })
+    expect(profile).toMatchObject({
+      destination_type: 'INSTAGRAM_PROFILE',
+      promoted_object: { instagram_user_id: 'ig_1' },
+    })
+  })
+
   it('capabilities report messaging destinations and carousel beyond WEBSITE', () => {
     const caps = getMetaCapabilities('v25.0')
     expect(caps.destinations.WHATSAPP_CTWA.supported).toBe(true)
     expect(caps.destinations.MESSENGER.supported).toBe(true)
     expect(caps.destinations.INSTAGRAM_DIRECT.supported).toBe(true)
+    expect(caps.destinations.INSTAGRAM_PROFILE.supported).toBe(true)
     expect(caps.creativeTypes.CAROUSEL.notes).toMatch(/WHATSAPP/)
   })
 })

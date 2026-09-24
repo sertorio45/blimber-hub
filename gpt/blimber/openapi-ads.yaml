@@ -1500,12 +1500,16 @@ components:
             - CONVERSATIONS
             - THRUPLAY
             - POST_ENGAGEMENT
-          description: Otimização. CTWA tipicamente CONVERSATIONS.
+            - PROFILE_VISIT
+            - PROFILE_AND_PAGE_ENGAGEMENT
+          description: >
+            Otimização. CTWA tipicamente CONVERSATIONS. Perfil do Instagram:
+            PROFILE_VISIT com OUTCOME_TRAFFIC ou PROFILE_AND_PAGE_ENGAGEMENT com OUTCOME_ENGAGEMENT.
         destinationType:
           type: string
-          enum: [WEBSITE, WHATSAPP, MESSENGER, INSTAGRAM_DIRECT]
+          enum: [WEBSITE, WHATSAPP, MESSENGER, INSTAGRAM_DIRECT, INSTAGRAM_PROFILE]
           default: WEBSITE
-          description: Destino do adset. Destinos de mensagem ≠ objective de campanha.
+          description: Destino do adset. INSTAGRAM_PROFILE usa o Instagram profissional conectado.
         isDynamicCreative:
           type: boolean
           description: >
@@ -1520,7 +1524,7 @@ components:
             - OUTCOME_SALES
             - OUTCOME_TRAFFIC
             - OUTCOME_APP_PROMOTION
-          description: Objective da campanha p/ validar CTWA no dry-run.
+          description: Objective da campanha p/ validar destino/otimização no dry-run.
         whatsappPhoneNumber:
           type: string
           description: Opcional. Telefone E.164 no promoted_object CTWA.
@@ -1644,9 +1648,11 @@ components:
             Flexible Ad Format (creative_asset_groups_spec) não suportado — capability=false.
         destinationType:
           type: string
-          enum: [WEBSITE, WHATSAPP, MESSENGER, INSTAGRAM_DIRECT]
+          enum: [WEBSITE, WHATSAPP, MESSENGER, INSTAGRAM_DIRECT, INSTAGRAM_PROFILE]
           default: WEBSITE
-          description: WEBSITE exige linkUrl; WHATSAPP|MESSENGER|INSTAGRAM_DIRECT = Click-to-Message (IMAGE|VIDEO|CAROUSEL).
+          description: >
+            WEBSITE exige linkUrl; WHATSAPP|MESSENGER|INSTAGRAM_DIRECT = Click-to-Message;
+            INSTAGRAM_PROFILE resolve identidade e URL pelo Instagram profissional conectado.
         linkUrl:
           type: string
           format: uri

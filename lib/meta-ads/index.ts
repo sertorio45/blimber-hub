@@ -103,6 +103,7 @@ export {
   META_WHATSAPP_MESSAGING_LINK,
   META_MESSENGER_MESSAGING_LINK,
   assertCreativeDestinationCompatibility,
+  assertInstagramProfileAdsetCompatibility,
   assertMessagingAdsetCompatibility,
   assertWhatsAppAdsetCompatibility,
   buildMetaCreateAdCreativeBody,
@@ -111,6 +112,7 @@ export {
   buildWhatsAppLinkData,
   forcedCallToActionForDestination,
   isMessagingDestination,
+  isInstagramProfileDestination,
   isMetaMessagingProtocolUrl,
   type MetaAdDestinationType,
 } from './ad-destination'

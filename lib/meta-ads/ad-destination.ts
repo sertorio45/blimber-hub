@@ -3,7 +3,7 @@
  * Destination is NOT a campaign objective.
  *
  * Official refs (Graph v25):
- * - destination_type: WEBSITE | WHATSAPP | MESSENGER | INSTAGRAM_DIRECT
+ * - destination_type: WEBSITE | WHATSAPP | MESSENGER | INSTAGRAM_DIRECT | INSTAGRAM_PROFILE
  * - Ads that Click to WhatsApp — IMAGE, VIDEO, CAROUSEL, slideshow
  * - Ads that Click to Messenger / Instagram — IMAGE, VIDEO, CAROUSEL
  */
@@ -15,6 +15,7 @@ export const META_AD_DESTINATION_TYPES = [
   'WHATSAPP',
   'MESSENGER',
   'INSTAGRAM_DIRECT',
+  'INSTAGRAM_PROFILE',
 ] as const
 export type MetaAdDestinationType = (typeof META_AD_DESTINATION_TYPES)[number]
 
@@ -24,6 +25,12 @@ export const META_MESSAGING_DESTINATION_TYPES = [
   'INSTAGRAM_DIRECT',
 ] as const
 export type MetaMessagingDestinationType = (typeof META_MESSAGING_DESTINATION_TYPES)[number]
+
+export function isInstagramProfileDestination(
+  raw: string | null | undefined,
+): raw is 'INSTAGRAM_PROFILE' {
+  return String(raw || '') === 'INSTAGRAM_PROFILE'
+}
 
 /**
  * Meta Marketing API protocol value for CTWA `link_data.link`.
@@ -86,6 +93,12 @@ export const META_INSTAGRAM_DIRECT_CAMPAIGN_OBJECTIVES = [
   'OUTCOME_SALES',
   'OUTCOME_TRAFFIC',
 ] as const
+
+/** Profile visit campaigns currently exposed by Meta's create-ad-set contract. */
+export const META_INSTAGRAM_PROFILE_OPTIMIZATION_BY_OBJECTIVE = {
+  OUTCOME_TRAFFIC: ['PROFILE_VISIT'],
+  OUTCOME_ENGAGEMENT: ['PROFILE_AND_PAGE_ENGAGEMENT'],
+} as const
 
 export type MetaMessagingCtaSpec = {
   type: string
@@ -174,6 +187,18 @@ export function assertCreativeDestinationCompatibility(params: {
   const { creativeType, destinationType } = params
   if (destinationType === 'WEBSITE')
     return
+
+  if (destinationType === 'INSTAGRAM_PROFILE') {
+    if (creativeType === 'DYNAMIC_CREATIVE_LEGACY' || creativeType === 'CATALOG') {
+      throw new MetaAdsToolError(
+        'INSTAGRAM_PROFILE_CREATIVE_UNSUPPORTED',
+        `${creativeType} não combina com destinationType=INSTAGRAM_PROFILE. Use IMAGE, VIDEO ou CAROUSEL.`,
+        400,
+        { creativeType, destinationType },
+      )
+    }
+    return
+  }
 
   if (creativeType === 'DYNAMIC_CREATIVE_LEGACY') {
     throw new MetaAdsToolError(
@@ -265,6 +290,46 @@ export function assertMessagingAdsetCompatibility(params: {
       `Objetivo ${objective} não suporta destinationType=${params.destinationType}. Permitidos: ${allowedObjectives.join(', ')}.`,
       400,
       { campaignObjective: objective, destinationType: params.destinationType, allowedObjectives },
+    )
+  }
+}
+
+export function assertInstagramProfileAdsetCompatibility(params: {
+  destinationType: MetaAdDestinationType
+  optimizationGoal: string
+  billingEvent: string
+  campaignObjective?: string | null
+}): void {
+  if (!isInstagramProfileDestination(params.destinationType))
+    return
+
+  if (params.billingEvent !== 'IMPRESSIONS') {
+    throw new MetaAdsToolError(
+      'INSTAGRAM_PROFILE_BILLING_EVENT_INVALID',
+      'Adsets com destino ao perfil do Instagram exigem billingEvent=IMPRESSIONS.',
+      400,
+      { billingEvent: params.billingEvent },
+    )
+  }
+
+  const objective = String(params.campaignObjective || '').trim()
+  if (!objective)
+    return
+
+  const allowed = META_INSTAGRAM_PROFILE_OPTIMIZATION_BY_OBJECTIVE[
+    objective as keyof typeof META_INSTAGRAM_PROFILE_OPTIMIZATION_BY_OBJECTIVE
+  ]
+  if (!allowed || !(allowed as readonly string[]).includes(params.optimizationGoal)) {
+    throw new MetaAdsToolError(
+      'INSTAGRAM_PROFILE_OBJECTIVE_INCOMPATIBLE',
+      `Combinação inválida para perfil do Instagram: objective=${objective}, optimizationGoal=${params.optimizationGoal}. `
+      + 'Use OUTCOME_TRAFFIC + PROFILE_VISIT ou OUTCOME_ENGAGEMENT + PROFILE_AND_PAGE_ENGAGEMENT.',
+      400,
+      {
+        campaignObjective: objective,
+        optimizationGoal: params.optimizationGoal,
+        allowed: META_INSTAGRAM_PROFILE_OPTIMIZATION_BY_OBJECTIVE,
+      },
     )
   }
 }
@@ -457,6 +522,7 @@ export function buildMetaCreateAdsetGraphBody(input: {
   targeting: Record<string, unknown>
   destinationType?: MetaAdDestinationType
   pageId?: string
+  instagramUserId?: string
   whatsappPhoneNumber?: string
   /** Dynamic Creative (legacy): ads must use asset_feed_spec / DYNAMIC_CREATIVE_LEGACY. */
   isDynamicCreative?: boolean
@@ -489,6 +555,17 @@ export function buildMetaCreateAdsetGraphBody(input: {
     if (destinationType === 'WHATSAPP' && input.whatsappPhoneNumber)
       promotedObject.whatsapp_phone_number = input.whatsappPhoneNumber
     body.promoted_object = promotedObject
+  }
+  else if (isInstagramProfileDestination(destinationType)) {
+    if (!input.instagramUserId) {
+      throw new MetaAdsToolError(
+        'META_INSTAGRAM_ACTOR_REQUIRED',
+        'Adset INSTAGRAM_PROFILE exige instagram_business_account_id na integração Meta.',
+        400,
+      )
+    }
+    body.destination_type = destinationType
+    body.promoted_object = { instagram_user_id: input.instagramUserId }
   }
 
   // Official Marketing API field for Dynamic Creative (Ads Manager legado).

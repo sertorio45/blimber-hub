@@ -469,6 +469,8 @@ export const META_ADSET_OPTIMIZATION_GOALS = [
   'CONVERSATIONS',
   'THRUPLAY',
   'POST_ENGAGEMENT',
+  'PROFILE_VISIT',
+  'PROFILE_AND_PAGE_ENGAGEMENT',
 ] as const
 
 export type MetaAdsetOptimizationGoal = (typeof META_ADSET_OPTIMIZATION_GOALS)[number]

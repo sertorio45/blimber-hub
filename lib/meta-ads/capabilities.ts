@@ -20,6 +20,7 @@ export type MetaCapabilitiesReport = {
     WHATSAPP_CTWA: MetaCapabilityFlag
     MESSENGER: MetaCapabilityFlag
     INSTAGRAM_DIRECT: MetaCapabilityFlag
+    INSTAGRAM_PROFILE: MetaCapabilityFlag
   }
   creativeTypes: {
     IMAGE: MetaCapabilityFlag
@@ -97,12 +98,16 @@ export function getMetaCapabilities(explicitVersion?: string | null): MetaCapabi
         'destination_type=INSTAGRAM_DIRECT + CTA INSTAGRAM_MESSAGE; IMAGE|VIDEO|CAROUSEL. '
         + 'Exige page_id + instagram_business_account_id (instagram_user_id).',
       ),
+      INSTAGRAM_PROFILE: ok(
+        'destination_type=INSTAGRAM_PROFILE. OUTCOME_TRAFFIC + PROFILE_VISIT ou '
+        + 'OUTCOME_ENGAGEMENT + PROFILE_AND_PAGE_ENGAGEMENT. Exige Instagram profissional conectado.',
+      ),
     },
     creativeTypes: {
       IMAGE: ok('object_story_spec.link_data — WEBSITE e destinos de mensagem'),
       VIDEO: ok('object_story_spec.video_data — WEBSITE e destinos de mensagem'),
       CAROUSEL: ok(
-        'link_data.child_attachments mistos image/video; WEBSITE + WHATSAPP + MESSENGER + INSTAGRAM_DIRECT',
+        'link_data.child_attachments mistos image/video; WEBSITE + WHATSAPP + MESSENGER + INSTAGRAM_DIRECT + INSTAGRAM_PROFILE',
       ),
       DYNAMIC_CREATIVE_LEGACY: ok(
         'asset_feed_spec + adset is_dynamic_creative=true; WEBSITE only; legado Ads Manager',

@@ -237,11 +237,14 @@ export function buildCarouselLinkData(input: {
   }
 
   const messaging = isMessagingDestination(input.destinationType)
-  const messagingSpec = messaging
-    ? META_MESSAGING_CTA_BY_DESTINATION[input.destinationType]
+  const messagingDestination = isMessagingDestination(input.destinationType)
+    ? input.destinationType
     : null
-  const messagingCta = messaging
-    ? buildMessagingCallToAction(input.destinationType)
+  const messagingSpec = messagingDestination
+    ? META_MESSAGING_CTA_BY_DESTINATION[messagingDestination]
+    : null
+  const messagingCta = messagingDestination
+    ? buildMessagingCallToAction(messagingDestination)
     : null
 
   const child_attachments = input.childAttachments.map((card, index) => {
@@ -469,7 +472,7 @@ export type BuildCreativeGraphBodyInput = {
   degreesOfFreedom?: DegreesOfFreedomSpecInput
   /** CATALOG only */
   productSetId?: string
-  /** INSTAGRAM_DIRECT — instagram_user_id (Page-connected IG). */
+  /** INSTAGRAM_DIRECT / INSTAGRAM_PROFILE — instagram_user_id (Page-connected IG). */
   instagramUserId?: string
 }
 
@@ -484,11 +487,11 @@ export function buildMetaCreateAdCreativeBodyByType(
   assertCreativeDestinationCompatibility({ creativeType, destinationType })
 
   const objectStoryBase: Record<string, unknown> = { page_id: pageId }
-  if (destinationType === 'INSTAGRAM_DIRECT') {
+  if (destinationType === 'INSTAGRAM_DIRECT' || destinationType === 'INSTAGRAM_PROFILE') {
     if (!params.instagramUserId) {
       throw new MetaAdsToolError(
         'META_INSTAGRAM_ACTOR_REQUIRED',
-        'destinationType=INSTAGRAM_DIRECT exige instagram_business_account_id na integração (instagram_user_id).',
+        `destinationType=${destinationType} exige instagram_business_account_id na integração (instagram_user_id).`,
         400,
       )
     }

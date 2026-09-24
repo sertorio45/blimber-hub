@@ -19,10 +19,12 @@ import {
 import { MetaAdsToolError } from './types'
 import {
   assertCreativeDestinationCompatibility,
+  assertInstagramProfileAdsetCompatibility,
   assertMessagingAdsetCompatibility,
   buildMetaCreateAdsetGraphBody,
   forcedCallToActionForDestination,
   isMessagingDestination,
+  isInstagramProfileDestination,
   isMetaMessagingProtocolUrl,
   META_AD_DESTINATION_TYPES,
   META_MESSAGING_CTA_BY_DESTINATION,
@@ -464,8 +466,8 @@ export const metaCreateCampaignSchema = tenantContextSchema
  * Create adset — dryRun defaults to true.
  * Targeting via BR_* preset XOR custom `targeting` object (validated subset of Graph).
  * Status defaults to PAUSED; ACTIVE requires confirmActive: true.
- * destinationType=WHATSAPP|MESSENGER|INSTAGRAM_DIRECT → Click-to-Message
- * (promoted_object.page_id + destination_type).
+ * destinationType=WHATSAPP|MESSENGER|INSTAGRAM_DIRECT → Click-to-Message.
+ * destinationType=INSTAGRAM_PROFILE → visitas ao perfil profissional conectado.
  */
 export const metaCreateAdsetSchema = tenantContextSchema
   .extend({
@@ -503,7 +505,7 @@ export const metaCreateAdsetSchema = tenantContextSchema
       .enum(META_AD_DESTINATION_TYPES)
       .optional()
       .default('WEBSITE')
-      .describe('WEBSITE (default) ou destino de mensagem: WHATSAPP | MESSENGER | INSTAGRAM_DIRECT. Não é objective.'),
+      .describe('WEBSITE (default), WHATSAPP|MESSENGER|INSTAGRAM_DIRECT ou INSTAGRAM_PROFILE. Não é objective.'),
     isDynamicCreative: z
       .boolean()
       .optional()
@@ -590,6 +592,13 @@ export const metaCreateAdsetSchema = tenantContextSchema
         path: ['billingEvent'],
       })
     }
+    if (data.destinationType === 'INSTAGRAM_PROFILE' && data.billingEvent !== 'IMPRESSIONS') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'destinationType=INSTAGRAM_PROFILE exige billingEvent=IMPRESSIONS.',
+        path: ['billingEvent'],
+      })
+    }
     if (data.destinationType === 'WHATSAPP' && data.whatsappPhoneNumber) {
       try {
         normalizeWhatsappPhoneNumber(data.whatsappPhoneNumber)
@@ -615,6 +624,23 @@ export const metaCreateAdsetSchema = tenantContextSchema
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           message: err instanceof Error ? err.message : 'Combinação de destino inválida.',
+          path: ['optimizationGoal'],
+        })
+      }
+    }
+    if (data.destinationType === 'INSTAGRAM_PROFILE' && data.campaignObjective) {
+      try {
+        assertInstagramProfileAdsetCompatibility({
+          destinationType: data.destinationType,
+          optimizationGoal: data.optimizationGoal,
+          billingEvent: data.billingEvent,
+          campaignObjective: data.campaignObjective,
+        })
+      }
+      catch (err) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: err instanceof Error ? err.message : 'Combinação de perfil do Instagram inválida.',
           path: ['optimizationGoal'],
         })
       }
@@ -699,7 +725,7 @@ export const metaCreateAdSchema = tenantContextSchema
       .enum(META_AD_DESTINATION_TYPES)
       .optional()
       .default('WEBSITE')
-      .describe('WEBSITE (default) ou WHATSAPP|MESSENGER|INSTAGRAM_DIRECT (Click-to-Message; IMAGE|VIDEO|CAROUSEL).'),
+      .describe('WEBSITE (default), WHATSAPP|MESSENGER|INSTAGRAM_DIRECT ou INSTAGRAM_PROFILE (IMAGE|VIDEO|CAROUSEL).'),
     linkUrl: z
       .string()
       .url()
@@ -853,6 +879,32 @@ export const metaCreateAdSchema = tenantContextSchema
           code: z.ZodIssueCode.custom,
           message: `destinationType=${destinationType} usa CTA ${forcedCta}.`,
           path: ['callToAction'],
+        })
+      }
+      try {
+        assertCreativeDestinationCompatibility({ creativeType, destinationType })
+      }
+      catch (err) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: err instanceof Error ? err.message : 'Combinação creativeType × destinationType inválida.',
+          path: ['creativeType'],
+        })
+      }
+    }
+    if (destinationType === 'INSTAGRAM_PROFILE') {
+      if (data.linkUrl) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'INSTAGRAM_PROFILE resolve o link pelo Instagram conectado; omita linkUrl.',
+          path: ['linkUrl'],
+        })
+      }
+      if (data.welcomeMessage) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'welcomeMessage não é válido para visitas ao perfil do Instagram.',
+          path: ['welcomeMessage'],
         })
       }
       try {
@@ -2546,6 +2598,18 @@ function formatBudgetMinorUnits(cents: number, currency: string | null): string 
   return `${cents} minor units (moeda desconhecida — use listAdAccounts)`
 }
 
+function instagramProfileUrl(username: string): string {
+  const normalized = String(username || '').trim().replace(/^@/, '')
+  if (!/^[\w.]{1,30}$/i.test(normalized)) {
+    throw new MetaAdsToolError(
+      'META_INSTAGRAM_USERNAME_INVALID',
+      'A integração Meta não possui um username válido para o Instagram profissional conectado.',
+      400,
+    )
+  }
+  return `https://www.instagram.com/${normalized}/`
+}
+
 /**
  * Create a campaign on the tenant ad account (POST /act_{id}/campaigns).
  * dryRun default true — no Graph POST until dryRun: false + confirms.
@@ -2823,10 +2887,22 @@ export async function metaCreateAdset(
   }
 
   let pageId: string | null = null
+  let instagramUserId: string | null = null
   let whatsappPhone: string | undefined
-  if (isMessagingDestination(destinationType)) {
+  if (isMessagingDestination(destinationType) || isInstagramProfileDestination(destinationType)) {
     const tokenCtx = await resolveMetaAccessToken(ctx.client, input.tenantId)
-    pageId = assertMetaPageId(tokenCtx.publicConfig.page_id)
+    if (isMessagingDestination(destinationType))
+      pageId = assertMetaPageId(tokenCtx.publicConfig.page_id)
+    if (isInstagramProfileDestination(destinationType)) {
+      instagramUserId = String(tokenCtx.publicConfig.instagram_business_account_id || '').trim() || null
+      if (!instagramUserId) {
+        throw new MetaAdsToolError(
+          'META_INSTAGRAM_ACTOR_REQUIRED',
+          'destinationType=INSTAGRAM_PROFILE exige instagram_business_account_id na integração Meta.',
+          400,
+        )
+      }
+    }
     if (destinationType === 'WHATSAPP')
       whatsappPhone = normalizeWhatsappPhoneNumber(input.whatsappPhoneNumber)
   }
@@ -2877,6 +2953,14 @@ export async function metaCreateAdset(
       campaignObjective: dryRun ? (input.campaignObjective ?? null) : campaignObjective,
     })
   }
+  if (isInstagramProfileDestination(destinationType)) {
+    assertInstagramProfileAdsetCompatibility({
+      destinationType,
+      optimizationGoal: input.optimizationGoal,
+      billingEvent: input.billingEvent,
+      campaignObjective: dryRun ? (input.campaignObjective ?? null) : campaignObjective,
+    })
+  }
 
   const graphBody = buildMetaCreateAdsetGraphBody({
     name: input.name,
@@ -2887,6 +2971,7 @@ export async function metaCreateAdset(
     targeting: resolvedTargeting,
     destinationType,
     pageId: pageId ?? undefined,
+    instagramUserId: instagramUserId ?? undefined,
     whatsappPhoneNumber: whatsappPhone,
     isDynamicCreative: input.isDynamicCreative === true,
     dailyBudget: input.dailyBudget,
@@ -2923,6 +3008,13 @@ export async function metaCreateAdset(
       budgetNotes.push(`campaign.objective=${campaignObjective}`)
     else if (dryRun)
       budgetNotes.push('Informe campaignObjective no dry-run para validar matriz de destino; na execução a Graph confirma.')
+  }
+  if (isInstagramProfileDestination(destinationType)) {
+    budgetNotes.push(`destination_type=INSTAGRAM_PROFILE · promoted_object.instagram_user_id=${instagramUserId}`)
+    if (campaignObjective)
+      budgetNotes.push(`campaign.objective=${campaignObjective}`)
+    else if (dryRun)
+      budgetNotes.push('Informe campaignObjective no dry-run para validar OUTCOME_TRAFFIC/ENGAGEMENT; na execução a Graph confirma.')
   }
   if (savedAudienceMeta) {
     budgetNotes.push(
@@ -2978,6 +3070,7 @@ export async function metaCreateAdset(
         destinationType,
         isDynamicCreative: input.isDynamicCreative === true,
         pageId,
+        instagramUserId,
         whatsappPhoneNumber: whatsappPhone ?? null,
         targetingTemplate,
         targeting: resolvedTargeting,
@@ -3018,6 +3111,7 @@ export async function metaCreateAdset(
         destinationType,
         isDynamicCreative: input.isDynamicCreative === true,
         pageId,
+        instagramUserId,
         adAccountId: creds.adAccountId,
         currency,
         budgetLimitCents: getMetaGptBudgetDailyMaxCents(),
@@ -3037,6 +3131,7 @@ export async function metaCreateAdset(
       destinationType,
       isDynamicCreative: input.isDynamicCreative === true,
       pageId,
+      instagramUserId,
       whatsappPhoneNumber: whatsappPhone ?? null,
       targetingTemplate,
       targeting: resolvedTargeting,
@@ -3076,6 +3171,7 @@ export async function metaCreateAdset(
         destinationType: result.destinationType,
         isDynamicCreative: result.isDynamicCreative,
         pageId: result.pageId,
+        instagramUserId: result.instagramUserId,
         targetingTemplate: result.targetingTemplate,
         targeting: result.targeting,
         targetingSource: result.targetingSource,
@@ -3142,17 +3238,31 @@ export async function metaCreateAd(
   )
   const creativeName = input.creativeName || `${input.name} Creative`
   const message = input.message ?? ''
-  const instagramUserId = destinationType === 'INSTAGRAM_DIRECT'
+  const instagramUserId = destinationType === 'INSTAGRAM_DIRECT' || destinationType === 'INSTAGRAM_PROFILE'
     ? (tokenCtx.publicConfig.instagram_business_account_id
-      ? String(tokenCtx.publicConfig.instagram_business_account_id).trim()
-      : '')
+        ? String(tokenCtx.publicConfig.instagram_business_account_id).trim()
+        : '')
     : undefined
-  if (destinationType === 'INSTAGRAM_DIRECT' && !reuseCreativeId && !instagramUserId) {
+  if ((destinationType === 'INSTAGRAM_DIRECT' || destinationType === 'INSTAGRAM_PROFILE') && !reuseCreativeId && !instagramUserId) {
     throw new MetaAdsToolError(
       'META_INSTAGRAM_ACTOR_REQUIRED',
-      'destinationType=INSTAGRAM_DIRECT exige instagram_business_account_id na integração Meta.',
+      `destinationType=${destinationType} exige instagram_business_account_id na integração Meta.`,
       400,
     )
+  }
+
+  let resolvedInstagramProfileUrl: string | null = null
+  if (destinationType === 'INSTAGRAM_PROFILE' && !reuseCreativeId) {
+    let username = String(tokenCtx.publicConfig.instagram_username || '').trim()
+    if (!username && !dryRun && instagramUserId) {
+      const instagramAccount = await graph(metaGraphUrl(creds.apiVersion, `/${instagramUserId}`), {
+        query: { fields: 'id,username', access_token: creds.accessToken },
+      })
+      username = String(instagramAccount?.username || '').trim()
+    }
+    resolvedInstagramProfileUrl = username
+      ? instagramProfileUrl(username)
+      : 'https://www.instagram.com/'
   }
 
   // Resolve media uploads only on execute (dryRun never hits Graph upload).
@@ -3223,7 +3333,9 @@ export async function metaCreateAd(
       bodies: message ? [{ text: message }] : undefined,
       titles: input.headline ? [{ text: input.headline }] : undefined,
       descriptions: input.description ? [{ text: input.description }] : undefined,
-      linkUrls: input.linkUrl ? [{ websiteUrl: input.linkUrl }] : undefined,
+      linkUrls: (input.linkUrl || resolvedInstagramProfileUrl)
+        ? [{ websiteUrl: input.linkUrl || resolvedInstagramProfileUrl! }]
+        : undefined,
       callToActionTypes: callToAction ? [callToAction] : undefined,
     })
 
@@ -3232,7 +3344,7 @@ export async function metaCreateAd(
       object_story_spec: { page_id: pageId },
       asset_feed_spec: assetFeedSpec,
     }
-    if (destinationType === 'INSTAGRAM_DIRECT') {
+    if (destinationType === 'INSTAGRAM_DIRECT' || destinationType === 'INSTAGRAM_PROFILE') {
       creativeBody = applyInstagramUserIdToCreativeBody(creativeBody, instagramUserId ?? null)
     }
   }
@@ -3266,10 +3378,10 @@ export async function metaCreateAd(
       pageId,
       creativeType,
       destinationType,
-      website: destinationType === 'WEBSITE' && creativeType !== 'DYNAMIC_CREATIVE_LEGACY'
+      website: !isMessagingDestination(destinationType) && creativeType !== 'DYNAMIC_CREATIVE_LEGACY'
         ? {
             message,
-            linkUrl: input.linkUrl!,
+            linkUrl: (input.linkUrl || resolvedInstagramProfileUrl)!,
             callToAction,
             headline: input.headline,
             description: input.description,
@@ -3421,11 +3533,16 @@ export async function metaCreateAd(
     const cta = META_MESSAGING_CTA_BY_DESTINATION[destinationType]
     mediaNotes.push(`Click-to-Message: CTA ${cta.type} + app_destination=${cta.appDestination}.`)
   }
+  if (destinationType === 'INSTAGRAM_PROFILE') {
+    mediaNotes.push(`Instagram Profile: instagram_user_id=${instagramUserId}; destino=${resolvedInstagramProfileUrl || '(creative existente)'}.`)
+  }
   mediaNotes.push(...summarizeTrackingForPreview(compiledTracking))
 
   const linkNote = destinationType === 'WEBSITE'
     ? `link: ${input.linkUrl ?? '(assetFeed.linkUrls / creativeId)'}`
-    : 'link: (protocolo messaging Meta — sem linkUrl de site do usuário)'
+    : destinationType === 'INSTAGRAM_PROFILE'
+      ? `link: ${resolvedInstagramProfileUrl ?? '(creative existente)'} (perfil conectado)`
+      : 'link: (protocolo messaging Meta — sem linkUrl de site do usuário)'
 
   const run = await withDryRun(
     dryRun,
@@ -6297,9 +6414,9 @@ export const META_TOOL_DESCRIPTIONS: Record<MetaToolName, string> = {
   meta_create_campaign:
     'Cria campanha (Outcome_*). Default PAUSED + dryRun=true. Exige confirm+confirmTenantId. ACTIVE exige confirmActive. Budget opcional com teto env.',
   meta_create_adset:
-    'Cria adset (BR_* | targeting custom | savedAudienceId). PAUSED+dryRun. destinationType WEBSITE|WHATSAPP|MESSENGER|INSTAGRAM_DIRECT. isDynamicCreative opcional (DYNAMIC_CREATIVE_LEGACY, só WEBSITE). Exige confirm+budget+campaignId. Para público salvo: meta_list_saved_audiences → savedAudienceId.',
+    'Cria adset (BR_* | targeting custom | savedAudienceId). PAUSED+dryRun. destinationType WEBSITE|WHATSAPP|MESSENGER|INSTAGRAM_DIRECT|INSTAGRAM_PROFILE. Perfil: OUTCOME_TRAFFIC+PROFILE_VISIT ou OUTCOME_ENGAGEMENT+PROFILE_AND_PAGE_ENGAGEMENT. isDynamicCreative opcional (só WEBSITE).',
   meta_create_ad:
-    'Cria Ad+Creative. creativeId XOR creativeType IMAGE|VIDEO|CAROUSEL|DYNAMIC_CREATIVE_LEGACY|CATALOG. IMAGE: imageUrl|imageHash|assetId|sourceBase64 (biblioteca). Normaliza imagens (EXIF, alpha, WebP). Destinos WEBSITE|WHATSAPP|MESSENGER|INSTAGRAM_DIRECT. trackingSpecs/pixelId/offlineDatasetId/conversionDomain opcionais. Advantage+ degreesOfFreedomSpec. PAUSED+dryRun.',
+    'Cria Ad+Creative. creativeId XOR creativeType IMAGE|VIDEO|CAROUSEL|DYNAMIC_CREATIVE_LEGACY|CATALOG. IMAGE: imageUrl|imageHash|assetId|sourceBase64 (biblioteca). Destinos WEBSITE|WHATSAPP|MESSENGER|INSTAGRAM_DIRECT|INSTAGRAM_PROFILE; perfil usa identidade/URL do Instagram conectado. Tracking e Advantage+ opcionais. PAUSED+dryRun.',
   meta_update_adset_budget:
     'Atualiza budget do adset (daily|lifetime). dryRun default true. Teto META_GPT_BUDGET_* + confirmBudgetIncrease se aumento % alto.',
   meta_update_adset_targeting:

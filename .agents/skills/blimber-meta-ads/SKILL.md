@@ -23,7 +23,7 @@ description: >-
 - Relatórios / insights Meta Ads de um tenant
 - Listar campanhas, conjuntos de anúncios (adsets) e anúncios
 - Pausar ou reativar campanha, adset ou anúncio (com confirmação)
-- Criar campanha, adset ou anúncio+criativo (WEBSITE, WhatsApp CTWA, Messenger, Instagram Direct; default PAUSED + dryRun true)
+- Criar campanha, adset ou anúncio+criativo (WEBSITE, WhatsApp CTWA, Messenger, Instagram Direct e visitas ao perfil do Instagram; default PAUSED + dryRun true)
 - Editar budget/targeting do adset; copy/mídia do ad (dryRun default true)
 - Excluir em massa com preview → execute (IDs explícitos; nunca por nome)
 - Ver se Meta está conectado / write-ready (`write_readiness`)
@@ -51,7 +51,7 @@ description: >-
 | `meta_get_campaign` | Detalhe |
 | `meta_create_campaign` | Criar campanha (PAUSED / dryRun default true) |
 | `meta_list_adsets` | Conjuntos de anúncios |
-| `meta_create_adset` | Criar adset (`BR_18_65` / `BR_*` **ou** `targeting` custom **ou** `savedAudienceId`; destination WEBSITE\|WHATSAPP\|MESSENGER\|INSTAGRAM_DIRECT; `isDynamicCreative` opcional p/ DYNAMIC_CREATIVE_LEGACY) |
+| `meta_create_adset` | Criar adset (`BR_18_65` / `BR_*` **ou** `targeting` custom **ou** `savedAudienceId`; destination WEBSITE\|WHATSAPP\|MESSENGER\|INSTAGRAM_DIRECT\|INSTAGRAM_PROFILE; `isDynamicCreative` opcional p/ DYNAMIC_CREATIVE_LEGACY) |
 | `meta_update_adset_budget` | Budget adset (dryRun default true) |
 | `meta_update_adset_targeting` | Targeting `BR_*` **ou** `targeting` custom **ou** `savedAudienceId` (XOR) |
 | `meta_list_ads` | Anúncios |
@@ -63,7 +63,7 @@ description: >-
 | `meta_create_custom_audiences_batch` | Vários públicos em sequência (`succeeded`/`failed`) |
 | `meta_update_custom_audience` / `meta_delete_custom_audience` | Update/delete (confirmDelete; recusa se em uso) |
 | `meta_get_custom_audience_usage` | Ads/lookalikes que usam o público |
-| `meta_create_ad` | Criar criativo IMAGE\|VIDEO\|CAROUSEL\|DYNAMIC_CREATIVE_LEGACY\|CATALOG (+ Advantage+) ou ad via `creativeId`; tracking opcional (`trackingSpecs` / `pixelId` / `offlineDatasetId` / `conversionDomain`); WEBSITE / WhatsApp CTWA / Messenger / IG Direct; default PAUSED + dryRun true |
+| `meta_create_ad` | Criar criativo IMAGE\|VIDEO\|CAROUSEL\|DYNAMIC_CREATIVE_LEGACY\|CATALOG (+ Advantage+) ou ad via `creativeId`; tracking opcional (`trackingSpecs` / `pixelId` / `offlineDatasetId` / `conversionDomain`); WEBSITE / WhatsApp CTWA / Messenger / IG Direct / perfil do Instagram; default PAUSED + dryRun true |
 | `meta_update_ad_creative_copy` | Copy via novo creative |
 | `meta_update_ad_media` | IMAGE\|VIDEO\|CAROUSEL via novo creative |
 | `meta_update_ad_tracking` | Atualiza `tracking_specs` do Ad (merge default; `replaceTrackingSpecs` sobrescreve). dryRun true |
@@ -85,7 +85,8 @@ OpenAPI: `gpt/blimber/openapi-ads.yaml` (`createCampaign`, `createAdset`, `creat
 Catálogo: `GET /api/gpt/meta/tools`
 
 `createAd.creativeType`: IMAGE (default) | VIDEO | CAROUSEL | DYNAMIC_CREATIVE_LEGACY | CATALOG — ou `creativeId` XOR. Upload HTTPS opcional (`imageUrl`/`videoUrl`) com SSRF; IMAGE também aceita `assetId` da Biblioteca (download interno → `imageHash`). dryRun não faz upload.  
-`createAd.destinationType`: WEBSITE | WHATSAPP | MESSENGER | INSTAGRAM_DIRECT. IMAGE/VIDEO/CAROUSEL em todos; DYNAMIC_CREATIVE_LEGACY e CATALOG só WEBSITE. Carousel WhatsApp usa CTA `WHATSAPP_MESSAGE` + `https://api.whatsapp.com/send` (nunca wa.me).  
+`createAd.destinationType`: WEBSITE | WHATSAPP | MESSENGER | INSTAGRAM_DIRECT | INSTAGRAM_PROFILE. IMAGE/VIDEO/CAROUSEL em todos; DYNAMIC_CREATIVE_LEGACY e CATALOG só WEBSITE. Carousel WhatsApp usa CTA `WHATSAPP_MESSAGE` + `https://api.whatsapp.com/send` (nunca wa.me).
+Perfil do Instagram: campanha `OUTCOME_TRAFFIC` + adset `destinationType=INSTAGRAM_PROFILE`, `optimizationGoal=PROFILE_VISIT`, `billingEvent=IMPRESSIONS`; alternativa de engajamento: `OUTCOME_ENGAGEMENT` + `PROFILE_AND_PAGE_ENGAGEMENT`. O MCP usa `instagram_business_account_id` e `instagram_username` da integração, sem aceitar identidade cruzada.
 `createAd.trackingSpecs`: opcional. Graph `action.type`: `offsite_conversion` + `fbPixel` (Pixel de site); `offline_conversion` + `dataset` (Dataset offline); `leadgen_quality_conversion` + pixel ou dataset. Atalhos: `pixelId`, `offlineDatasetId`. Campo extra oficial: `conversionDomain`. Listar IDs: `meta_list_pixels` / `meta_list_datasets` (invoke). Ad existente: `updateAdTracking` / `meta_update_ad_tracking` (merge; `replaceTrackingSpecs` para overwrite). IDs só da ad account do tenant.  
 `createAdset.isDynamicCreative`: opcional → `is_dynamic_creative=true` (só WEBSITE; ads com DYNAMIC_CREATIVE_LEGACY).  
 `createAdset` / `updateAdsetTargeting`: XOR `targetingTemplate` | `targeting` | `savedAudienceId`. Com Saved Audience, o MCP busca o targeting na Graph e envia intacto (a API oficial não aceita `saved_audience_id` no POST do adset).  
