@@ -100,7 +100,7 @@ export function getMetaCapabilities(explicitVersion?: string | null): MetaCapabi
       ),
       INSTAGRAM_PROFILE: ok(
         'destination_type=INSTAGRAM_PROFILE. OUTCOME_TRAFFIC + PROFILE_VISIT ou '
-        + 'OUTCOME_ENGAGEMENT + PROFILE_AND_PAGE_ENGAGEMENT. Exige Instagram profissional conectado.',
+        + 'OUTCOME_ENGAGEMENT + PROFILE_AND_PAGE_ENGAGEMENT. Exige Página vinculada ao Instagram profissional; o adset usa promoted_object.page_id.',
       ),
     },
     creativeTypes: {

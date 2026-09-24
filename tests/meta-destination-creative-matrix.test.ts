@@ -111,13 +111,14 @@ describe('creativeType × destination matrix', () => {
       status: 'PAUSED',
       targeting: { geo_locations: { countries: ['BR'] } },
       destinationType: 'INSTAGRAM_PROFILE',
-      instagramUserId: 'ig_1',
+      pageId: 'page_1',
       dailyBudget: 1000,
     })
     expect(profile).toMatchObject({
       destination_type: 'INSTAGRAM_PROFILE',
-      promoted_object: { instagram_user_id: 'ig_1' },
+      promoted_object: { page_id: 'page_1' },
     })
+    expect(JSON.stringify(profile.promoted_object)).not.toContain('instagram_user_id')
   })
 
   it('capabilities report messaging destinations and carousel beyond WEBSITE', () => {

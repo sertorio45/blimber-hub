@@ -2891,8 +2891,7 @@ export async function metaCreateAdset(
   let whatsappPhone: string | undefined
   if (isMessagingDestination(destinationType) || isInstagramProfileDestination(destinationType)) {
     const tokenCtx = await resolveMetaAccessToken(ctx.client, input.tenantId)
-    if (isMessagingDestination(destinationType))
-      pageId = assertMetaPageId(tokenCtx.publicConfig.page_id)
+    pageId = assertMetaPageId(tokenCtx.publicConfig.page_id)
     if (isInstagramProfileDestination(destinationType)) {
       instagramUserId = String(tokenCtx.publicConfig.instagram_business_account_id || '').trim() || null
       if (!instagramUserId) {
@@ -2971,7 +2970,6 @@ export async function metaCreateAdset(
     targeting: resolvedTargeting,
     destinationType,
     pageId: pageId ?? undefined,
-    instagramUserId: instagramUserId ?? undefined,
     whatsappPhoneNumber: whatsappPhone,
     isDynamicCreative: input.isDynamicCreative === true,
     dailyBudget: input.dailyBudget,
@@ -3010,7 +3008,7 @@ export async function metaCreateAdset(
       budgetNotes.push('Informe campaignObjective no dry-run para validar matriz de destino; na execução a Graph confirma.')
   }
   if (isInstagramProfileDestination(destinationType)) {
-    budgetNotes.push(`destination_type=INSTAGRAM_PROFILE · promoted_object.instagram_user_id=${instagramUserId}`)
+    budgetNotes.push(`destination_type=INSTAGRAM_PROFILE · promoted_object.page_id=${pageId} · instagram_business_account_id=${instagramUserId} (identidade do criativo)`)
     if (campaignObjective)
       budgetNotes.push(`campaign.objective=${campaignObjective}`)
     else if (dryRun)

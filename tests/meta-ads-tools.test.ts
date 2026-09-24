@@ -2107,6 +2107,7 @@ describe('meta-ads MCP tools', () => {
     const client = createIntegrationClient({
       access_token_enc: encryptSecret('tok'),
       ad_account_id: '555',
+      page_id: 'page_123',
       instagram_business_account_id: 'ig_123',
       instagram_username: 'blimber.test',
     })
@@ -2133,15 +2134,63 @@ describe('meta-ads MCP tools', () => {
     expect((result as any).preview?.body).toMatchObject({
       destination_type: 'INSTAGRAM_PROFILE',
       optimization_goal: 'PROFILE_VISIT',
-      promoted_object: { instagram_user_id: 'ig_123' },
+      promoted_object: { page_id: 'page_123' },
     })
+    expect(JSON.stringify((result as any).preview?.body?.promoted_object)).not.toContain('instagram_user_id')
     expect(graphFetch).not.toHaveBeenCalled()
+  })
+
+  it('create adset INSTAGRAM_PROFILE sends the same valid promoted_object in preview and POST', async () => {
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret('tok'),
+      ad_account_id: '555',
+      page_id: 'page_123',
+      instagram_business_account_id: 'ig_123',
+    })
+    const graphFetch = vi.fn(async (url: string, init?: any) => {
+      if (init?.method === 'POST')
+        return { id: 'adset_profile_1' }
+      if (String(url).includes('/cmp_traffic'))
+        return { id: 'cmp_traffic', account_id: '555', objective: 'OUTCOME_TRAFFIC' }
+      if (String(url).includes('/act_555'))
+        return { id: 'act_555', account_id: '555', currency: 'BRL' }
+      throw new Error(`Unexpected Graph request: ${String(url)}`)
+    })
+    const input = {
+      tenantId: 'tenant-1',
+      campaignId: 'cmp_traffic',
+      name: 'Visitas ao perfil',
+      targetingTemplate: 'BR_18_65',
+      billingEvent: 'IMPRESSIONS',
+      optimizationGoal: 'PROFILE_VISIT',
+      destinationType: 'INSTAGRAM_PROFILE',
+      campaignObjective: 'OUTCOME_TRAFFIC',
+      dailyBudget: 1700,
+      confirmTenantId: 'tenant-1',
+      confirm: true,
+    } as const
+
+    const preview = await metaCreateAdset({ client, graphFetch }, { ...input, dryRun: true })
+    expect(graphFetch).not.toHaveBeenCalled()
+
+    const result = await metaCreateAdset({ client, graphFetch }, { ...input, dryRun: false })
+    expect(result.success).toBe(true)
+    const postCalls = graphFetch.mock.calls.filter(([, init]) => init?.method === 'POST')
+    expect(postCalls).toHaveLength(1)
+    expect(String(postCalls[0]![0])).toContain('/act_555/adsets')
+    const body = postCalls[0]![1]?.body
+    expect(body).toEqual((preview as any).preview.body)
+    expect(body.promoted_object).toEqual({ page_id: 'page_123' })
+    expect(body.destination_type).toBe('INSTAGRAM_PROFILE')
+    expect(body.optimization_goal).toBe('PROFILE_VISIT')
+    expect(JSON.stringify(body)).not.toContain('instagram_user_id')
   })
 
   it('rejects incompatible Instagram profile objective/optimization pair', async () => {
     const client = createIntegrationClient({
       access_token_enc: encryptSecret('tok'),
       ad_account_id: '555',
+      page_id: 'page_123',
       instagram_business_account_id: 'ig_123',
     })
 

@@ -522,7 +522,6 @@ export function buildMetaCreateAdsetGraphBody(input: {
   targeting: Record<string, unknown>
   destinationType?: MetaAdDestinationType
   pageId?: string
-  instagramUserId?: string
   whatsappPhoneNumber?: string
   /** Dynamic Creative (legacy): ads must use asset_feed_spec / DYNAMIC_CREATIVE_LEGACY. */
   isDynamicCreative?: boolean
@@ -557,15 +556,15 @@ export function buildMetaCreateAdsetGraphBody(input: {
     body.promoted_object = promotedObject
   }
   else if (isInstagramProfileDestination(destinationType)) {
-    if (!input.instagramUserId) {
+    if (!input.pageId) {
       throw new MetaAdsToolError(
-        'META_INSTAGRAM_ACTOR_REQUIRED',
-        'Adset INSTAGRAM_PROFILE exige instagram_business_account_id na integração Meta.',
+        'META_PAGE_ID_REQUIRED',
+        'Adset INSTAGRAM_PROFILE exige page_id da Página vinculada ao Instagram na integração Meta.',
         400,
       )
     }
     body.destination_type = destinationType
-    body.promoted_object = { instagram_user_id: input.instagramUserId }
+    body.promoted_object = { page_id: input.pageId }
   }
 
   // Official Marketing API field for Dynamic Creative (Ads Manager legado).
