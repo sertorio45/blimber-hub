@@ -33,12 +33,12 @@ import {
   type MetaAdDestinationType,
 } from './ad-destination'
 import { getMetaCapabilities } from './capabilities'
-import { instagramPostShortcode, resolveOwnedInstagramMedia } from './instagram-existing-post'
 import {
   assertProductSetOwned,
   listProductCatalogs,
   listProductSets,
 } from './catalog-service'
+import { describeInstagramMedia, INSTAGRAM_MEDIA_FIELDS, instagramAdvertisingEligibility, instagramPostShortcode, resolveOwnedInstagramMedia } from './instagram-existing-post'
 import {
   applyTrackingToAdGraphBody,
   assertTrackingSpecsOwned,
@@ -200,6 +200,30 @@ export const tenantContextSchema = z.object({
 export const metaListIntegrationsSchema = tenantContextSchema.pick({ tenantId: true })
 
 export const metaListAdAccountsSchema = tenantContextSchema.pick({ tenantId: true })
+
+export const metaListInstagramAccountsSchema = tenantContextSchema
+
+export const metaListInstagramMediaSchema = tenantContextSchema.extend({
+  limit: z.number().int().min(1).max(100).optional().default(25),
+  after: z.string().min(1).max(256).optional(),
+})
+
+export const metaGetInstagramMediaSchema = tenantContextSchema.extend({
+  instagramMediaId: z.string().regex(/^\d{5,30}$/).optional(),
+  instagramPermalink: z.string().url().optional(),
+}).superRefine((data, ctx) => {
+  if (Boolean(data.instagramMediaId) === Boolean(data.instagramPermalink)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Informe instagramMediaId OU instagramPermalink.', path: ['instagramMediaId'] })
+  }
+  if (data.instagramPermalink) {
+    try {
+      instagramPostShortcode(data.instagramPermalink)
+    }
+    catch {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Permalink de publicação Instagram inválido.', path: ['instagramPermalink'] })
+    }
+  }
+})
 
 export const metaListCampaignsSchema = tenantContextSchema.extend({
   limit: z.number().int().min(1).max(200).optional().default(50),
@@ -1075,6 +1099,29 @@ export const metaCreateAdSchema = tenantContextSchema
     }
   })
 
+/** Dedicated, intentionally narrow wrapper around meta_create_ad (no second creative builder). */
+export const metaCreateAdFromInstagramPostSchema = tenantContextSchema.extend({
+  adsetId: z.string().min(1),
+  name: z.string().min(1).max(400),
+  instagramMediaId: z.string().regex(/^\d{5,30}$/).optional(),
+  instagramPermalink: z.string().url().optional(),
+  creativeName: z.string().min(1).max(400).optional(),
+  ...metaWriteConfirmationFields,
+  ...metaWriteDryRunField,
+}).superRefine((data, ctx) => {
+  if (Boolean(data.instagramMediaId) === Boolean(data.instagramPermalink)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Informe instagramMediaId OU instagramPermalink.', path: ['instagramMediaId'] })
+  }
+  if (data.instagramPermalink) {
+    try {
+      instagramPostShortcode(data.instagramPermalink)
+    }
+    catch {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Permalink de publicação Instagram inválido.', path: ['instagramPermalink'] })
+    }
+  }
+})
+
 /**
  * Update adset budget — dryRun default true. Absolute ceiling + optional increase % flag.
  */
@@ -1551,6 +1598,9 @@ export const metaExecuteBulkDeleteSchema = tenantContextSchema.extend({
 export type MetaToolName =
   | 'meta_list_integrations'
   | 'meta_list_ad_accounts'
+  | 'meta_list_instagram_accounts'
+  | 'meta_list_instagram_media'
+  | 'meta_get_instagram_media'
   | 'meta_list_campaigns'
   | 'meta_get_campaign'
   | 'meta_list_adsets'
@@ -1576,6 +1626,7 @@ export type MetaToolName =
   | 'meta_create_campaign'
   | 'meta_create_adset'
   | 'meta_create_ad'
+  | 'meta_create_ad_from_instagram_post'
   | 'meta_update_adset_budget'
   | 'meta_update_adset_targeting'
   | 'meta_update_ad_creative_copy'
@@ -1724,6 +1775,110 @@ export async function metaListAdAccounts(
       currency: row.currency ?? null,
       timezone_name: row.timezone_name ?? null,
     })),
+  }
+}
+
+async function resolveConfiguredInstagramAccount(
+  ctx: MetaToolContext,
+  tenantId: string,
+  adAccountId?: string,
+) {
+  const creds = await withCreds(ctx, tenantId, adAccountId)
+  const configuredAdAccountId = normalizeMetaAdAccountId(String(creds.publicConfig.ad_account_id || ''))
+  if (adAccountId && (!configuredAdAccountId || creds.adAccountId !== configuredAdAccountId)) {
+    throw new MetaAdsToolError('AD_ACCOUNT_TENANT_MISMATCH', 'Ad account não corresponde à conta conectada ao tenant.', 403)
+  }
+  const pageId = String(creds.publicConfig.page_id || '').trim()
+  const instagramUserId = String(creds.publicConfig.instagram_business_account_id || '').trim()
+  if (!pageId || !instagramUserId) {
+    throw new MetaAdsToolError('INSTAGRAM_INTEGRATION_REQUIRED', 'A integração Meta do tenant precisa ter Página e Instagram profissional vinculados.', 400)
+  }
+  const graph = fetchGraph(ctx)
+  const page = await graph(metaGraphUrl(creds.apiVersion, `/${pageId}`), {
+    query: { fields: 'id,name,instagram_business_account{id,username}', access_token: creds.accessToken },
+  })
+  if (String(page?.id || '') !== pageId
+    || String(page?.instagram_business_account?.id || '') !== instagramUserId) {
+    throw new MetaAdsToolError('INSTAGRAM_PAGE_MISMATCH', 'A Página conectada não está vinculada ao Instagram configurado neste tenant.', 403)
+  }
+  return {
+    creds,
+    graph,
+    pageId,
+    pageName: typeof page.name === 'string' ? page.name : null,
+    instagramUserId,
+    username: typeof page.instagram_business_account?.username === 'string'
+      ? page.instagram_business_account.username
+      : creds.publicConfig.instagram_username || null,
+  }
+}
+
+export async function metaListInstagramAccounts(ctx: MetaToolContext, raw: unknown) {
+  const input = metaListInstagramAccountsSchema.parse(raw)
+  const account = await resolveConfiguredInstagramAccount(ctx, input.tenantId, input.adAccountId)
+  return {
+    tenantId: input.tenantId,
+    adAccountId: account.creds.adAccountId,
+    accounts: [{
+      id: account.instagramUserId,
+      username: account.username,
+      pageId: account.pageId,
+      pageName: account.pageName,
+    }],
+  }
+}
+
+export async function metaListInstagramMedia(ctx: MetaToolContext, raw: unknown) {
+  const input = metaListInstagramMediaSchema.parse(raw)
+  const account = await resolveConfiguredInstagramAccount(ctx, input.tenantId, input.adAccountId)
+  const response = await account.graph(metaGraphUrl(account.creds.apiVersion, `/${account.instagramUserId}/media`), {
+    query: {
+      fields: INSTAGRAM_MEDIA_FIELDS,
+      limit: input.limit,
+      ...(input.after ? { after: input.after } : {}),
+      access_token: account.creds.accessToken,
+    },
+  })
+  const next = response?.paging?.cursors?.after
+  return {
+    tenantId: input.tenantId,
+    adAccountId: account.creds.adAccountId,
+    instagramUserId: account.instagramUserId,
+    media: (Array.isArray(response?.data) ? response.data : [])
+      .filter((item: { id?: unknown }) => item && item.id != null)
+      .map(describeInstagramMedia),
+    nextAfter: typeof next === 'string' && next.length <= 256 && next !== input.after ? next : null,
+  }
+}
+
+export async function metaGetInstagramMedia(ctx: MetaToolContext, raw: unknown) {
+  const input = metaGetInstagramMediaSchema.parse(raw)
+  const account = await resolveConfiguredInstagramAccount(ctx, input.tenantId, input.adAccountId)
+  const media = await resolveOwnedInstagramMedia({
+    apiVersion: account.creds.apiVersion,
+    accessToken: account.creds.accessToken,
+    instagramUserId: account.instagramUserId,
+    mediaId: input.instagramMediaId,
+    permalink: input.instagramPermalink,
+    graph: account.graph,
+  })
+  let advertisingEligibility = media.advertisingEligibility
+  try {
+    const eligibilityResponse = await account.graph(metaGraphUrl(account.creds.apiVersion, `/${media.id}`), {
+      query: { fields: 'boost_eligibility_info', access_token: account.creds.accessToken },
+    })
+    advertisingEligibility = instagramAdvertisingEligibility(eligibilityResponse?.boost_eligibility_info)
+  }
+  catch (error) {
+    if (!(error instanceof MetaAdsToolError) || error.code !== 'META_GRAPH_ERROR')
+      throw error
+    // This optional field is unavailable on some app/version combinations; media ownership still stands.
+  }
+  return {
+    tenantId: input.tenantId,
+    adAccountId: account.creds.adAccountId,
+    instagramUserId: account.instagramUserId,
+    media: { ...media, advertisingEligibility },
   }
 }
 
@@ -3683,13 +3838,23 @@ export async function metaCreateAd(
         }, adBody)
       }
       catch (err) {
+        if (err instanceof MetaAdsToolError && err.code === 'META_GRAPH_ERROR') {
+          throw new MetaAdsToolError(err.code, err.message, err.statusCode, {
+            ...(err.details && typeof err.details === 'object' ? err.details : {}),
+            creativeId,
+            orphanCreativeId: reuseCreativeId ? null : creativeId,
+          })
+        }
         throw new MetaAdsToolError(
           'META_CREATE_AD_FAILED',
           'Criativo ok/reusado, mas falhou ao criar o anúncio. Verifique o creativeId no Ads Manager.',
           502,
           {
             creativeId,
-            cause: err instanceof Error ? err.message : err,
+            orphanCreativeId: reuseCreativeId ? null : creativeId,
+            cause: err instanceof MetaAdsToolError
+              ? { code: err.code, message: err.message, statusCode: err.statusCode, details: err.details }
+              : err instanceof Error ? err.message : String(err),
           },
         )
       }
@@ -3846,6 +4011,15 @@ export async function metaCreateAd(
   return result
 }
 
+/** Focused MCP entry point; all ownership, dry-run, audit and Graph writes stay in metaCreateAd. */
+export async function metaCreateAdFromInstagramPost(ctx: MetaToolContext, raw: unknown) {
+  const input = metaCreateAdFromInstagramPostSchema.parse(raw)
+  return metaCreateAd(ctx, {
+    ...input,
+    destinationType: 'INSTAGRAM_PROFILE',
+    status: 'PAUSED',
+  })
+}
 
 function parseCentsField(value: unknown): number | null {
   if (value == null || value === '')
@@ -6325,6 +6499,9 @@ type ToolHandler = (ctx: MetaToolContext, raw: unknown) => Promise<unknown>
 export const META_TOOL_HANDLERS: Record<MetaToolName, ToolHandler> = {
   meta_list_integrations: metaListIntegrations,
   meta_list_ad_accounts: metaListAdAccounts,
+  meta_list_instagram_accounts: metaListInstagramAccounts,
+  meta_list_instagram_media: metaListInstagramMedia,
+  meta_get_instagram_media: metaGetInstagramMedia,
   meta_list_campaigns: metaListCampaigns,
   meta_get_campaign: metaGetCampaign,
   meta_list_adsets: metaListAdsets,
@@ -6350,6 +6527,7 @@ export const META_TOOL_HANDLERS: Record<MetaToolName, ToolHandler> = {
   meta_create_campaign: metaCreateCampaign,
   meta_create_adset: metaCreateAdset,
   meta_create_ad: metaCreateAd,
+  meta_create_ad_from_instagram_post: metaCreateAdFromInstagramPost,
   meta_update_adset_budget: metaUpdateAdsetBudget,
   meta_update_adset_targeting: metaUpdateAdsetTargeting,
   meta_update_ad_creative_copy: metaUpdateAdCreativeCopy,
@@ -6388,6 +6566,9 @@ export async function metaListPlacementOptions(_ctx: MetaToolContext, _raw: unkn
 export const META_TOOL_SCHEMAS: Record<MetaToolName, z.ZodTypeAny> = {
   meta_list_integrations: metaListIntegrationsSchema,
   meta_list_ad_accounts: metaListAdAccountsSchema,
+  meta_list_instagram_accounts: metaListInstagramAccountsSchema,
+  meta_list_instagram_media: metaListInstagramMediaSchema,
+  meta_get_instagram_media: metaGetInstagramMediaSchema,
   meta_list_campaigns: metaListCampaignsSchema,
   meta_get_campaign: metaGetCampaignSchema,
   meta_list_adsets: metaListAdsetsSchema,
@@ -6413,6 +6594,7 @@ export const META_TOOL_SCHEMAS: Record<MetaToolName, z.ZodTypeAny> = {
   meta_create_campaign: metaCreateCampaignSchema,
   meta_create_adset: metaCreateAdsetSchema,
   meta_create_ad: metaCreateAdSchema,
+  meta_create_ad_from_instagram_post: metaCreateAdFromInstagramPostSchema,
   meta_update_adset_budget: metaUpdateAdsetBudgetSchema,
   meta_update_adset_targeting: metaUpdateAdsetTargetingSchema,
   meta_update_ad_creative_copy: metaUpdateAdCreativeCopySchema,
@@ -6447,6 +6629,12 @@ export const META_TOOL_DESCRIPTIONS: Record<MetaToolName, string> = {
     'Lista marketing_integrations do tenant (status, write_readiness ads_management/page token, sem tokens).',
   meta_list_ad_accounts:
     'Lista ad accounts acessíveis pelo token Meta OAuth do tenant.',
+  meta_list_instagram_accounts:
+    'Descobre o Instagram profissional vinculado à Página configurada na integração Meta da ad account do tenant.',
+  meta_list_instagram_media:
+    'Lista mídias do Instagram conectado com ID real, permalink e cursor. Elegibilidade para anúncio permanece unknown até validação da Meta.',
+  meta_get_instagram_media:
+    'Lê mídia por instagramMediaId ou instagramPermalink e valida ownership do Instagram conectado.',
   meta_list_campaigns:
     'Lista campanhas Meta Ads da ad account do tenant (leitura).',
   meta_get_campaign:
@@ -6497,6 +6685,8 @@ export const META_TOOL_DESCRIPTIONS: Record<MetaToolName, string> = {
     'Cria adset (BR_* | targeting custom | savedAudienceId). PAUSED+dryRun. destinationType WEBSITE|WHATSAPP|MESSENGER|INSTAGRAM_DIRECT|INSTAGRAM_PROFILE. Perfil: OUTCOME_TRAFFIC+PROFILE_VISIT ou OUTCOME_ENGAGEMENT+PROFILE_AND_PAGE_ENGAGEMENT. isDynamicCreative opcional (só WEBSITE).',
   meta_create_ad:
     'Cria Ad+Creative. creativeId XOR creativeType IMAGE|VIDEO|CAROUSEL|DYNAMIC_CREATIVE_LEGACY|CATALOG XOR publicação existente (instagramMediaId|instagramPermalink, somente INSTAGRAM_PROFILE). IMAGE: imageUrl|imageHash|assetId|sourceBase64 (biblioteca). Destinos WEBSITE|WHATSAPP|MESSENGER|INSTAGRAM_DIRECT|INSTAGRAM_PROFILE; perfil usa identidade/URL do Instagram conectado. Tracking e Advantage+ opcionais. PAUSED+dryRun.',
+  meta_create_ad_from_instagram_post:
+    'Cria anúncio PAUSED a partir de mídia Instagram existente no adset do tenant; exige confirm+confirmTenantId, dryRun default true. Reutiliza meta_create_ad e preserva o post original.',
   meta_update_adset_budget:
     'Atualiza budget do adset (daily|lifetime). dryRun default true. Teto META_GPT_BUDGET_* + confirmBudgetIncrease se aumento % alto.',
   meta_update_adset_targeting:

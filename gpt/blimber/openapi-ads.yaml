@@ -1010,6 +1010,7 @@ paths:
       description: >
         Invoca tool pelo nome. Overflow (capabilities, upload, catalogs, pixels,
         datasets, tracking, experiments) usa este endpoint. Limite ≤30 ops.
+        Também oferece descoberta de Instagram e criação a partir de publicação existente.
         imageUrl XOR imageHash XOR assetId. studyOwner AUTO|USER|BUSINESS.
       x-openai-isConsequential: true
       requestBody:
@@ -1018,6 +1019,17 @@ paths:
           application/json:
             schema:
               $ref: "#/components/schemas/InvokeBody"
+            examples:
+              instagramMedia:
+                summary: Listar publicações do Instagram conectado
+                value:
+                  tool: meta_list_instagram_media
+                  arguments: { tenantId: "00000000-0000-4000-8000-000000000001", limit: 25 }
+              instagramPostPreview:
+                summary: Preview sem criar anúncio
+                value:
+                  tool: meta_create_ad_from_instagram_post
+                  arguments: { tenantId: "00000000-0000-4000-8000-000000000001", adsetId: "123456789", name: "Reel existente", instagramMediaId: "17841400000000001", confirmTenantId: "00000000-0000-4000-8000-000000000001", confirm: true, dryRun: true }
       responses:
         "200":
           description: Resultado da tool
@@ -2310,6 +2322,9 @@ components:
           enum:
             - meta_list_integrations
             - meta_list_ad_accounts
+            - meta_list_instagram_accounts
+            - meta_list_instagram_media
+            - meta_get_instagram_media
             - meta_list_campaigns
             - meta_get_campaign
             - meta_list_adsets
@@ -2335,6 +2350,7 @@ components:
             - meta_create_campaign
             - meta_create_adset
             - meta_create_ad
+            - meta_create_ad_from_instagram_post
             - meta_update_adset_budget
             - meta_update_adset_targeting
             - meta_update_ad_creative_copy
@@ -2360,4 +2376,7 @@ components:
           type: object
           description: >
             Payload da tool (sempre com tenantId).
+            meta_create_ad_from_instagram_post exige adsetId, name,
+            instagramMediaId XOR instagramPermalink, confirmTenantId e confirm=true;
+            cria sempre PAUSED e dryRun=true por default.
             meta_upload_image: imageUrl XOR imageHash XOR assetId (UUID da Biblioteca).

@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { encryptSecret } from '~/lib/marketing-secrets'
-import { metaCreateAd, setMetaWriteAuditSink } from '~/lib/meta-ads'
+import { formatToolError, metaCreateAd, metaCreateAdFromInstagramPost, metaGetInstagramMedia, metaListInstagramAccounts, metaListInstagramMedia, setMetaWriteAuditSink } from '~/lib/meta-ads'
 import { instagramPostShortcode, resolveOwnedInstagramMedia } from '~/lib/meta-ads/instagram-existing-post'
 import { metaCreateAdSchema } from '~/lib/meta-ads/tools'
+import { MetaAdsToolError } from '~/lib/meta-ads/types'
 
 process.env.MARKETING_ENCRYPTION_SECRET = 'test-marketing-encryption-secret-for-existing-post'
 
@@ -48,10 +49,45 @@ const baseInput = {
   confirm: true,
 } as const
 
-function graphMock(options: { foreignOwner?: boolean, foreignAdset?: boolean, pageMismatch?: boolean } = {}) {
+function graphMock(options: { foreignOwner?: boolean, foreignAdset?: boolean, pageMismatch?: boolean, failAt?: 'creative' | 'ad', boostEligible?: boolean } = {}) {
   return vi.fn(async (url: string, init?: any) => {
-    if (init?.method === 'POST')
-      return { id: String(url).includes('/adcreatives') ? 'creative_1' : 'ad_1' }
+    if (init?.method === 'POST') {
+      expect(String(url)).toMatch(/^https:\/\/graph\.facebook\.com\/v25\.0\/act_555\/(?:adcreatives|ads)$/)
+      expect(init.query.access_token).toBe('user-token')
+      if (String(url).endsWith('/adcreatives')) {
+        expect(init.body).toEqual({
+          name: 'Post existente Creative',
+          object_id: '123456789',
+          instagram_user_id: '17841402051902677',
+          source_instagram_media_id: '17841400000000001',
+        })
+        if (options.failAt === 'creative') {
+          throw new MetaAdsToolError('META_GRAPH_ERROR', 'Invalid creative', 400, {
+            type: 'OAuthException',
+            code: 100,
+            error_subcode: 1885316,
+            error_user_msg: 'Publicação não elegível',
+            fbtrace_id: 'trace-creative',
+          })
+        }
+        return { id: 'creative_1' }
+      }
+      expect(init.body).toMatchObject({
+        adset_id: 'adset_1',
+        creative: { creative_id: 'creative_1' },
+        status: 'PAUSED',
+      })
+      if (options.failAt === 'ad') {
+        throw new MetaAdsToolError('META_GRAPH_ERROR', 'Invalid ad', 400, {
+          type: 'OAuthException',
+          code: 100,
+          error_subcode: 1815857,
+          error_user_msg: 'Combinação não aceita',
+          fbtrace_id: 'trace-ad',
+        })
+      }
+      return { id: 'ad_1' }
+    }
     if (String(url).endsWith('/adset_1')) {
       return {
         id: 'adset_1',
@@ -80,6 +116,11 @@ function graphMock(options: { foreignOwner?: boolean, foreignAdset?: boolean, pa
       }
     }
     if (String(url).endsWith('/17841400000000001')) {
+      if (init?.query?.fields === 'boost_eligibility_info') {
+        return options.boostEligible == null
+          ? {}
+          : { boost_eligibility_info: { is_eligible: options.boostEligible, reason: options.boostEligible ? 'OK' : 'Mídia bloqueada' } }
+      }
       return {
         id: '17841400000000001',
         username: 'brand',
@@ -197,5 +238,102 @@ describe('existing Instagram post ads', () => {
     expect(() => metaCreateAdSchema.parse({ ...baseInput, instagramMediaId: '17841400000000001', instagramPermalink: 'https://www.instagram.com/p/ABC_123/' })).toThrow()
     expect(() => metaCreateAdSchema.parse({ ...baseInput, instagramMediaId: '17841400000000001', message: 'alterar' })).toThrow()
     expect(() => metaCreateAdSchema.parse({ ...baseInput, instagramMediaId: '17841400000000001', creativeId: 'creative_other' })).toThrow()
+  })
+
+  it('discovers only the configured Page/Instagram pair and pages real media IDs', async () => {
+    const graphFetch = graphMock({ boostEligible: false })
+    const ctx = { client: integration(config), graphFetch }
+    const accounts = await metaListInstagramAccounts(ctx, { tenantId: 'tenant-1' })
+    expect(accounts.accounts).toEqual([expect.objectContaining({ id: '17841402051902677', pageId: '123456789' })])
+    const list = await metaListInstagramMedia(ctx, { tenantId: 'tenant-1', limit: 10 })
+    expect(list.media[0]).toMatchObject({
+      id: '17841400000000001',
+      mediaType: 'VIDEO',
+      advertisingEligibility: { status: 'unknown' },
+    })
+    expect(list.nextAfter).toBeNull()
+    const item = await metaGetInstagramMedia(ctx, { tenantId: 'tenant-1', instagramMediaId: '17841400000000001' })
+    expect(item.media.id).toBe('17841400000000001')
+    expect(item.media.advertisingEligibility).toEqual({ status: 'unavailable', reason: 'Mídia bloqueada' })
+    expect(graphFetch.mock.calls.find(([url]) => String(url).endsWith('/17841402051902677/media'))?.[1]?.query?.limit).toBe(10)
+  })
+
+  it('uses the Graph cursor without deriving IDs from shortcodes', async () => {
+    const fallback = graphMock()
+    const graphFetch = vi.fn(async (url: string, init?: any) => {
+      if (String(url).endsWith('/17841402051902677/media')) {
+        if (!init?.query?.after) {
+          return {
+            data: [{ id: '17841400000000001', permalink: 'https://www.instagram.com/reel/ABC_123/' }],
+            paging: { cursors: { after: 'opaque-cursor' } },
+          }
+        }
+        expect(init.query.after).toBe('opaque-cursor')
+        return { data: [{ id: '17841400000000002', permalink: 'https://www.instagram.com/p/DEF_456/' }] }
+      }
+      return fallback(url, init)
+    })
+    const ctx = { client: integration(config), graphFetch }
+    const first = await metaListInstagramMedia(ctx, { tenantId: 'tenant-1', limit: 1 })
+    expect(first.nextAfter).toBe('opaque-cursor')
+    const second = await metaListInstagramMedia(ctx, { tenantId: 'tenant-1', limit: 1, after: first.nextAfter! })
+    expect(second.media[0]?.id).toBe('17841400000000002')
+    expect(second.nextAfter).toBeNull()
+  })
+
+  it('blocks Instagram discovery with a foreign ad account or mismatched Page', async () => {
+    const foreignGraph = graphMock()
+    await expect(metaListInstagramMedia({ client: integration(config), graphFetch: foreignGraph }, {
+      tenantId: 'tenant-1',
+      adAccountId: '999',
+    })).rejects.toMatchObject({ code: 'AD_ACCOUNT_TENANT_MISMATCH' })
+    expect(foreignGraph).not.toHaveBeenCalled()
+
+    const mismatchedGraph = graphMock({ pageMismatch: true })
+    await expect(metaListInstagramAccounts({ client: integration(config), graphFetch: mismatchedGraph }, {
+      tenantId: 'tenant-1',
+    })).rejects.toMatchObject({ code: 'INSTAGRAM_PAGE_MISMATCH' })
+  })
+
+  it('dedicated creation delegates to paused meta_create_ad and rejects unconfirmed writes', async () => {
+    const graphFetch = graphMock()
+    const input = { ...baseInput, instagramMediaId: '17841400000000001' }
+    const preview = await metaCreateAdFromInstagramPost({ client: integration(config), graphFetch }, input)
+    expect(preview.dryRun).toBe(true)
+    expect(preview.status).toBe('PAUSED')
+    expect(graphFetch).not.toHaveBeenCalled()
+    await expect(metaCreateAdFromInstagramPost({ client: integration(config), graphFetch }, {
+      ...input,
+      confirmTenantId: 'another-tenant',
+      dryRun: false,
+    })).rejects.toMatchObject({ code: 'CONFIRM_TENANT_MISMATCH' })
+    const created = await metaCreateAdFromInstagramPost({ client: integration(config), graphFetch }, { ...input, dryRun: false })
+    expect(created.adId).toBe('ad_1')
+    expect(created.status).toBe('PAUSED')
+  })
+
+  it.each(['creative', 'ad'] as const)('preserves Meta diagnostic fields when %s creation fails', async (failAt) => {
+    const graphFetch = graphMock({ failAt })
+    let failure: unknown
+    try {
+      await metaCreateAdFromInstagramPost({ client: integration(config), graphFetch }, {
+        ...baseInput,
+        instagramMediaId: '17841400000000001',
+        dryRun: false,
+      })
+    }
+    catch (error) {
+      failure = error
+    }
+    const formatted = formatToolError(failure)
+    expect(formatted.error.code).toBe('META_GRAPH_ERROR')
+    expect(formatted.error.details).toMatchObject({
+      code: 100,
+      error_subcode: failAt === 'creative' ? 1885316 : 1815857,
+      fbtrace_id: failAt === 'creative' ? 'trace-creative' : 'trace-ad',
+    })
+    expect(JSON.stringify(formatted)).not.toContain('user-token')
+    expect(JSON.stringify(formatted)).not.toContain('page-token')
+    expect(graphFetch.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(failAt === 'creative' ? 1 : 2)
   })
 })

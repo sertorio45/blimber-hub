@@ -26,6 +26,7 @@ describe('resolveBlimberMcpToolName', () => {
     expect(resolveBlimberMcpToolName('meta_create_ad', known)).toBe('meta_create_ad')
     expect(resolveBlimberMcpToolName('Blimber_Hub.meta_create_ad', known)).toBe('meta_create_ad')
     expect(resolveBlimberMcpToolName('ads_meta_create_ad', known)).toBe('meta_create_ad')
+    expect(resolveBlimberMcpToolName('ads_meta_create_ad_from_instagram_post', known)).toBe('meta_create_ad_from_instagram_post')
     expect(resolveBlimberMcpToolName('createAd', known)).toBe('meta_create_ad')
     expect(resolveBlimberMcpToolName('Blimber_Hub.createAd', known)).toBe('meta_create_ad')
     expect(resolveBlimberMcpToolName('uploadMediaAsset', known)).toBe('marketing_upload_asset')
@@ -62,6 +63,10 @@ describe('blimber MCP meta_create_ad invoke', () => {
     expect(names).toContain('meta_create_ad')
     expect(names).toContain('meta_create_campaign')
     expect(names).toContain('meta_create_adset')
+    expect(names).toContain('meta_list_instagram_accounts')
+    expect(names).toContain('meta_list_instagram_media')
+    expect(names).toContain('meta_get_instagram_media')
+    expect(names).toContain('meta_create_ad_from_instagram_post')
 
     const createAdIdx = names.indexOf('meta_create_ad')
     const marketingIdx = names.findIndex(n => n.startsWith('marketing_'))
@@ -74,6 +79,9 @@ describe('blimber MCP meta_create_ad invoke', () => {
     expect(adTool?.inputSchema?.properties).toHaveProperty('adsetId')
     expect(adTool?.inputSchema?.properties).toHaveProperty('instagramMediaId')
     expect(adTool?.inputSchema?.properties).toHaveProperty('instagramPermalink')
+    const existingPostTool = listed.tools.find(t => t.name === 'meta_create_ad_from_instagram_post')
+    expect(existingPostTool?.inputSchema?.properties).toHaveProperty('instagramMediaId')
+    expect(existingPostTool?.inputSchema?.properties).toHaveProperty('confirmTenantId')
 
     const resources = await client.listResources()
     const resourceNames = resources.resources.map(r => r.name)

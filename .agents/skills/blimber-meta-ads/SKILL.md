@@ -47,6 +47,7 @@ description: >-
 | `searchTenants` (HTTP Marketing) | Nome/slug → `{ tenants: [{ id, name, slug }] }` |
 | `meta_list_integrations` | Status + `write_readiness` (ads_management / page token) |
 | `meta_list_ad_accounts` | Contas de anúncio do OAuth |
+| `meta_list_instagram_accounts` / `meta_list_instagram_media` / `meta_get_instagram_media` | Página/IG do tenant, mídias com IDs reais e leitura com ownership; elegibilidade para anúncio pode ser desconhecida |
 | `meta_list_campaigns` | Campanhas |
 | `meta_get_campaign` | Detalhe |
 | `meta_create_campaign` | Criar campanha (PAUSED / dryRun default true) |
@@ -64,6 +65,7 @@ description: >-
 | `meta_update_custom_audience` / `meta_delete_custom_audience` | Update/delete (confirmDelete; recusa se em uso) |
 | `meta_get_custom_audience_usage` | Ads/lookalikes que usam o público |
 | `meta_create_ad` | Criar criativo IMAGE\|VIDEO\|CAROUSEL\|DYNAMIC_CREATIVE_LEGACY\|CATALOG (+ Advantage+), reutilizar `creativeId` ou publicação IG existente (`instagramMediaId` XOR `instagramPermalink`, só INSTAGRAM_PROFILE); tracking opcional; default PAUSED + dryRun true |
+| `meta_create_ad_from_instagram_post` | Atalho dedicado para publicação IG existente em adset do tenant; reutiliza `meta_create_ad`, sempre PAUSED e dryRun default true |
 | `meta_update_ad_creative_copy` | Copy via novo creative |
 | `meta_update_ad_media` | IMAGE\|VIDEO\|CAROUSEL via novo creative |
 | `meta_update_ad_tracking` | Atualiza `tracking_specs` do Ad (merge default; `replaceTrackingSpecs` sobrescreve). dryRun true |
@@ -88,6 +90,7 @@ Catálogo: `GET /api/gpt/meta/tools`
 `createAd.destinationType`: WEBSITE | WHATSAPP | MESSENGER | INSTAGRAM_DIRECT | INSTAGRAM_PROFILE. IMAGE/VIDEO/CAROUSEL em todos; DYNAMIC_CREATIVE_LEGACY e CATALOG só WEBSITE. Carousel WhatsApp usa CTA `WHATSAPP_MESSAGE` + `https://api.whatsapp.com/send` (nunca wa.me).
 Perfil do Instagram: campanha `OUTCOME_TRAFFIC` + adset `destinationType=INSTAGRAM_PROFILE`, `optimizationGoal=PROFILE_VISIT`, `billingEvent=IMPRESSIONS`; alternativa de engajamento: `OUTCOME_ENGAGEMENT` + `PROFILE_AND_PAGE_ENGAGEMENT`. O adset usa `promoted_object.page_id` da Página conectada; `instagram_business_account_id` e `instagram_username` continuam sendo resolvidos da integração para validar a identidade do criativo, sem aceitar identidade cruzada.
 Publicação IG existente: `meta_create_ad` com `destinationType=INSTAGRAM_PROFILE` e `instagramMediaId` **ou** `instagramPermalink` (`/p/` ou `/reel/`), sem `message`, `creativeType`, mídia ou CTA. O creative envia `source_instagram_media_id` top-level; no execute consulta o IG e a Página conectados e valida ownership antes dos POSTs. Permalink é resolvido por listagem paginada da conta (máx. 1.000 posts); para posts antigos, use o ID. Dry-run não consulta Graph e mostra placeholder para o ID resolvido de permalink. Preserve PAUSED + confirm/dryRun.
+Fluxo dedicado: `meta_list_instagram_accounts` → `meta_list_instagram_media` (`after` para mais páginas) → `meta_get_instagram_media` opcional → `meta_create_ad_from_instagram_post` (dryRun, confirmação, execute). A listagem não prova que a publicação pode virar anúncio; detalhes de compatibilidade em `docs/meta-existing-instagram-post.md`.
 `createAd.trackingSpecs`: opcional. Graph `action.type`: `offsite_conversion` + `fbPixel` (Pixel de site); `offline_conversion` + `dataset` (Dataset offline); `leadgen_quality_conversion` + pixel ou dataset. Atalhos: `pixelId`, `offlineDatasetId`. Campo extra oficial: `conversionDomain`. Listar IDs: `meta_list_pixels` / `meta_list_datasets` (invoke). Ad existente: `updateAdTracking` / `meta_update_ad_tracking` (merge; `replaceTrackingSpecs` para overwrite). IDs só da ad account do tenant.  
 `createAdset.isDynamicCreative`: opcional → `is_dynamic_creative=true` (só WEBSITE; ads com DYNAMIC_CREATIVE_LEGACY).  
 `createAdset` / `updateAdsetTargeting`: XOR `targetingTemplate` | `targeting` | `savedAudienceId`. Com Saved Audience, o MCP busca o targeting na Graph e envia intacto (a API oficial não aceita `saved_audience_id` no POST do adset).  

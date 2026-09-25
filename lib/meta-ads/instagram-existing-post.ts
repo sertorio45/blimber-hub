@@ -24,14 +24,55 @@ interface InstagramMedia {
   id?: unknown
   permalink?: unknown
   media_type?: unknown
+  media_product_type?: unknown
+  caption?: unknown
+  timestamp?: unknown
+  thumbnail_url?: unknown
+  boost_eligibility_info?: unknown
   username?: unknown
   owner?: { id?: unknown } | null
+}
+
+export const INSTAGRAM_MEDIA_FIELDS = 'id,permalink,media_type,media_product_type,caption,timestamp,thumbnail_url,username,owner'
+
+export function instagramAdvertisingEligibility(raw: unknown) {
+  const info = raw && typeof raw === 'object' ? raw as Record<string, unknown> : null
+  if (typeof info?.is_eligible === 'boolean') {
+    return {
+      status: info.is_eligible ? 'eligible' as const : 'unavailable' as const,
+      reason: typeof info.reason === 'string' && info.reason
+        ? info.reason
+        : info.is_eligible ? 'Meta indicou elegibilidade para boost.' : 'Meta indicou mídia não elegível para boost.',
+    }
+  }
+  return {
+    status: 'unknown' as const,
+    reason: 'A listagem de mídia não comprova elegibilidade para anúncio; a Meta valida o criativo na criação.',
+  }
+}
+
+export function describeInstagramMedia(media: InstagramMedia) {
+  return {
+    id: String(media.id || ''),
+    permalink: typeof media.permalink === 'string' ? media.permalink : null,
+    mediaType: typeof media.media_type === 'string' ? media.media_type : null,
+    mediaProductType: typeof media.media_product_type === 'string' ? media.media_product_type : null,
+    caption: typeof media.caption === 'string' ? media.caption : null,
+    timestamp: typeof media.timestamp === 'string' ? media.timestamp : null,
+    thumbnailUrl: typeof media.thumbnail_url === 'string' ? media.thumbnail_url : null,
+    advertisingEligibility: instagramAdvertisingEligibility(media.boost_eligibility_info),
+  }
 }
 
 export interface OwnedInstagramMedia {
   id: string
   permalink: string | null
   mediaType: string | null
+  mediaProductType?: string | null
+  caption?: string | null
+  timestamp?: string | null
+  thumbnailUrl?: string | null
+  advertisingEligibility?: ReturnType<typeof instagramAdvertisingEligibility>
 }
 
 /** Read-only ownership check against the tenant's connected IG account, before any AdCreative POST. */
@@ -54,7 +95,7 @@ export async function resolveOwnedInstagramMedia(input: {
   let media: InstagramMedia | null = null
   if (input.mediaId) {
     media = await input.graph(metaGraphUrl(input.apiVersion, `/${input.mediaId}`), {
-      query: { ...query, fields: 'id,permalink,media_type,username,owner' },
+      query: { ...query, fields: INSTAGRAM_MEDIA_FIELDS },
     })
     if (String(media?.id || '') !== input.mediaId) {
       throw new MetaAdsToolError('INSTAGRAM_MEDIA_NOT_FOUND', 'Publicação do Instagram não encontrada.', 404)
@@ -68,7 +109,7 @@ export async function resolveOwnedInstagramMedia(input: {
       const response = await input.graph(metaGraphUrl(input.apiVersion, `/${input.instagramUserId}/media`), {
         query: {
           ...query,
-          fields: 'id,permalink,media_type,username,owner',
+          fields: INSTAGRAM_MEDIA_FIELDS,
           limit: 100,
           ...(after ? { after } : {}),
         },
@@ -106,9 +147,5 @@ export async function resolveOwnedInstagramMedia(input: {
     || (!ownerId && (!accountUsername || mediaUsername !== accountUsername))) {
     throw new MetaAdsToolError('INSTAGRAM_MEDIA_OWNERSHIP', 'Publicação não pertence ao Instagram conectado ao tenant.', 403)
   }
-  return {
-    id: String(media.id),
-    permalink: typeof media.permalink === 'string' ? media.permalink : null,
-    mediaType: typeof media.media_type === 'string' ? media.media_type : null,
-  }
+  return describeInstagramMedia(media)
 }

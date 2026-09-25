@@ -6,6 +6,9 @@ import { assertMetaGptApiKey } from '~/server/utils/meta-gpt-auth'
 const TOOL_INPUT_HINTS: Record<MetaToolName, string[]> = {
   meta_list_integrations: ['tenantId'],
   meta_list_ad_accounts: ['tenantId'],
+  meta_list_instagram_accounts: ['tenantId', 'adAccountId?'],
+  meta_list_instagram_media: ['tenantId', 'adAccountId?', 'limit?', 'after?'],
+  meta_get_instagram_media: ['tenantId', 'adAccountId?', 'instagramMediaId XOR instagramPermalink'],
   meta_list_campaigns: ['tenantId', 'adAccountId?', 'limit?', 'status?'],
   meta_get_campaign: ['tenantId', 'campaignId', 'adAccountId?'],
   meta_list_adsets: ['tenantId', 'campaignId?', 'adAccountId?', 'limit?'],
@@ -153,6 +156,17 @@ const TOOL_INPUT_HINTS: Record<MetaToolName, string[]> = {
     'confirmActive? (se ACTIVE)',
     'dryRun? (default true)',
     'adAccountId?',
+  ],
+  meta_create_ad_from_instagram_post: [
+    'tenantId',
+    'adAccountId?',
+    'adsetId',
+    'name',
+    'instagramMediaId XOR instagramPermalink',
+    'creativeName?',
+    'confirmTenantId (=tenantId)',
+    'confirm (=true)',
+    'dryRun? (default true; sempre PAUSED)',
   ],
   meta_update_adset_budget: [
     'tenantId',
