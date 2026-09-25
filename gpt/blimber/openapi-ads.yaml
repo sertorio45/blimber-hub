@@ -768,10 +768,10 @@ paths:
       operationId: createAd
       summary: Criar anúncio + criativo
       description: >
-        Cria AdCreative+Ad. creativeType IMAGE|VIDEO|CAROUSEL|DYNAMIC_CREATIVE_LEGACY|CATALOG
-        ou creativeId (XOR). IMAGE aceita imageUrl|imageHash|assetId (biblioteca).
-        trackingSpecs/pixelId/offlineDatasetId opcionais.
-        Advantage+ via degreesOfFreedomSpec. PAUSED+dryRun. Pixels: invoke meta_list_pixels.
+        Cria anúncio com novo criativo, creativeId ou publicação IG existente
+        (instagramMediaId XOR instagramPermalink, apenas INSTAGRAM_PROFILE).
+        Publicação existente preserva texto e mídia. Tracking opcional.
+        Default PAUSED e dryRun; execute com confirm e dryRun=false.
       x-openai-isConsequential: true
       requestBody:
         required: true
@@ -1638,6 +1638,20 @@ components:
           description: >
             Reusa AdCreative existente (XOR com creativeType/mídia/copy).
             Ownership validada no execute (mesma ad account).
+        instagramMediaId:
+          type: string
+          pattern: '^\d{5,30}$'
+          description: >
+            ID numérico de publicação do Instagram profissional conectado.
+            XOR instagramPermalink|creativeId|copy|mídia. Somente INSTAGRAM_PROFILE.
+            Ownership conferida no execute; dryRun não consulta Graph.
+        instagramPermalink:
+          type: string
+          format: uri
+          description: >
+            Link https://www.instagram.com/p/… ou /reel/… da publicação conectada.
+            No execute, busca o ID nas mídias desta conta (até 1.000 itens). Para
+            publicação mais antiga, use instagramMediaId. Não faz fetch da URL.
         creativeType:
           type: string
           enum: [IMAGE, VIDEO, CAROUSEL, DYNAMIC_CREATIVE_LEGACY, CATALOG]
@@ -1646,6 +1660,7 @@ components:
             IMAGE|VIDEO|CAROUSEL|DYNAMIC_CREATIVE_LEGACY|CATALOG (ou creativeId XOR).
             Advantage+ = degreesOfFreedomSpec. Mídia flexível Ads Manager = pac_relaxation.
             Flexible Ad Format (creative_asset_groups_spec) não suportado — capability=false.
+            Omita ao usar instagramMediaId ou instagramPermalink.
         destinationType:
           type: string
           enum: [WEBSITE, WHATSAPP, MESSENGER, INSTAGRAM_DIRECT, INSTAGRAM_PROFILE]

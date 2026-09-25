@@ -138,6 +138,7 @@ const TOOL_INPUT_HINTS: Record<MetaToolName, string[]> = {
     'name',
     'destinationType? (WEBSITE|WHATSAPP|MESSENGER|INSTAGRAM_DIRECT|INSTAGRAM_PROFILE)',
     'creativeType? (IMAGE|VIDEO|CAROUSEL|DYNAMIC_CREATIVE_LEGACY|CATALOG)',
+    'instagramMediaId? XOR instagramPermalink? (post/reel existente; INSTAGRAM_PROFILE; sem copy/mídia)',
     'linkUrl (https, só WEBSITE)',
     'message',
     'confirmTenantId (=tenantId)',

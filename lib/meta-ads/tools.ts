@@ -33,6 +33,7 @@ import {
   type MetaAdDestinationType,
 } from './ad-destination'
 import { getMetaCapabilities } from './capabilities'
+import { instagramPostShortcode, resolveOwnedInstagramMedia } from './instagram-existing-post'
 import {
   assertProductSetOwned,
   listProductCatalogs,
@@ -716,6 +717,10 @@ export const metaCreateAdSchema = tenantContextSchema
       .min(1)
       .optional()
       .describe('Reusa AdCreative existente (XOR com creativeType/mídia/copy). Ownership validada no execute.'),
+    instagramMediaId: z.string().regex(/^\d{5,30}$/).optional()
+      .describe('ID numérico de publicação existente do Instagram conectado. XOR instagramPermalink|creativeId|mídia/copy; destinationType=INSTAGRAM_PROFILE.'),
+    instagramPermalink: z.string().url().optional()
+      .describe('Link https://www.instagram.com/p/… ou /reel/…; resolvido entre as mídias do Instagram conectado no execute. XOR instagramMediaId.'),
     creativeType: z
       .string()
       .optional()
@@ -785,8 +790,22 @@ export const metaCreateAdSchema = tenantContextSchema
   })
   .superRefine((data, ctx) => {
     const hasCreativeId = Boolean(data.creativeId)
+    const hasExistingPost = Boolean(data.instagramMediaId || data.instagramPermalink)
+    if (data.instagramMediaId && data.instagramPermalink) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Informe instagramMediaId OU instagramPermalink.', path: ['instagramPermalink'] })
+    }
+    if (data.instagramPermalink) {
+      try {
+        instagramPostShortcode(data.instagramPermalink)
+      }
+      catch {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Use um permalink https://www.instagram.com/p/… ou /reel/… .', path: ['instagramPermalink'] })
+      }
+    }
     if (hasCreativeId) {
       const conflicting = [
+        data.instagramMediaId,
+        data.instagramPermalink,
         data.message,
         data.linkUrl,
         data.imageUrl,
@@ -806,6 +825,21 @@ export const metaCreateAdSchema = tenantContextSchema
           message: 'creativeId é XOR: não envie mídia/copy/assetFeed/productSet junto com creativeId.',
           path: ['creativeId'],
         })
+      }
+      return
+    }
+
+    if (hasExistingPost) {
+      if (data.destinationType !== 'INSTAGRAM_PROFILE') {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Publicação existente requer destinationType=INSTAGRAM_PROFILE nesta versão.', path: ['destinationType'] })
+      }
+      if (data.creativeType !== 'IMAGE' || [
+        data.linkUrl, data.message, data.headline, data.description, data.callToAction,
+        data.welcomeMessage, data.imageUrl, data.imageHash, data.assetId, data.sourceBase64,
+        data.videoId, data.videoUrl, data.childAttachments, data.assetFeed,
+        data.degreesOfFreedomSpec, data.catalogId, data.productSetId, data.placementAssets,
+      ].some(Boolean)) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Publicação existente reutiliza mídia e texto originais: omita creativeType, copy, CTA e mídias.', path: ['instagramMediaId'] })
       }
       return
     }
@@ -3189,7 +3223,7 @@ export async function metaCreateAdset(
 
 /**
  * Create AdCreative + Ad (or ad from existing creativeId).
- * creativeId XOR creative input. IMAGE|VIDEO|CAROUSEL|DYNAMIC_CREATIVE_LEGACY|CATALOG.
+ * creativeId XOR creative input XOR an existing Instagram publication.
  * Optional Advantage+ degreesOfFreedomSpec. dryRun default true — no uploads/mutations.
  */
 export async function metaCreateAd(
@@ -3204,7 +3238,10 @@ export async function metaCreateAd(
   const dryRun = resolveDryRun(input.dryRun, true)
   const destinationType: MetaAdDestinationType = input.destinationType ?? 'WEBSITE'
   const reuseCreativeId = input.creativeId ? String(input.creativeId).trim() : null
-  const creativeType = reuseCreativeId
+  const existingInstagramPost = Boolean(input.instagramMediaId || input.instagramPermalink)
+  const creativeType = existingInstagramPost
+    ? 'EXISTING_INSTAGRAM_POST'
+    : reuseCreativeId
     ? null
     : normalizeMetaAdCreativeType(input.creativeType)
   const creds = await withCreds(ctx, input.tenantId, input.adAccountId)
@@ -3250,7 +3287,7 @@ export async function metaCreateAd(
   }
 
   let resolvedInstagramProfileUrl: string | null = null
-  if (destinationType === 'INSTAGRAM_PROFILE' && !reuseCreativeId) {
+  if (destinationType === 'INSTAGRAM_PROFILE' && !reuseCreativeId && !existingInstagramPost) {
     let username = String(tokenCtx.publicConfig.instagram_username || '').trim()
     if (!username && !dryRun && instagramUserId) {
       const instagramAccount = await graph(metaGraphUrl(creds.apiVersion, `/${instagramUserId}`), {
@@ -3285,7 +3322,7 @@ export async function metaCreateAd(
 
   let creativeBody: Record<string, unknown> | null = null
   const placementAssets = input.placementAssets as PlacementAssetsInput | undefined
-  if (!reuseCreativeId && pageId && creativeType && placementAssets
+  if (!reuseCreativeId && !existingInstagramPost && pageId && creativeType && placementAssets
     && (creativeType === 'IMAGE' || creativeType === 'VIDEO')) {
     const resolvedImages: Array<{ label: string, hash: string }> = []
     const resolvedVideos: Array<{ label: string, videoId: string }> = []
@@ -3346,7 +3383,7 @@ export async function metaCreateAd(
       creativeBody = applyInstagramUserIdToCreativeBody(creativeBody, instagramUserId ?? null)
     }
   }
-  else if (!reuseCreativeId && pageId && creativeType) {
+  else if (!reuseCreativeId && !existingInstagramPost && pageId && creativeType && creativeType !== 'EXISTING_INSTAGRAM_POST') {
     if (!dryRun && creativeType === 'IMAGE' && libraryAsset && !input.imageHash) {
       const bytes = await downloadLibraryImageBytes(ctx.client, libraryAsset)
       const uploaded = await uploadImage(mediaCtx, { bytes, name: libraryAsset.name, mimeType: libraryAsset.mimeType }, { dryRun: false })
@@ -3412,6 +3449,8 @@ export async function metaCreateAd(
   let adsetName: string | null = null
   let campaignId: string | null = null
   let adsetDestinationType: string | null = null
+  let resolvedInstagramMediaId = input.instagramMediaId ?? null
+  let resolvedInstagramPermalink = input.instagramPermalink ?? null
   if (!dryRun) {
     const adset = await graph(metaGraphUrl(creds.apiVersion, `/${input.adsetId}`), {
       query: {
@@ -3473,6 +3512,35 @@ export async function metaCreateAd(
         message: 'AdCreative não pertence à ad account do tenant.',
       })
     }
+
+    if (existingInstagramPost && pageId && instagramUserId) {
+      const page = await graph(metaGraphUrl(creds.apiVersion, `/${pageId}`), {
+        query: { fields: 'id,instagram_business_account{id}', access_token: creds.accessToken },
+      })
+      if (String(page?.id || '') !== pageId
+        || String(page?.instagram_business_account?.id || '') !== instagramUserId) {
+        throw new MetaAdsToolError('INSTAGRAM_PAGE_MISMATCH', 'A Página conectada não está vinculada ao Instagram configurado neste tenant.', 403)
+      }
+      const media = await resolveOwnedInstagramMedia({
+        apiVersion: creds.apiVersion,
+        accessToken: creds.accessToken,
+        instagramUserId,
+        mediaId: input.instagramMediaId,
+        permalink: input.instagramPermalink,
+        graph,
+      })
+      resolvedInstagramMediaId = media.id
+      resolvedInstagramPermalink = media.permalink
+    }
+  }
+
+  if (existingInstagramPost && pageId && instagramUserId) {
+    creativeBody = {
+      name: creativeName,
+      object_id: pageId,
+      instagram_user_id: instagramUserId,
+      source_instagram_media_id: resolvedInstagramMediaId || '(resolvido do permalink no execute)',
+    }
   }
 
   const compiledTracking = compileAdTracking(input)
@@ -3503,6 +3571,8 @@ export async function metaCreateAd(
   const mediaNotes: string[] = []
   if (reuseCreativeId)
     mediaNotes.push(`reuse creativeId: ${reuseCreativeId}`)
+  else if (existingInstagramPost)
+    mediaNotes.push(`publicação existente: ${resolvedInstagramMediaId || 'ID resolvido pelo permalink no execute'}; mídia e engajamento originais preservados.`)
   else
     mediaNotes.push(`creativeType: ${creativeType}`)
   if (creativeType === 'VIDEO' && resolvedVideoId)
@@ -3531,13 +3601,15 @@ export async function metaCreateAd(
     const cta = META_MESSAGING_CTA_BY_DESTINATION[destinationType]
     mediaNotes.push(`Click-to-Message: CTA ${cta.type} + app_destination=${cta.appDestination}.`)
   }
-  if (destinationType === 'INSTAGRAM_PROFILE') {
+  if (destinationType === 'INSTAGRAM_PROFILE' && !existingInstagramPost) {
     mediaNotes.push(`Instagram Profile: instagram_user_id=${instagramUserId}; destino=${resolvedInstagramProfileUrl || '(creative existente)'}.`)
   }
   mediaNotes.push(...summarizeTrackingForPreview(compiledTracking))
 
   const linkNote = destinationType === 'WEBSITE'
     ? `link: ${input.linkUrl ?? '(assetFeed.linkUrls / creativeId)'}`
+    : existingInstagramPost
+      ? `publicação: ${resolvedInstagramPermalink || '(permalink consultado no execute)'}`
     : destinationType === 'INSTAGRAM_PROFILE'
       ? `link: ${resolvedInstagramProfileUrl ?? '(creative existente)'} (perfil conectado)`
       : 'link: (protocolo messaging Meta — sem linkUrl de site do usuário)'
@@ -3557,10 +3629,12 @@ export async function metaCreateAd(
           ? `page_id: ${pageId}${tokenCtx.publicConfig.page_name ? ` (${tokenCtx.publicConfig.page_name})` : ''}`
           : 'page_id: (reuse creativeId — page check skipped)',
         linkNote,
-        message
+        existingInstagramPost
+          ? 'message: texto original da publicação (sem edição)'
+          : message
           ? `message: ${message.slice(0, 120)}${message.length > 120 ? '…' : ''}`
           : 'message: (omitido)',
-        `CTA: ${callToAction}`,
+        existingInstagramPost ? 'CTA: definido pela Meta para a publicação existente' : `CTA: ${callToAction}`,
         `ad_account: ${creds.adAccountId}`,
         ...mediaNotes,
         'dryRun=true (default): nenhuma mutação/upload enviada à Graph API.',
@@ -3641,6 +3715,8 @@ export async function metaCreateAd(
         name: input.name,
         creativeName,
         creativeType,
+        instagramMediaId: resolvedInstagramMediaId,
+        instagramPermalink: resolvedInstagramPermalink,
         status,
         pageId,
         destinationType,
@@ -3648,7 +3724,7 @@ export async function metaCreateAd(
         message: message || null,
         headline: input.headline ?? null,
         description: input.description ?? null,
-        callToAction,
+        callToAction: existingInstagramPost ? null : callToAction,
         welcomeMessage: input.welcomeMessage ?? null,
         imageUrl: resolvedImageUrl,
         imageHash: resolvedImageHash,
@@ -3681,6 +3757,8 @@ export async function metaCreateAd(
         adsetId: input.adsetId,
         pageId,
         creativeType,
+        instagramMediaId: resolvedInstagramMediaId,
+        instagramPermalink: resolvedInstagramPermalink,
         creativeId: reuseCreativeId,
         destinationType,
         linkUrl: destinationType === 'WEBSITE' ? (input.linkUrl ?? null) : null,
@@ -3700,6 +3778,8 @@ export async function metaCreateAd(
       name: input.name,
       creativeName,
       creativeType,
+      instagramMediaId: resolvedInstagramMediaId,
+      instagramPermalink: resolvedInstagramPermalink,
       status,
       pageId,
       destinationType,
@@ -3707,7 +3787,7 @@ export async function metaCreateAd(
       message: message || null,
       headline: input.headline ?? null,
       description: input.description ?? null,
-      callToAction,
+      callToAction: existingInstagramPost ? null : callToAction,
       welcomeMessage: input.welcomeMessage ?? null,
       imageUrl: resolvedImageUrl,
       imageHash: resolvedImageHash,
@@ -3745,6 +3825,8 @@ export async function metaCreateAd(
         status: result.status,
         pageId: result.pageId,
         creativeType: result.creativeType,
+        instagramMediaId: result.instagramMediaId,
+        instagramPermalink: result.instagramPermalink,
         destinationType: result.destinationType,
         linkUrl: result.linkUrl,
         message: result.message,
@@ -6414,7 +6496,7 @@ export const META_TOOL_DESCRIPTIONS: Record<MetaToolName, string> = {
   meta_create_adset:
     'Cria adset (BR_* | targeting custom | savedAudienceId). PAUSED+dryRun. destinationType WEBSITE|WHATSAPP|MESSENGER|INSTAGRAM_DIRECT|INSTAGRAM_PROFILE. Perfil: OUTCOME_TRAFFIC+PROFILE_VISIT ou OUTCOME_ENGAGEMENT+PROFILE_AND_PAGE_ENGAGEMENT. isDynamicCreative opcional (só WEBSITE).',
   meta_create_ad:
-    'Cria Ad+Creative. creativeId XOR creativeType IMAGE|VIDEO|CAROUSEL|DYNAMIC_CREATIVE_LEGACY|CATALOG. IMAGE: imageUrl|imageHash|assetId|sourceBase64 (biblioteca). Destinos WEBSITE|WHATSAPP|MESSENGER|INSTAGRAM_DIRECT|INSTAGRAM_PROFILE; perfil usa identidade/URL do Instagram conectado. Tracking e Advantage+ opcionais. PAUSED+dryRun.',
+    'Cria Ad+Creative. creativeId XOR creativeType IMAGE|VIDEO|CAROUSEL|DYNAMIC_CREATIVE_LEGACY|CATALOG XOR publicação existente (instagramMediaId|instagramPermalink, somente INSTAGRAM_PROFILE). IMAGE: imageUrl|imageHash|assetId|sourceBase64 (biblioteca). Destinos WEBSITE|WHATSAPP|MESSENGER|INSTAGRAM_DIRECT|INSTAGRAM_PROFILE; perfil usa identidade/URL do Instagram conectado. Tracking e Advantage+ opcionais. PAUSED+dryRun.',
   meta_update_adset_budget:
     'Atualiza budget do adset (daily|lifetime). dryRun default true. Teto META_GPT_BUDGET_* + confirmBudgetIncrease se aumento % alto.',
   meta_update_adset_targeting:

@@ -72,6 +72,8 @@ describe('blimber MCP meta_create_ad invoke', () => {
     const adTool = listed.tools.find(t => t.name === 'meta_create_ad')
     expect(adTool?.inputSchema?.properties).toHaveProperty('creativeType')
     expect(adTool?.inputSchema?.properties).toHaveProperty('adsetId')
+    expect(adTool?.inputSchema?.properties).toHaveProperty('instagramMediaId')
+    expect(adTool?.inputSchema?.properties).toHaveProperty('instagramPermalink')
 
     const resources = await client.listResources()
     const resourceNames = resources.resources.map(r => r.name)
