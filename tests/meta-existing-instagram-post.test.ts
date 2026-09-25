@@ -57,10 +57,7 @@ function graphMock(options: { foreignOwner?: boolean, foreignAdset?: boolean, pa
       if (String(url).endsWith('/adcreatives')) {
         expect(init.body).toEqual({
           name: 'Post existente Creative',
-          object_story_spec: {
-            page_id: '123456789',
-            instagram_user_id: '17841402051902677',
-          },
+          instagram_user_id: '17841402051902677',
           source_instagram_media_id: '17841400000000001',
         })
         if (options.failAt === 'creative') {
@@ -153,10 +150,7 @@ describe('existing Instagram post ads', () => {
     expect(posts).toHaveLength(2)
     expect(posts[0]![1]?.body).toEqual({
       name: 'Post existente Creative',
-      object_story_spec: {
-        page_id: '123456789',
-        instagram_user_id: '17841402051902677',
-      },
+      instagram_user_id: '17841402051902677',
       source_instagram_media_id: '17841400000000001',
     })
     expect(posts[0]![1]?.query?.access_token).toBe('user-token')
@@ -176,6 +170,7 @@ describe('existing Instagram post ads', () => {
       { ...baseInput, instagramMediaId: '17841400000000001' },
     )
     expect((byId as any).preview.body.creative.source_instagram_media_id).toBe('17841400000000001')
+    expect((byId as any).preview.body.creative).not.toHaveProperty('object_story_spec')
     const byUrl = await metaCreateAd(
       { client: integration(config), graphFetch },
       { ...baseInput, instagramPermalink: 'https://www.instagram.com/reel/ABC_123/?igsh=foo' },
