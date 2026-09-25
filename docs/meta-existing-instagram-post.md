@@ -8,7 +8,7 @@ O ID da mídia é o `id` retornado pela Graph. Permalink é apenas uma conveniê
 
 | Combinação | Situação nesta etapa | Evidência/limite |
 | --- | --- | --- |
-| `source_instagram_media_id` no `POST /act_{id}/adcreatives` | Implementado | Campo de criação presente no [SDK oficial da Meta](https://github.com/facebook/facebook-python-business-sdk/blob/main/facebook_business/adobjects/adaccount.py); a aceitação da combinação concreta depende da Graph/conta. |
+| `source_instagram_media_id` no `POST /act_{id}/adcreatives` | Implementado | Campo de criação presente no [SDK oficial da Meta](https://github.com/facebook/facebook-python-business-sdk/blob/main/facebook_business/adobjects/adaccount.py). O Blimber envia o ID da mídia no nível do AdCreative e a identidade em `object_story_spec.page_id`/`instagram_user_id`, sem `object_id`, `video_data` ou URL de tráfego. A aceitação da combinação concreta depende da Graph/conta. |
 | `INSTAGRAM_PROFILE` com adset existente, criativo acima e `POST /act_{id}/ads` PAUSED | Implementado, validação live pendente | Testes com fixtures estritas; sem afirmação de aceitação em produção. |
 | `object_story_id` | Fora deste fluxo | Identificador de publicação de Página/Facebook; não substituir automaticamente o ID da mídia Instagram. |
 | `effective_instagram_media_id` | Leitura/diagnóstico, não entrada de criação | [SDK oficial](https://github.com/facebook/facebook-python-business-sdk/blob/main/facebook_business/adobjects/adcreative.py) o expõe como campo do AdCreative. |

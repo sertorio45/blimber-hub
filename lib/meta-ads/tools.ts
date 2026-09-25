@@ -3692,8 +3692,10 @@ export async function metaCreateAd(
   if (existingInstagramPost && pageId && instagramUserId) {
     creativeBody = {
       name: creativeName,
-      object_id: pageId,
-      instagram_user_id: instagramUserId,
+      object_story_spec: {
+        page_id: pageId,
+        instagram_user_id: instagramUserId,
+      },
       source_instagram_media_id: resolvedInstagramMediaId || '(resolvido do permalink no execute)',
     }
   }
