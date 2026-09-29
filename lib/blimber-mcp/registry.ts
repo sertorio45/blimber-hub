@@ -33,6 +33,15 @@ export function listPlatformToolDescriptors(): BlimberMcpToolDescriptor[] {
       notes: 'Também em /api/gpt/meta/tenants (pack Meta legado).',
     },
     {
+      name: 'listClients',
+      domain: 'platform',
+      description: 'Lista clientes paginados, módulos ativos e integrações sem credenciais; filtros para n8n.',
+      status: 'ready',
+      httpPath: '/api/gpt/clients',
+      httpMethod: 'GET',
+      arguments: ['limit?', 'cursor?', 'includeInactive?', 'module?', 'integrationProvider?', 'integrationStatus?'],
+    },
+    {
       name: 'listBlimberTools',
       domain: 'platform',
       description: 'Catálogo unificado de tools por domínio (marketing, ads.meta, crm stub…).',

@@ -30,12 +30,13 @@ import {
   MARKETING_TOOL_SCHEMAS,
   type MarketingToolName,
 } from './marketing-tools'
+import { listClients, listClientsSchema } from './platform/clients'
 import { searchTenants, searchTenantsSchema } from './platform/tenants'
 import { resolveBlimberMcpToolName } from './tool-name'
 import type { BlimberMcpToolContext } from './types'
 import { zodObjectShape } from './zod-shape'
 
-const PLATFORM_TOOL_NAMES = ['searchTenants', 'listBlimberTools'] as const
+const PLATFORM_TOOL_NAMES = ['searchTenants', 'listClients', 'listBlimberTools'] as const
 export type BlimberMcpRemoteToolName =
   | typeof PLATFORM_TOOL_NAMES[number]
   | MarketingToolName
@@ -173,6 +174,20 @@ export function createBlimberMcpServer(
   )
 
   server.tool(
+    'listClients',
+    'Lista clientes com paginação, módulos ativos e estado das integrações (sem credenciais). Filtros por módulo e provider.',
+    zodObjectShape(listClientsSchema),
+    async (args) => {
+      try {
+        return toolTextPayload({ ok: true, tool: 'listClients', data: await listClients(client, args) })
+      }
+      catch (error) {
+        return toolTextPayload(formatBlimberMcpError(error), true)
+      }
+    },
+  )
+
+  server.tool(
     'listBlimberTools',
     'Catálogo unificado de tools por domínio (marketing, ads.meta, crm stub…).',
     {},
@@ -248,6 +263,7 @@ export function createBlimberMcpServer(
     server,
     [
       { name: 'searchTenants', description: 'Busca tenant por nome/slug.' },
+      { name: 'listClients', description: 'Lista clientes, módulos ativos e integrações.' },
       { name: 'listBlimberTools', description: 'Catálogo unificado de tools.' },
       ...registeredMeta,
       ...(Object.keys(MARKETING_TOOL_DESCRIPTIONS) as MarketingToolName[]).map(name => ({

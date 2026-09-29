@@ -38,6 +38,10 @@ export {
   invokeAdsGoogleTool,
 } from './ads/google'
 export {
+  listClients,
+  listClientsSchema,
+} from './platform/clients'
+export {
   searchTenants,
   searchTenantsSchema,
   buildTenantNameSearchPattern,

@@ -24,6 +24,7 @@ export default defineEventHandler((event) => {
       httpAdsMetaAlias: '/api/gpt/ads/meta/*',
       httpAdsGoogle: '/api/gpt/ads/google/status',
       httpTenants: '/api/gpt/tenants',
+      httpClients: '/api/gpt/clients',
     },
     namespaces: {
       platform: registry.tools.filter(t => t.domain === 'platform').map(t => t.name),
