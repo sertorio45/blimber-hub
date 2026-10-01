@@ -131,6 +131,7 @@ const TOOL_INPUT_HINTS: Record<MetaToolName, string[]> = {
     'confirm (=true)',
     'status? (default PAUSED)',
     'destinationType? (WEBSITE|WHATSAPP|MESSENGER|INSTAGRAM_DIRECT|INSTAGRAM_PROFILE)',
+    'pixelId? + customEventType? (obrigatórios em WEBSITE + OFFSITE_CONVERSIONS)',
     'isDynamicCreative? (true → is_dynamic_creative; só WEBSITE / DYNAMIC_CREATIVE_LEGACY)',
     'startTime?',
     'confirmActive? (se ACTIVE)',

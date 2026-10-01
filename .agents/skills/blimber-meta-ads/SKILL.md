@@ -53,6 +53,8 @@ description: >-
 | `meta_create_campaign` | Criar campanha (PAUSED / dryRun default true) |
 | `meta_list_adsets` | Conjuntos de anúncios |
 | `meta_create_adset` | Criar adset (`BR_18_65` / `BR_*` **ou** `targeting` custom **ou** `savedAudienceId`; destination WEBSITE\|WHATSAPP\|MESSENGER\|INSTAGRAM_DIRECT\|INSTAGRAM_PROFILE; `isDynamicCreative` opcional p/ DYNAMIC_CREATIVE_LEGACY) |
+
+Para `meta_create_adset` com `destinationType=WEBSITE` e `optimizationGoal=OFFSITE_CONVERSIONS`, informe `pixelId` e `customEventType` (ex.: `PURCHASE`) explicitamente. O dry-run consulta os pixels da conta por GET, mostra `destination_type=WEBSITE` e `promoted_object`, e não cria objetos. `meta_get_adset` e `meta_list_adsets` retornam esses campos para conferência.
 | `meta_update_adset_budget` | Budget adset (dryRun default true) |
 | `meta_update_adset_targeting` | Targeting `BR_*` **ou** `targeting` custom **ou** `savedAudienceId` (XOR) |
 | `meta_list_ads` | Anúncios |

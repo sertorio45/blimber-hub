@@ -1522,6 +1522,14 @@ components:
           enum: [WEBSITE, WHATSAPP, MESSENGER, INSTAGRAM_DIRECT, INSTAGRAM_PROFILE]
           default: WEBSITE
           description: Destino do adset. INSTAGRAM_PROFILE usa o Instagram profissional conectado.
+        pixelId:
+          type: string
+          pattern: '^[0-9]+$'
+          description: Pixel explícito da conta; obrigatório em WEBSITE + OFFSITE_CONVERSIONS.
+        customEventType:
+          type: string
+          enum: [PURCHASE, LEAD, COMPLETE_REGISTRATION, ADD_TO_CART, INITIATED_CHECKOUT, ADD_PAYMENT_INFO, CONTENT_VIEW, SEARCH, CONTACT, SUBSCRIBE, START_TRIAL, SCHEDULE, SUBMIT_APPLICATION, ADD_TO_WISHLIST, DONATE, FIND_LOCATION, CUSTOMIZE_PRODUCT, OTHER]
+          description: Evento otimizado no site; obrigatório junto de pixelId em WEBSITE + OFFSITE_CONVERSIONS.
         isDynamicCreative:
           type: boolean
           description: >

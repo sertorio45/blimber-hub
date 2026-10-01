@@ -130,6 +130,7 @@ const TOOL_INPUT_HINTS: Record<MetaToolName, string[]> = {
     'confirm (=true)',
     'status? (default PAUSED)',
     'destinationType? (WEBSITE|WHATSAPP|MESSENGER|INSTAGRAM_DIRECT|INSTAGRAM_PROFILE)',
+    'pixelId? + customEventType? (obrigatórios em WEBSITE + OFFSITE_CONVERSIONS)',
     'startTime?',
     'confirmActive? (se ACTIVE)',
     'dryRun? (default true)',

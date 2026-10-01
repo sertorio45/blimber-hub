@@ -76,6 +76,81 @@ describe('meta-ads MCP tools', () => {
     setMetaWriteAuditSink(() => {})
   })
 
+  it('previews Website Purchase with an explicitly owned pixel and sends the same body on execute', async () => {
+    const client = createIntegrationClient({
+      access_token_enc: encryptSecret('tok'),
+      ad_account_id: '1520081329440494',
+      pixel_id: 'other-pixel',
+      api_version: 'v25.0',
+    })
+    const graphFetch = vi.fn(async (url: string, init?: any) => {
+      if (String(url).includes('/adspixels'))
+        return { data: [{ id: '1282443063972836', name: 'Pixel selecionado' }] }
+      if (String(url).includes('/52566307185569'))
+        return { id: '52566307185569', account_id: '1520081329440494', objective: 'OUTCOME_SALES' }
+      if (init?.method === 'POST')
+        return { id: 'new-adset' }
+      return { id: 'act_1520081329440494', currency: 'BRL' }
+    })
+    const input = {
+      tenantId: 'tenant-1', adAccountId: '1520081329440494', campaignId: '52566307185569',
+      name: 'Vendas Website Purchase', targetingTemplate: 'BR_18_65',
+      campaignObjective: 'OUTCOME_SALES', destinationType: 'WEBSITE',
+      optimizationGoal: 'OFFSITE_CONVERSIONS', billingEvent: 'IMPRESSIONS',
+      pixelId: '1282443063972836', customEventType: 'PURCHASE',
+      dailyBudget: 2000, status: 'PAUSED', confirmTenantId: 'tenant-1', confirm: true,
+    } as const
+
+    const preview = await metaCreateAdset({ client, graphFetch }, { ...input, dryRun: true })
+    expect((preview as any).preview.body).toEqual({
+      name: 'Vendas Website Purchase',
+      campaign_id: '52566307185569',
+      billing_event: 'IMPRESSIONS',
+      optimization_goal: 'OFFSITE_CONVERSIONS',
+      bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
+      targeting: {
+        geo_locations: { countries: ['BR'] },
+        age_min: 18,
+        age_max: 65,
+        targeting_automation: { advantage_audience: 0 },
+      },
+      status: 'PAUSED',
+      destination_type: 'WEBSITE',
+      promoted_object: { pixel_id: input.pixelId, custom_event_type: 'PURCHASE' },
+      daily_budget: 2000,
+    })
+    expect(graphFetch.mock.calls.every(([, init]) => init?.method !== 'POST')).toBe(true)
+    const result = await metaCreateAdset({ client, graphFetch }, { ...input, dryRun: false })
+    expect(result.success).toBe(true)
+    const post = graphFetch.mock.calls.find(([, init]) => init?.method === 'POST')
+    expect(post?.[1]?.body).toEqual((preview as any).preview.body)
+  })
+
+  it('requires both pixel and event and never falls back to the integration pixel', async () => {
+    const client = createIntegrationClient({ access_token_enc: encryptSecret('tok'), ad_account_id: '555', pixel_id: '999' })
+    const graphFetch = vi.fn()
+    const base = {
+      tenantId: 'tenant-1', campaignId: 'cmp_1', name: 'Website', targetingTemplate: 'BR_18_65',
+      destinationType: 'WEBSITE', optimizationGoal: 'OFFSITE_CONVERSIONS', billingEvent: 'IMPRESSIONS',
+      dailyBudget: 2000, confirmTenantId: 'tenant-1', confirm: true, dryRun: true,
+    } as const
+    await expect(metaCreateAdset({ client, graphFetch }, { ...base, customEventType: 'PURCHASE' })).rejects.toThrow()
+    await expect(metaCreateAdset({ client, graphFetch }, { ...base, pixelId: '123' })).rejects.toThrow()
+    expect(graphFetch).not.toHaveBeenCalled()
+  })
+
+  it('rejects a pixel absent from the tenant ad account before any write', async () => {
+    const client = createIntegrationClient({ access_token_enc: encryptSecret('tok'), ad_account_id: '555', pixel_id: '999' })
+    const graphFetch = vi.fn(async (_url: string, _init?: any) => ({ data: [{ id: '999' }] }))
+    await expect(metaCreateAdset({ client, graphFetch }, {
+      tenantId: 'tenant-1', campaignId: 'cmp_1', name: 'Website', targetingTemplate: 'BR_18_65',
+      destinationType: 'WEBSITE', optimizationGoal: 'OFFSITE_CONVERSIONS', billingEvent: 'IMPRESSIONS',
+      pixelId: '123', customEventType: 'PURCHASE', dailyBudget: 2000,
+      confirmTenantId: 'tenant-1', confirm: true, dryRun: false,
+    })).rejects.toMatchObject({ code: 'PIXEL_TENANT_MISMATCH' })
+    expect(graphFetch.mock.calls.every(([, init]) => init?.method !== 'POST')).toBe(true)
+  })
+
   it('lists campaigns via Graph API using tenant token (never returns token)', async () => {
     const token = 'meta-access-token-secret'
     const client = createIntegrationClient({

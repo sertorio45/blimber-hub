@@ -328,6 +328,8 @@ describe('blimber unified MCP registry + openapi', () => {
   })
 
   it('maps ads_meta_* aliases to meta_* tools', () => {
+    expect(toAdsMetaToolName('meta_create_adset')).toBe('ads_meta_create_adset')
+    expect(fromAdsMetaToolName('ads_meta_create_adset')).toBe('meta_create_adset')
     expect(toAdsMetaToolName('meta_list_campaigns')).toBe('ads_meta_list_campaigns')
     expect(fromAdsMetaToolName('ads_meta_list_campaigns')).toBe('meta_list_campaigns')
     expect(fromAdsMetaToolName('meta_get_insights')).toBe('meta_get_insights')

@@ -164,6 +164,8 @@ describe('meta_get_adset / meta_copy_adset', () => {
 
     expect((result.adset as any).targeting.geo_locations.countries).toContain('BR')
     expect((result.adset as any).targeting.age_min).toBe(25)
+    expect((result.adset as any).destination_type).toBe('WEBSITE')
+    expect((result.adset as any).promoted_object).toEqual({ pixel_id: 'px_1', custom_event_type: 'PURCHASE' })
   })
 
   it('5. placements preservados (extraídos do targeting)', async () => {
@@ -483,6 +485,15 @@ describe('meta_get_adset / meta_copy_adset', () => {
     expect(fields).toContain('targeting')
     expect(fields).toContain('promoted_object')
     expect(fields).not.toMatch(/(^|,)targeting_automation(,|$)/)
+  })
+
+  it('meta_list_adsets summary inclui destino, pixel e evento', async () => {
+    const client = createIntegrationClient({ access_token_enc: encryptSecret('tok'), ad_account_id: '555' })
+    const graphFetch = vi.fn(async (_url: string, _init?: any) => ({ data: [{ ...SOURCE_ADSET }] }))
+    const result = await metaListAdsets({ client, graphFetch }, { tenantId: 'tenant-1' })
+    const [, init] = graphFetch.mock.calls[0]!
+    expect(String(init?.query?.fields)).toContain('destination_type,promoted_object')
+    expect(result.adsets[0]?.promoted_object).toEqual({ pixel_id: 'px_1', custom_event_type: 'PURCHASE' })
   })
 })
 

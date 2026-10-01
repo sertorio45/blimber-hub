@@ -45,7 +45,7 @@ export const META_ADSET_DETAIL_FIELDS = [
 ].join(',')
 
 export const META_ADSET_LIST_SUMMARY_FIELDS
-  = 'id,name,status,effective_status,campaign_id,daily_budget,lifetime_budget,optimization_goal,billing_event'
+  = 'id,name,status,effective_status,campaign_id,daily_budget,lifetime_budget,optimization_goal,billing_event,destination_type,promoted_object'
 
 export const META_ADSET_LIST_FULL_FIELDS = [
   META_ADSET_LIST_SUMMARY_FIELDS,

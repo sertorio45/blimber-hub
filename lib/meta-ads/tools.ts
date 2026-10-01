@@ -531,6 +531,15 @@ export const metaCreateAdsetSchema = tenantContextSchema
       .optional()
       .default('WEBSITE')
       .describe('WEBSITE (default), WHATSAPP|MESSENGER|INSTAGRAM_DIRECT ou INSTAGRAM_PROFILE. Não é objective.'),
+    pixelId: z.string().regex(/^\d+$/).optional()
+      .describe('ID explícito do Pixel da conta de anúncios. Obrigatório em WEBSITE + OFFSITE_CONVERSIONS.'),
+    customEventType: z.enum([
+      'PURCHASE', 'LEAD', 'COMPLETE_REGISTRATION', 'ADD_TO_CART',
+      'INITIATED_CHECKOUT', 'ADD_PAYMENT_INFO', 'CONTENT_VIEW', 'SEARCH',
+      'CONTACT', 'SUBSCRIBE', 'START_TRIAL', 'SCHEDULE',
+      'SUBMIT_APPLICATION', 'ADD_TO_WISHLIST', 'DONATE', 'FIND_LOCATION',
+      'CUSTOMIZE_PRODUCT', 'OTHER',
+    ]).optional().describe('Evento de conversão do site (ex.: PURCHASE); obrigatório com pixelId para OFFSITE_CONVERSIONS.'),
     isDynamicCreative: z
       .boolean()
       .optional()
@@ -582,6 +591,14 @@ export const metaCreateAdsetSchema = tenantContextSchema
   })
   .superRefine((data, ctx) => {
     refineTargetingXor(data, ctx)
+    const websiteConversion = (data.destinationType ?? 'WEBSITE') === 'WEBSITE'
+      && data.optimizationGoal === 'OFFSITE_CONVERSIONS'
+    if (websiteConversion && !data.pixelId)
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['pixelId'], message: 'WEBSITE + OFFSITE_CONVERSIONS exige pixelId explícito.' })
+    if (websiteConversion && !data.customEventType)
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['customEventType'], message: 'WEBSITE + OFFSITE_CONVERSIONS exige customEventType explícito.' })
+    if (!websiteConversion && (data.pixelId || data.customEventType))
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['pixelId'], message: 'pixelId/customEventType só se aplicam a WEBSITE + OFFSITE_CONVERSIONS.' })
     if (data.dailyBudget != null && data.lifetimeBudget != null) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
@@ -3012,7 +3029,7 @@ export async function metaCreateCampaign(
 
 /**
  * Create an adset on the tenant ad account (POST /act_{id}/adsets).
- * dryRun default true — no Graph until dryRun: false.
+ * dryRun default true — no writes; Website conversions read the account's pixels.
  * On execute: validates campaign ownership against tenant ad account.
  * WHATSAPP: destination_type + promoted_object.page_id (+ optional phone).
  */
@@ -3033,6 +3050,21 @@ export async function metaCreateAdset(
   const destinationType: MetaAdDestinationType = input.destinationType ?? 'WEBSITE'
   const creds = await withCreds(ctx, input.tenantId, input.adAccountId)
   const graph = fetchGraph(ctx)
+
+  if (destinationType === 'WEBSITE' && input.optimizationGoal === 'OFFSITE_CONVERSIONS') {
+    const pixels = await listAdAccountPixels(
+      { apiVersion: creds.apiVersion, accessToken: creds.accessToken, adAccountId: creds.adAccountId, graph },
+      { limit: 200 },
+    )
+    if (!pixels.some(pixel => pixel.id === input.pixelId)) {
+      throw new MetaAdsToolError(
+        'PIXEL_TENANT_MISMATCH',
+        'Pixel informado não está acessível nesta conta de anúncios (GET act_*/adspixels).',
+        403,
+        { pixelId: input.pixelId },
+      )
+    }
+  }
 
   let resolvedTargeting: Record<string, unknown>
   let targetingTemplate: string | null = null
@@ -3095,7 +3127,8 @@ export async function metaCreateAdset(
       whatsappPhone = normalizeWhatsappPhoneNumber(input.whatsappPhoneNumber)
   }
 
-  // Ownership + currency + objective only on execute (GET). Dry-run stays Graph-free except credentials from DB.
+  // Campaign ownership, currency and objective are read only on execute.
+  // Website conversion dry-runs may still perform a read-only pixel ownership check.
   let currency: string | null = null
   let campaignName: string | null = null
   let campaignObjective: string | null = input.campaignObjective ?? null
@@ -3158,6 +3191,8 @@ export async function metaCreateAdset(
     status,
     targeting: resolvedTargeting,
     destinationType,
+    pixelId: input.pixelId,
+    customEventType: input.customEventType,
     pageId: pageId ?? undefined,
     whatsappPhoneNumber: whatsappPhone,
     isDynamicCreative: input.isDynamicCreative === true,
@@ -3184,7 +3219,9 @@ export async function metaCreateAdset(
     )
   }
   if (dryRun) {
-    budgetNotes.push('Moeda da conta não consultada no dry-run (sem Graph). Use listAdAccounts se precisar.')
+    budgetNotes.push('Moeda da conta não consultada no dry-run. Use listAdAccounts se precisar.')
+    if (destinationType === 'WEBSITE' && input.optimizationGoal === 'OFFSITE_CONVERSIONS')
+      budgetNotes.push('Pixel validado por GET act_*/adspixels; nenhuma mutação realizada.')
     budgetNotes.push('Ownership da campanha será validado na execução (dryRun: false).')
   }
   if (isMessagingDestination(destinationType)) {

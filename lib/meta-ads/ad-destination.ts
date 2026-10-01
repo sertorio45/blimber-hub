@@ -522,6 +522,8 @@ export function buildMetaCreateAdsetGraphBody(input: {
   targeting: Record<string, unknown>
   destinationType?: MetaAdDestinationType
   pageId?: string
+  pixelId?: string
+  customEventType?: string
   whatsappPhoneNumber?: string
   /** Dynamic Creative (legacy): ads must use asset_feed_spec / DYNAMIC_CREATIVE_LEGACY. */
   isDynamicCreative?: boolean
@@ -539,6 +541,23 @@ export function buildMetaCreateAdsetGraphBody(input: {
     bid_strategy: 'LOWEST_COST_WITHOUT_CAP',
     targeting: input.targeting,
     status: input.status,
+  }
+
+  if (destinationType === 'WEBSITE') {
+    body.destination_type = 'WEBSITE'
+    if (input.optimizationGoal === 'OFFSITE_CONVERSIONS') {
+      if (!input.pixelId || !input.customEventType) {
+        throw new MetaAdsToolError(
+          'META_WEBSITE_CONVERSION_REQUIRED',
+          'WEBSITE + OFFSITE_CONVERSIONS exige pixelId e customEventType explícitos.',
+          400,
+        )
+      }
+      body.promoted_object = {
+        pixel_id: input.pixelId,
+        custom_event_type: input.customEventType,
+      }
+    }
   }
 
   if (isMessagingDestination(destinationType)) {

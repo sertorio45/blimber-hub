@@ -19,6 +19,8 @@ export default defineEventHandler(async (event) => {
     billingEvent: body.billingEvent,
     optimizationGoal: body.optimizationGoal,
     destinationType: body.destinationType,
+    pixelId: body.pixelId,
+    customEventType: body.customEventType,
     campaignObjective: body.campaignObjective,
     whatsappPhoneNumber: body.whatsappPhoneNumber,
     status: body.status,
