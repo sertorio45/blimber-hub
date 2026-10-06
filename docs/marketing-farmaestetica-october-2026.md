@@ -5,6 +5,7 @@ Planejamento executado em 06/10/2026 (horário de Brasília). Os dez posts já a
 | Data e hora (America/Sao_Paulo) | Peça | Post ID |
 | --- | --- | --- |
 | 07/10, 19h | POST 12 — Recuperação também faz parte da performance | `4fcfa4f1-9095-4e9f-8f3f-a909c4206668` |
+| 08/10, 19h | POST 02 — Da receita à fórmula | `9beadbcd-a8a0-4f02-91bb-9e27e35a634a` |
 | 09/10, 10h | POST 01 — Muito além de cápsulas | `e9869154-a37a-4b61-bcb2-d85baf00aa4d` |
 | 12/10, 19h | POST 03 — Saúde capilar | `07986923-7371-4ec5-ac21-1f2a8ea43bf5` |
 | 14/10, 10h | POST 04 — Pele: o básico bem feito | `ef3ddb6e-bd69-4d1b-8800-bbc07f47b13b` |
@@ -17,4 +18,4 @@ Planejamento executado em 06/10/2026 (horário de Brasília). Os dez posts já a
 
 Os agendamentos foram feitos pela operação `marketing_schedule_post`, não por edição direta de `scheduled_at`. A leitura posterior no Supabase confirmou `editorial_status = approved`, `publication_status = scheduled`, dois `publication_jobs` pendentes (Facebook e Instagram) e um slot `queued` em `marketing_post_schedules` por peça. Isso confirma o agendamento, não a publicação futura nas redes; o processamento e eventuais erros devem ser acompanhados nas datas previstas.
 
-**Fora do lote:** POST 02 — Da receita à fórmula (`9beadbcd-a8a0-4f02-91bb-9e27e35a634a`) continua `draft` após solicitação de alterações. Sua data exibida de 08/10 às 19h é apenas planejamento: não há job de publicação. Exige nova aprovação antes de agendar.
+**Atualização em 06/10/2026:** O responsável informou que o cliente aprovou a versão 2 do POST 02 pelo WhatsApp. Como a solicitação no painel já estava cancelada, a aprovação foi registrada administrativamente com essa justificativa; não foi atribuída falsamente uma decisão ao cliente dentro do painel. O post foi agendado para 08/10 às 19h. O Supabase confirmou a versão aprovada, dois jobs pendentes (Facebook e Instagram) e um slot `queued` no calendário. O lote agora tem 11 peças agendadas.
