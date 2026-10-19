@@ -92,18 +92,38 @@ export const MARKETING_SOCIAL_CAPABILITIES = [
   'marketing.social.approve',
 ] as const
 
+export const CMS_CAPABILITIES = [
+  'cms.read',
+  'cms.pages.create',
+  'cms.pages.update',
+  'cms.pages.delete',
+  'cms.publications.create',
+  'cms.publications.update',
+  'cms.publications.delete',
+  'cms.publish',
+  'cms.media.read',
+  'cms.media.upload',
+  'cms.media.delete',
+  'cms.navigation.manage',
+  'cms.appearance.manage',
+  'cms.settings.manage',
+] as const
+
 export type PlatformCapability = typeof PLATFORM_CAPABILITIES[number]
 export type OrganizationCapability = typeof ORGANIZATION_CAPABILITIES[number]
 export type MarketingSocialCapability = typeof MARKETING_SOCIAL_CAPABILITIES[number]
+export type CmsCapability = typeof CMS_CAPABILITIES[number]
 export type WorkspaceCapability
   = | PlatformCapability
     | OrganizationCapability
     | MarketingSocialCapability
+    | CmsCapability
 
 export const ALL_WORKSPACE_CAPABILITIES: WorkspaceCapability[] = [
   ...PLATFORM_CAPABILITIES,
   ...ORGANIZATION_CAPABILITIES,
   ...MARKETING_SOCIAL_CAPABILITIES,
+  ...CMS_CAPABILITIES,
 ]
 
 /**
@@ -187,6 +207,11 @@ export const CAPABILITY_GROUPS: Array<{
       'marketing.social.manage',
     ],
   },
+  {
+    key: 'cms',
+    label: 'CMS',
+    capabilities: CMS_CAPABILITIES,
+  },
 ]
 
 export const CAPABILITY_LABELS: Partial<Record<WorkspaceCapability, string>> = {
@@ -238,6 +263,20 @@ export const CAPABILITY_LABELS: Partial<Record<WorkspaceCapability, string>> = {
   'marketing.social.automations.manage': 'Gerenciar automações',
   'marketing.social.manage': 'Administrar marketing social',
   'marketing.social.approve': 'Aprovar (legado)',
+  'cms.read': 'Visualizar CMS',
+  'cms.pages.create': 'Criar páginas',
+  'cms.pages.update': 'Editar páginas',
+  'cms.pages.delete': 'Excluir páginas',
+  'cms.publications.create': 'Criar publicações',
+  'cms.publications.update': 'Editar publicações',
+  'cms.publications.delete': 'Excluir publicações',
+  'cms.publish': 'Publicar no site',
+  'cms.media.read': 'Visualizar mídia do site',
+  'cms.media.upload': 'Enviar mídia do site',
+  'cms.media.delete': 'Excluir mídia do site',
+  'cms.navigation.manage': 'Gerenciar menus do site',
+  'cms.appearance.manage': 'Gerenciar aparência do site',
+  'cms.settings.manage': 'Gerenciar configurações do site',
 }
 
 /** Header carrying the organization the client is asking for. Always revalidated server-side. */

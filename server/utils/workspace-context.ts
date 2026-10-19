@@ -11,13 +11,13 @@ import { serverSupabaseServiceRole, serverSupabaseUser } from '#supabase/server'
 import { createError, getHeader, getQuery } from 'h3'
 
 import { isStaffRole } from '~/constants/roles'
-import { resolveGlobalRole } from '~/server/utils/tenant-role'
 import {
+  holdsCapability,
   ORGANIZATION_HEADER,
   TENANT_HEADER,
-  holdsCapability,
 } from '~/constants/workspace'
 import { resolveEffectiveCapabilities } from '~/server/utils/resolve-capabilities'
+import { resolveGlobalRole } from '~/server/utils/tenant-role'
 
 /**
  * The generated Supabase types lag behind the schema, and every workspace query
@@ -25,7 +25,7 @@ import { resolveEffectiveCapabilities } from '~/server/utils/resolve-capabilitie
  */
 export type WorkspaceClient = any
 
-export type WorkspaceModule = 'crm' | 'article' | 'marketing' | 'whatsapp'
+export type WorkspaceModule = 'crm' | 'article' | 'cms' | 'marketing' | 'whatsapp'
 
 export interface WorkspaceOrganization {
   id: string
@@ -111,7 +111,7 @@ export interface WorkspaceContextOptions {
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
-const MODULE_NAMES: WorkspaceModule[] = ['crm', 'article', 'marketing', 'whatsapp']
+const MODULE_NAMES: WorkspaceModule[] = ['crm', 'article', 'cms', 'marketing', 'whatsapp']
 
 const CONTEXT_CACHE_KEY = '__workspaceContext'
 
@@ -507,10 +507,10 @@ async function resolveWorkspaceContext(
         const linkOrganizationIds = usableLinks.map((row: any) => String(row.organization_id))
         const { data: linkedOrganizations } = linkOrganizationIds.length
           ? await client
-              .from('organizations')
-              .select('id, name, slug, type, is_active, tenant_id, settings')
-              .in('id', linkOrganizationIds)
-              .eq('is_active', true)
+            .from('organizations')
+            .select('id, name, slug, type, is_active, tenant_id, settings')
+            .in('id', linkOrganizationIds)
+            .eq('is_active', true)
           : { data: [] as any[] }
 
         const orgById = new Map((linkedOrganizations || []).map((row: any) => [String(row.id), row]))
@@ -571,10 +571,10 @@ async function resolveWorkspaceContext(
         const membershipOrgIds = reachingMemberships.map(item => item.organizationId)
         const { data: membershipOrgs } = membershipOrgIds.length
           ? await client
-              .from('organizations')
-              .select('id, name, slug, type, is_active, tenant_id, settings')
-              .in('id', membershipOrgIds)
-              .eq('is_active', true)
+            .from('organizations')
+            .select('id, name, slug, type, is_active, tenant_id, settings')
+            .in('id', membershipOrgIds)
+            .eq('is_active', true)
           : { data: [] as any[] }
         const orgById = new Map((membershipOrgs || []).map((row: any) => [String(row.id), row]))
 
