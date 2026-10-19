@@ -26,12 +26,15 @@ import { useCmsAutosave } from '~/composables/cms/useCmsAutosave'
 import { useCmsDocument } from '~/composables/cms/useCmsDocument'
 import { useCmsSites } from '~/composables/cms/useCmsSites'
 import { deleteWithConfirm } from '~/composables/useConfirmDelete'
+import { useTenantPage } from '~/composables/useTenantPage'
 import { CMS_LIMITS } from '~/lib/cms/contracts'
 
 definePageMeta({
   middleware: ['auth'],
-  title: 'Documento',
+  title: 'Editar conteúdo',
 })
+
+useTenantPage()
 
 const route = useRoute()
 const documentId = computed(() => String(route.params.id))
@@ -61,6 +64,9 @@ const form = reactive({
   sourceUrl: '',
   seoTitle: '',
   seoDescription: '',
+  canonicalUrl: '',
+  noindex: false,
+  eventDate: '',
 })
 const editVersion = ref(0)
 const fieldErrors = ref<Record<string, string>>({})
@@ -79,7 +85,7 @@ const slugLocked = computed(() => {
   const current = editor.document.value
   if (!current)
     return false
-  return current.publicStatus === 'published' || Boolean(current.publishedAt)
+  return current.publicStatus !== 'unpublished' || Boolean(current.publishedRevisionId || current.publishedAt)
 })
 const documentSite = computed(() =>
   sites.sites.value.find(site => site.id === editor.document.value?.siteId) ?? null,
@@ -98,7 +104,23 @@ function fieldError(...keys: string[]): string | undefined {
 function payloadFromForm(): CmsDocumentPayload {
   const current = editor.document.value?.draftPayload
   const sourceUrl = form.sourceUrl.trim()
-  return {
+  const canonical = form.canonicalUrl.trim()
+  const seo = {
+    ...current?.seo,
+    title: form.seoTitle.trim() || undefined,
+    description: form.seoDescription.trim() || undefined,
+    canonicalUrl: canonical || undefined,
+    noindex: form.noindex || undefined,
+  }
+  if (!seo.title)
+    delete seo.title
+  if (!seo.description)
+    delete seo.description
+  if (!seo.canonicalUrl)
+    delete seo.canonicalUrl
+  if (!seo.noindex)
+    delete seo.noindex
+  const payload: CmsDocumentPayload = {
     title: form.title,
     slug: form.slug || undefined,
     excerpt: form.excerpt || undefined,
@@ -107,15 +129,14 @@ function payloadFromForm(): CmsDocumentPayload {
     cover: current?.cover ?? null,
     authorId: current?.authorId ?? null,
     termIds: current?.termIds ?? [],
-    seo: {
-      ...current?.seo,
-      title: form.seoTitle || undefined,
-      description: form.seoDescription || undefined,
-    },
-    sourceName: form.sourceName.trim() || undefined,
-    sourceUrl: sourceUrl || undefined,
-    eventDate: current?.eventDate,
+    seo,
   }
+  if (form.publicationType === 'news') {
+    payload.sourceName = form.sourceName.trim() || undefined
+    payload.sourceUrl = sourceUrl || undefined
+    payload.eventDate = form.eventDate.trim() || undefined
+  }
+  return payload
 }
 
 function applyPayload(payload: CmsDocumentPayload, publicationType?: CmsPublicationType | null) {
@@ -125,8 +146,11 @@ function applyPayload(payload: CmsDocumentPayload, publicationType?: CmsPublicat
   form.body = payload.body ?? ''
   form.seoTitle = payload.seo?.title ?? ''
   form.seoDescription = payload.seo?.description ?? ''
+  form.canonicalUrl = payload.seo?.canonicalUrl ?? ''
+  form.noindex = Boolean(payload.seo?.noindex)
   form.sourceName = payload.sourceName ?? ''
   form.sourceUrl = payload.sourceUrl ?? ''
+  form.eventDate = payload.eventDate ? payload.eventDate.slice(0, 10) : ''
   if (publicationType !== undefined)
     form.publicationType = publicationType
 }
@@ -202,6 +226,9 @@ function clearEditor() {
     form.sourceUrl = ''
     form.seoTitle = ''
     form.seoDescription = ''
+    form.canonicalUrl = ''
+    form.noindex = false
+    form.eventDate = ''
   })
   autosave.reset(0)
 }
@@ -397,6 +424,9 @@ async function reloadServer() {
 
           <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div class="min-w-0 space-y-2">
+              <h1 class="text-xl font-semibold tracking-tight">
+                {{ kind === 'page' ? 'Editar página' : form.publicationType === 'news' ? 'Editar notícia' : 'Editar artigo' }}
+              </h1>
               <div class="flex flex-wrap items-center gap-2">
                 <CmsStatusBadge
                   :status="editor.document.value.publicStatus"
@@ -495,8 +525,9 @@ async function reloadServer() {
                 v-for="type in (['article', 'news'] as CmsPublicationType[])"
                 :key="type"
                 type="button"
-                class="border rounded-lg p-3 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                class="border rounded-lg p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
                 :class="form.publicationType === type ? 'border-primary bg-primary/5' : 'hover:bg-muted/40'"
+                :disabled="slugLocked"
                 @click="form.publicationType = type"
               >
                 <p class="text-sm font-medium">
@@ -507,6 +538,9 @@ async function reloadServer() {
                 </p>
               </button>
             </div>
+            <p v-if="slugLocked" class="text-xs text-muted-foreground">
+              O tipo não muda depois que a publicação vai ao ar.
+            </p>
             <p v-if="fieldErrors.publicationType" class="text-xs text-destructive">
               {{ fieldErrors.publicationType }}
             </p>
@@ -562,6 +596,13 @@ async function reloadServer() {
                 {{ fieldError('sourceUrl', 'payload.sourceUrl') }}
               </p>
             </div>
+            <div class="space-y-2">
+              <Label for="cms-event-date">Data do fato</Label>
+              <Input id="cms-event-date" v-model="form.eventDate" type="date" />
+              <p v-if="fieldError('eventDate', 'payload.eventDate')" class="text-xs text-destructive">
+                {{ fieldError('eventDate', 'payload.eventDate') }}
+              </p>
+            </div>
           </div>
 
           <details class="border rounded-xl p-4">
@@ -602,6 +643,29 @@ async function reloadServer() {
                 <p v-if="fieldError('seo.description', 'payload.seo.description')" class="text-xs text-destructive">
                   {{ fieldError('seo.description', 'payload.seo.description') }}
                 </p>
+              </div>
+              <div class="space-y-2">
+                <Label for="cms-canonical">URL canônica</Label>
+                <Input
+                  id="cms-canonical"
+                  v-model="form.canonicalUrl"
+                  type="url"
+                  inputmode="url"
+                  placeholder="https://"
+                  :aria-invalid="Boolean(fieldError('seo.canonicalUrl', 'canonicalUrl'))"
+                />
+                <p v-if="fieldError('seo.canonicalUrl', 'canonicalUrl')" class="text-xs text-destructive">
+                  {{ fieldError('seo.canonicalUrl', 'canonicalUrl') }}
+                </p>
+              </div>
+              <div class="flex items-center justify-between gap-3">
+                <Label for="cms-noindex" class="font-normal">Ocultar dos mecanismos de busca</Label>
+                <Switch
+                  id="cms-noindex"
+                  :checked="form.noindex"
+                  :disabled="!canEdit"
+                  @update:checked="value => (form.noindex = Boolean(value))"
+                />
               </div>
             </div>
           </details>

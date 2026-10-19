@@ -4,7 +4,7 @@ import type { CmsDocument, CmsItem, CmsPage, CmsRevision, CmsSaveDraftInput } fr
 
 import { ref, shallowRef, toValue, watch } from 'vue'
 
-import { isCmsAbort, normalizeCmsError, useCmsApi, visibleCmsError } from '~/composables/cms/useCmsApi'
+import { normalizeCmsError, useCmsApi, visibleCmsError } from '~/composables/cms/useCmsApi'
 import { useCmsDocumentMutations } from '~/composables/cms/useCmsDocuments'
 
 export type CmsRevisionSummary = Omit<CmsRevision, 'snapshot'>
@@ -86,9 +86,8 @@ export function useCmsDocument(documentId: MaybeRefOrGetter<string>) {
     try {
       document.value = await fetchLatest()
     }
-    catch (error: unknown) {
-      if (!isCmsAbort(error))
-        loadError.value = visibleCmsError(error)
+    catch {
+      // Publish already landed; a failed reload must not look like the action failed.
     }
     return response.data
   }

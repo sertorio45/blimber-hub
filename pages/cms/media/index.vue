@@ -12,11 +12,15 @@ import { normalizeCmsError } from '~/composables/cms/cmsErrors'
 import { useCmsAccess } from '~/composables/cms/useCmsAccess'
 import { cmsMediaUsageCount, cmsMediaUsagesFromDetails, useCmsMedia } from '~/composables/cms/useCmsMedia'
 import { confirmDelete } from '~/composables/useConfirmDelete'
+import { useTenantPage } from '~/composables/useTenantPage'
+import { mediaAssetMimeType, mediaAssetPreviewUrl } from '~/utils/media-asset'
 
 definePageMeta({
   middleware: ['auth'],
   title: 'Mídia',
 })
+
+useTenantPage()
 
 const access = useCmsAccess()
 const media = useCmsMedia()
@@ -32,7 +36,9 @@ const usageDialog = ref<{ asset: CmsMediaAsset, usages: CmsMediaUsages } | null>
 const gateError = computed(() => media.loadError.value)
 
 function previewOf(asset: CmsMediaAsset): string | null {
-  return asset.previewUrl || (asset as { preview_url?: string | null }).preview_url || null
+  if (!mediaAssetMimeType(asset).startsWith('image/'))
+    return null
+  return mediaAssetPreviewUrl(asset)
 }
 
 async function onFilesSelected(event: Event) {
@@ -103,7 +109,7 @@ async function retry() {
           ref="fileInput"
           type="file"
           class="hidden"
-          accept="image/jpeg,image/png,image/gif,image/webp,video/mp4,video/quicktime"
+          accept="image/*,video/mp4,video/quicktime,application/pdf"
           multiple
           @change="onFilesSelected"
         >
@@ -170,7 +176,7 @@ async function retry() {
             <div class="aspect-square">
               <img
                 v-if="previewOf(asset)"
-                :src="previewOf(asset)!"
+                :src="previewOf(asset) || undefined"
                 :alt="asset.name"
                 class="size-full object-cover"
                 loading="lazy"

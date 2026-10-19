@@ -92,6 +92,29 @@ describe('createCmsAutosave', () => {
     expect(autosave.state.value).toBe('saved')
   })
 
+  it('reads a Nitro-wrapped 409 envelope (error.data.data.error)', async () => {
+    const { form, autosave } = setup({
+      save: async () => Promise.reject({
+        statusCode: 409,
+        data: {
+          error: true,
+          data: {
+            error: {
+              code: 'version_conflict',
+              message: 'Versão desatualizada',
+              details: { currentVersion: 4, updatedAt: '2026-10-19T10:00:00Z', updatedBy: null },
+            },
+          },
+        },
+      }),
+    })
+
+    form.title = 'local'
+    await vi.advanceTimersByTimeAsync(1500)
+    expect(autosave.state.value).toBe('conflict')
+    expect(autosave.conflict.value?.currentVersion).toBe(4)
+  })
+
   it('enters conflict on 409, keeps local work and stops autosaving', async () => {
     const { form, save, autosave } = setup({ save: async () => Promise.reject(conflictError(5)) })
 
