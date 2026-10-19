@@ -1,8 +1,8 @@
 import { getRouterParam, readBody } from 'h3'
 import { z } from 'zod'
 
+import { ACCEPTED_TENANT_MODULE_INPUT_NAMES } from '~/constants/modules'
 import { assertAgencyOrganization, listAccessibleManagedClientIds } from '~/server/utils/agency-ops'
-import { ASSIGNABLE_TENANT_MODULE_NAMES } from '~/constants/modules'
 import { recordAuditEvent } from '~/server/utils/audit-events'
 import { syncTenantModules } from '~/server/utils/tenant-modules'
 import { requireWorkspaceContext } from '~/server/utils/workspace-context'
@@ -16,7 +16,7 @@ const schema = z.object({
   displayName: z.string().trim().min(1).max(160).optional(),
   logoUrl: z.string().url().nullable().optional(),
   internalOwnerUserId: z.string().uuid().nullable().optional(),
-  modules: z.array(z.enum(ASSIGNABLE_TENANT_MODULE_NAMES)).optional(),
+  modules: z.array(z.enum(ACCEPTED_TENANT_MODULE_INPUT_NAMES)).optional(),
   metadata: z.record(z.unknown()).optional(),
   isActive: z.boolean().optional(),
 })

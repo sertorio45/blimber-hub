@@ -39,7 +39,7 @@ const STEP_HINTS: Record<string, string> = {
   review: 'Confira tudo antes de provisionar.',
 }
 
-const MODULE_OPTIONS = ['marketing', 'crm', 'whatsapp', 'article'] as const
+const MODULE_OPTIONS = ['marketing', 'crm', 'whatsapp', 'cms'] as const
 
 const { organization } = useWorkspace()
 const organizationId = computed(() => organization.value?.id ?? null)

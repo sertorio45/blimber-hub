@@ -6,9 +6,15 @@ import { getRequestURL } from 'h3'
 import { isStaffUser } from '~/server/utils/tenant-role'
 import { requireWorkspaceContext } from '~/server/utils/workspace-context'
 
+/**
+ * `/api/articles` is the legacy CMS surface: gating it on `cms` is enough because
+ * the resolver expands `article` ⇄ `cms`, so tenants holding either row pass.
+ * Public delivery (`/api/public/**`) is never listed here.
+ */
 const MODULE_BY_PREFIX: Array<[string, WorkspaceModule]> = [
   ['/api/crm', 'crm'],
-  ['/api/articles', 'article'],
+  ['/api/cms', 'cms'],
+  ['/api/articles', 'cms'],
   ['/api/marketing', 'marketing'],
   ['/api/whatsapp', 'whatsapp'],
 ]
@@ -16,6 +22,12 @@ const MODULE_BY_PREFIX: Array<[string, WorkspaceModule]> = [
 /** Browser OAuth returns here; the exchange itself is authenticated via `oauth_states`. */
 function isOAuthCallbackPath(path: string): boolean {
   return /\/oauth\/[^/]+\/callback\/?$/.test(path)
+}
+
+/** Segment-aware match so `/api/cms-foo` or `/api/public/cms` never hit `/api/cms`. */
+export function resolveApiPathModule(path: string): WorkspaceModule | null {
+  const match = MODULE_BY_PREFIX.find(([prefix]) => path === prefix || path.startsWith(`${prefix}/`))
+  return match ? match[1] : null
 }
 
 /**
@@ -31,8 +43,8 @@ export default defineEventHandler(async (event) => {
   if (isOAuthCallbackPath(path))
     return
 
-  const match = MODULE_BY_PREFIX.find(([prefix]) => path.startsWith(prefix))
-  if (!match)
+  const module = resolveApiPathModule(path)
+  if (!module)
     return
 
   // Machine-to-machine callers (pg_cron worker) authenticate inside the handler.
@@ -46,6 +58,6 @@ export default defineEventHandler(async (event) => {
 
   await requireWorkspaceContext(event, {
     requireTenant: true,
-    module: match[1],
+    module,
   })
 })

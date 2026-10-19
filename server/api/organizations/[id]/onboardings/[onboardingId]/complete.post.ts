@@ -1,6 +1,7 @@
 import { getRouterParam, readBody } from 'h3'
 import { z } from 'zod'
 
+import { ACCEPTED_TENANT_MODULE_INPUT_NAMES, LEGACY_MODULE_ALIASES } from '~/constants/modules'
 import { assertAgencyOrganization } from '~/server/utils/agency-ops'
 import { recordAuditEvent } from '~/server/utils/audit-events'
 import { inviteOrLinkAuthUserByEmail, resolveAuthRedirectOrigin } from '~/server/utils/auth-invite'
@@ -19,7 +20,9 @@ const schema = z.object({
   displayName: z.string().trim().min(1).max(160).optional(),
   logoUrl: z.string().url().nullable().optional(),
   internalOwnerUserId: z.string().uuid().nullable().optional(),
-  modules: z.array(z.enum(['crm', 'article', 'marketing', 'whatsapp', 'all'])).default(['marketing']),
+  modules: z.array(z.enum(ACCEPTED_TENANT_MODULE_INPUT_NAMES))
+    .default(['marketing'])
+    .transform(modules => [...new Set(modules.map(name => LEGACY_MODULE_ALIASES[name] ?? name))]),
   agencyOwnerMembershipIds: z.array(z.string().uuid()).default([]),
   clientInvite: z.object({
     email: z.string().email(),

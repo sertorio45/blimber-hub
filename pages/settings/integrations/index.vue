@@ -28,7 +28,7 @@ const contractedSlugs = computed(() => {
   return new Set(availableModules.value.map(m => m.slug))
 })
 
-function hasModule(slug: 'crm' | 'marketing' | 'whatsapp' | 'article') {
+function hasModule(slug: 'crm' | 'cms' | 'marketing' | 'whatsapp') {
   return contractedSlugs.value.has(slug)
 }
 

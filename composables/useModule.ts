@@ -7,6 +7,7 @@ import { computed, onMounted, watch } from 'vue'
 import { useAuth } from '~/composables/useAuth'
 import { useTenant } from '~/composables/useTenant'
 import {
+  COMMERCIAL_MODULE_SLUGS,
   DEFAULT_MODULE_SLUG,
   expandTenantModuleRows,
   MODULE_META,
@@ -75,10 +76,10 @@ function _useModule() {
       return fromTenant
 
     const registeredNames = new Set(fromTenant.map(m => m.module_name))
-    const staffExtras = Object.entries(MODULE_META)
-      .filter(([moduleName]) => moduleName !== 'ads' && !registeredNames.has(moduleName))
-      .map(([module_name, meta]) => ({
-        ...meta,
+    const staffExtras = COMMERCIAL_MODULE_SLUGS
+      .filter(moduleName => !registeredNames.has(moduleName))
+      .map(module_name => ({
+        ...MODULE_META[module_name],
         id: `local-${module_name}`,
         module_name,
       }))
