@@ -42,9 +42,7 @@ const copied = ref(false)
 const site = computed(() => sites.currentSite.value)
 const gateError = computed(() => sites.loadError.value)
 
-watch(site, (value) => {
-  if (!value)
-    return
+function applySite(value: NonNullable<typeof site.value>) {
   const prefixes = cmsRoutePrefixes(value)
   form.name = value.name
   form.locale = value.defaultLocale || CMS_DEFAULT_LOCALE
@@ -52,6 +50,12 @@ watch(site, (value) => {
   form.articlePrefix = prefixes.article
   form.newsPrefix = prefixes.news
   fieldErrors.value = {}
+}
+
+watch(() => site.value?.id, (id) => {
+  if (!id || !site.value)
+    return
+  applySite(site.value)
 }, { immediate: true })
 
 async function copySiteKey() {
@@ -76,6 +80,10 @@ async function save() {
   saving.value = true
   fieldErrors.value = {}
   try {
+    const currentRoutes = site.value.settings?.routes
+    const routes = currentRoutes && typeof currentRoutes === 'object'
+      ? { ...(currentRoutes as Record<string, unknown>) }
+      : {}
     await sites.updateSite(site.value.id, {
       name: form.name.trim(),
       defaultLocale: form.locale.trim() || CMS_DEFAULT_LOCALE,
@@ -83,6 +91,7 @@ async function save() {
       settings: {
         ...(site.value.settings || {}),
         routes: {
+          ...routes,
           article: form.articlePrefix.trim().replace(/^\/+|\/+$/g, '') || 'artigos',
           news: form.newsPrefix.trim().replace(/^\/+|\/+$/g, '') || 'noticias',
         },
@@ -102,7 +111,7 @@ async function save() {
 </script>
 
 <template>
-  <div class="mx-auto max-w-2xl p-4 space-y-6 sm:p-6">
+  <div class="mx-auto max-w-2xl space-y-6">
     <CmsPageHeader
       title="Configurações"
       description="Dados do site, idioma e prefixos de endereço."

@@ -73,19 +73,41 @@ interface RawFetchError {
   status?: number
   statusMessage?: string
   data?: unknown
+  response?: { status?: number, _data?: unknown }
 }
 
-function readEnvelope(data: unknown): { code?: string, message?: string, details?: unknown } | null {
+interface CmsErrorEnvelope {
+  code?: string
+  message?: string
+  details?: unknown
+}
+
+function asEnvelope(value: unknown): CmsErrorEnvelope | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    return null
+  const record = value as CmsErrorEnvelope
+  return typeof record.code === 'string' && record.code ? record : null
+}
+
+/**
+ * h3 `createError({ data: { error } })` reaches `$fetch` in two shapes:
+ * `error.data.error` when the body is the CMS envelope, and `error.data.data.error`
+ * when Nitro wraps that body again (`{ error: true, data: { error } }`).
+ */
+function readEnvelope(data: unknown): CmsErrorEnvelope | null {
   if (!data || typeof data !== 'object')
     return null
-  // h3 `createError({ data })` arrives either as `data.error` or wrapped once more in `data.data.error`.
-  const direct = (data as { error?: unknown }).error
-  if (direct && typeof direct === 'object')
-    return direct as { code?: string, message?: string, details?: unknown }
-  const nested = (data as { data?: { error?: unknown } }).data?.error
-  if (nested && typeof nested === 'object')
-    return nested as { code?: string, message?: string, details?: unknown }
-  return null
+  const record = data as { error?: unknown, data?: unknown }
+  const direct = asEnvelope(record.error)
+  if (direct)
+    return direct
+  if (record.data && typeof record.data === 'object') {
+    const inner = record.data as { error?: unknown }
+    const nested = asEnvelope(inner.error) ?? asEnvelope(record.data)
+    if (nested)
+      return nested
+  }
+  return asEnvelope(data)
 }
 
 /** Turns any `$fetch`/runtime failure into the `{ code, message, details }` shape the UI renders. */
@@ -97,8 +119,8 @@ export function normalizeCmsError(error: unknown): CmsApiError {
   if (raw.name === 'AbortError' || /aborted/i.test(raw.message ?? ''))
     return { status: 0, code: 'aborted', message: 'Requisição cancelada.' }
 
-  const status = Number(raw.statusCode ?? raw.status ?? 0)
-  const envelope = readEnvelope(raw.data)
+  const status = Number(raw.statusCode ?? raw.status ?? raw.response?.status ?? 0) || 0
+  const envelope = readEnvelope(raw.data) ?? readEnvelope(raw.response?._data)
   const code = envelope?.code && (SERVER_CODES as readonly string[]).includes(envelope.code)
     ? envelope.code as CmsErrorCode
     : codeForStatus(status)

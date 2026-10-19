@@ -24,7 +24,7 @@ const label = computed(() => {
     case 'saved':
       return props.lastSavedAt ? `Salvo ${formatCmsRelative(new Date(props.lastSavedAt), now.value.getTime())}` : 'Salvo'
     case 'error':
-      return 'Falha ao salvar'
+      return 'Falha'
     case 'conflict':
       return 'Conflito de versão'
     default:

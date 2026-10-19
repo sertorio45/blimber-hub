@@ -1,7 +1,6 @@
-import type { MaybeRefOrGetter } from 'vue'
 import type { CmsDocumentSummary, CmsItem, CmsSite } from '~/lib/cms/contracts'
 
-import { computed, toValue } from 'vue'
+import { computed } from 'vue'
 
 import { cmsCacheKey, useCmsApi, visibleCmsError } from '~/composables/cms/useCmsApi'
 import { useMarketingFetch } from '~/composables/marketing/useMarketingFetch'
@@ -23,15 +22,14 @@ export interface CmsOverview {
 
 const EMPTY_COUNTS: CmsOverviewCounts = { pages: 0, publications: 0, articles: 0, news: 0, published: 0, drafts: 0 }
 
-export function useCmsOverview(siteId?: MaybeRefOrGetter<string | null | undefined>) {
+export function useCmsOverview() {
   const api = useCmsApi()
 
+  // The endpoint always returns the tenant's primary site; it takes no siteId.
   const { data, pending, showSkeleton, error, refresh } = useMarketingFetch<CmsOverview | null>({
-    key: () => cmsCacheKey(api.tenantId.value, 'overview', toValue(siteId) ?? 'default'),
+    key: () => cmsCacheKey(api.tenantId.value, 'overview'),
     handler: async () => {
-      const response = await api.request<CmsItem<CmsOverview>>('/api/cms/overview', {
-        query: { siteId: toValue(siteId) ?? undefined },
-      })
+      const response = await api.request<CmsItem<CmsOverview>>('/api/cms/overview')
       return response.data
     },
     default: () => null,

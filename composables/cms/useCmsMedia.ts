@@ -28,6 +28,19 @@ export function cmsMediaUsageCount(usages: CmsMediaUsages | null | undefined): n
   return (usages?.socialPosts.length ?? 0) + (usages?.cmsDocuments.length ?? 0)
 }
 
+/** 409 `asset_in_use` puts `{ usages }` on `error.details`. */
+export function cmsMediaUsagesFromDetails(details: unknown): CmsMediaUsages | null {
+  if (!details || typeof details !== 'object')
+    return null
+  const usages = (details as { usages?: Partial<CmsMediaUsages> }).usages
+  if (!usages || typeof usages !== 'object')
+    return null
+  return {
+    socialPosts: Array.isArray(usages.socialPosts) ? usages.socialPosts : [],
+    cmsDocuments: Array.isArray(usages.cmsDocuments) ? usages.cmsDocuments : [],
+  }
+}
+
 export function useCmsMedia() {
   const api = useCmsApi()
 
@@ -49,6 +62,7 @@ export function useCmsMedia() {
   const extraCursor = ref<string | null | undefined>(undefined)
   const removedIds = ref<Set<string>>(new Set())
   const loadingMore = ref(false)
+  const loadMoreError = ref<string | null>(null)
   const uploads = ref<CmsMediaUpload[]>([])
 
   function resetLocal() {
@@ -56,6 +70,7 @@ export function useCmsMedia() {
     extra.value = []
     extraCursor.value = undefined
     removedIds.value = new Set()
+    loadMoreError.value = null
   }
 
   watch(listKey, resetLocal)
@@ -83,6 +98,7 @@ export function useCmsMedia() {
       return
     const keyAtStart = listKey.value
     loadingMore.value = true
+    loadMoreError.value = null
     try {
       const page = await api.request<CmsPage<CmsMediaAsset>>('/api/cms/media', {
         query: { search: debouncedSearch.value || undefined, cursor, limit: 48 },
@@ -91,6 +107,10 @@ export function useCmsMedia() {
         return
       extra.value = [...extra.value, ...page.data]
       extraCursor.value = page.nextCursor
+    }
+    catch (error: unknown) {
+      if (keyAtStart === listKey.value)
+        loadMoreError.value = visibleCmsError(error)?.message ?? null
     }
     finally {
       loadingMore.value = false
@@ -151,6 +171,7 @@ export function useCmsMedia() {
     hasSearch: computed(() => Boolean(debouncedSearch.value)),
     hasMore: computed(() => Boolean(nextCursor.value)),
     loadingMore,
+    loadMoreError,
     uploads,
     pending: firstPage.pending,
     showSkeleton: firstPage.showSkeleton,

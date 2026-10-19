@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import type { CmsDocumentPayload, CmsPublicationType } from '~/lib/cms/contracts'
 
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { toast } from 'vue-sonner'
 
 import CmsAutosaveIndicator from '~/components/cms/CmsAutosaveIndicator.vue'
+import CmsEmptyState from '~/components/cms/CmsEmptyState.vue'
 import CmsGate from '~/components/cms/CmsGate.vue'
 import CmsRevisionHistorySheet from '~/components/cms/CmsRevisionHistorySheet.vue'
 import CmsSlugField from '~/components/cms/CmsSlugField.vue'
@@ -20,6 +21,7 @@ import {
   cmsPathPrefix,
 } from '~/composables/cms/cmsDisplay'
 import { useCmsAccess } from '~/composables/cms/useCmsAccess'
+import { useCmsApi } from '~/composables/cms/useCmsApi'
 import { useCmsAutosave } from '~/composables/cms/useCmsAutosave'
 import { useCmsDocument } from '~/composables/cms/useCmsDocument'
 import { useCmsSites } from '~/composables/cms/useCmsSites'
@@ -35,8 +37,11 @@ const route = useRoute()
 const documentId = computed(() => String(route.params.id))
 
 const access = useCmsAccess()
+const api = useCmsApi()
 const sites = useCmsSites()
 const editor = useCmsDocument(documentId)
+
+const ROUTE_CONFLICT_MESSAGE = 'Já existe um conteúdo com este endereço. Escolha outro.'
 
 const titleId = useId()
 const excerptId = useId()
@@ -64,26 +69,52 @@ const publishing = ref(false)
 const unpublishing = ref(false)
 const historyOpen = ref(false)
 const restoringId = ref<string | null>(null)
+const displaced = ref(false)
+const loadedTenantId = ref<string | null>(null)
 
 const kind = computed(() => editor.document.value?.kind ?? 'page')
-const canEdit = computed(() => access.canUpdate(kind.value))
+const canEdit = computed(() => Boolean(editor.document.value) && access.canUpdate(kind.value))
 const isPublished = computed(() => editor.document.value?.publicStatus === 'published')
-const slugPrefix = computed(() => cmsPathPrefix(kind.value, form.publicationType, sites.currentSite.value))
+const slugLocked = computed(() => {
+  const current = editor.document.value
+  if (!current)
+    return false
+  return current.publicStatus === 'published' || Boolean(current.publishedAt)
+})
+const documentSite = computed(() =>
+  sites.sites.value.find(site => site.id === editor.document.value?.siteId) ?? null,
+)
+const slugPrefix = computed(() => cmsPathPrefix(kind.value, form.publicationType, documentSite.value))
+
+function fieldError(...keys: string[]): string | undefined {
+  for (const key of keys) {
+    const message = fieldErrors.value[key]
+    if (message)
+      return message
+  }
+  return undefined
+}
 
 function payloadFromForm(): CmsDocumentPayload {
+  const current = editor.document.value?.draftPayload
+  const sourceUrl = form.sourceUrl.trim()
   return {
     title: form.title,
     slug: form.slug || undefined,
     excerpt: form.excerpt || undefined,
-    body: form.body || undefined,
-    blocks: [],
-    termIds: [],
+    body: form.body,
+    blocks: current?.blocks ?? [],
+    cover: current?.cover ?? null,
+    authorId: current?.authorId ?? null,
+    termIds: current?.termIds ?? [],
     seo: {
+      ...current?.seo,
       title: form.seoTitle || undefined,
       description: form.seoDescription || undefined,
     },
-    sourceName: form.sourceName || undefined,
-    sourceUrl: form.sourceUrl || undefined,
+    sourceName: form.sourceName.trim() || undefined,
+    sourceUrl: sourceUrl || undefined,
+    eventDate: current?.eventDate,
   }
 }
 
@@ -113,10 +144,11 @@ function hydrateFromDocument() {
 const autosave = useCmsAutosave({
   version: editVersion,
   getPayload: payloadFromForm,
-  source: () => ({ ...form }),
-  enabled: () => canEdit.value && Boolean(editor.document.value),
+  source: () => form,
+  enabled: () => canEdit.value && !displaced.value && loadedTenantId.value === api.tenantId.value,
   save: async ({ expectedVersion, payload }) => {
     fieldErrors.value = {}
+    actionError.value = null
     try {
       const saved = await editor.saveDraft({
         expectedVersion,
@@ -127,13 +159,17 @@ const autosave = useCmsAutosave({
     }
     catch (error: unknown) {
       const normalized = editor.normalizeError(error)
-      if (normalized.code === 'validation_failed')
+      if (normalized.code === 'route_conflict')
+        fieldErrors.value = { slug: ROUTE_CONFLICT_MESSAGE }
+      else if (normalized.code === 'validation_failed' || normalized.status === 422)
         fieldErrors.value = cmsFieldErrors(normalized.details)
       throw error
     }
   },
   loadLatest: async () => {
     const latest = await editor.fetchLatest()
+    if (api.tenantId.value !== loadedTenantId.value)
+      throw new Error('Empresa alterada')
     editor.document.value = latest
     return {
       version: latest.editVersion,
@@ -141,34 +177,67 @@ const autosave = useCmsAutosave({
     }
   },
   apply: (payload) => {
-    applyPayload(payload)
+    applyPayload(payload, editor.document.value?.publicationType ?? form.publicationType)
   },
 })
 
-watch(() => editor.document.value?.id, () => {
+function rememberServerDocument() {
+  loadedTenantId.value = api.tenantId.value
   autosave.withoutTracking(() => hydrateFromDocument())
-  autosave.reset(editVersion.value, payloadFromForm())
-})
+  autosave.reset(editVersion.value)
+}
 
-onMounted(async () => {
-  await editor.load()
-  autosave.withoutTracking(() => hydrateFromDocument())
-  autosave.reset(editVersion.value, payloadFromForm())
-})
+function clearEditor() {
+  fieldErrors.value = {}
+  actionError.value = null
+  loadedTenantId.value = null
+  editor.clear()
+  autosave.withoutTracking(() => {
+    form.title = ''
+    form.slug = ''
+    form.excerpt = ''
+    form.body = ''
+    form.publicationType = null
+    form.sourceName = ''
+    form.sourceUrl = ''
+    form.seoTitle = ''
+    form.seoDescription = ''
+  })
+  autosave.reset(0)
+}
 
-watch(() => sites.currentSite.value?.id, async (next, previous) => {
+async function openDocument() {
+  const tenant = api.tenantId.value
+  const id = documentId.value
+  if (!tenant || !id || displaced.value)
+    return
+  const loaded = await editor.load()
+  if (!loaded || displaced.value || api.tenantId.value !== tenant || documentId.value !== id)
+    return
+  rememberServerDocument()
+}
+
+watch(documentId, (id, previous) => {
+  if (previous !== undefined && id !== previous)
+    displaced.value = false
+  if (!displaced.value)
+    void openDocument()
+}, { immediate: true })
+
+watch(() => api.tenantId.value, (next, previous) => {
   if (!previous || next === previous)
     return
-  editor.clear()
-  await editor.load()
-  autosave.withoutTracking(() => hydrateFromDocument())
-  autosave.reset(editVersion.value, payloadFromForm())
+  displaced.value = true
+  clearEditor()
 })
 
 function suggestSeoDescription() {
-  if (form.seoDescription.trim())
+  const suggestion = form.excerpt.trim().slice(0, CMS_LIMITS.maxSeoDescriptionLength)
+  if (!suggestion) {
+    toast.message('Escreva um resumo para sugerir a descrição.')
     return
-  form.seoDescription = form.excerpt.slice(0, CMS_LIMITS.maxSeoDescriptionLength)
+  }
+  form.seoDescription = suggestion
 }
 
 async function publish() {
@@ -178,26 +247,34 @@ async function publish() {
   actionError.value = null
   fieldErrors.value = {}
   try {
-    await autosave.flush()
+    const flushed = await autosave.flush()
+    if (!flushed) {
+      if (autosave.state.value !== 'conflict')
+        actionError.value = 'Não foi possível salvar antes de publicar.'
+      return
+    }
     const result = await editor.publish(editVersion.value)
-    await editor.load()
-    autosave.withoutTracking(() => hydrateFromDocument())
-    autosave.reset(editVersion.value, payloadFromForm())
+    const loaded = await editor.load()
+    if (loaded)
+      rememberServerDocument()
     toast.success(`Publicado em ${result.path}`)
   }
   catch (error: unknown) {
     const normalized = editor.normalizeError(error)
+    if (normalized.code === 'aborted')
+      return
     if (normalized.code === 'version_conflict') {
       autosave.markConflict(normalized.details)
       return
     }
-    if (normalized.code === 'validation_failed') {
-      fieldErrors.value = cmsFieldErrors(normalized.details)
-      actionError.value = normalized.message
+    if (normalized.code === 'route_conflict') {
+      fieldErrors.value = { slug: ROUTE_CONFLICT_MESSAGE }
+      actionError.value = ROUTE_CONFLICT_MESSAGE
       return
     }
-    if (normalized.code === 'route_conflict') {
-      actionError.value = normalized.message || 'Este endereço já está em uso. Escolha outro.'
+    if (normalized.code === 'validation_failed' || normalized.status === 422) {
+      fieldErrors.value = cmsFieldErrors(normalized.details)
+      actionError.value = normalized.message
       return
     }
     actionError.value = normalized.message
@@ -214,10 +291,13 @@ async function unpublish() {
     async () => {
       unpublishing.value = true
       try {
+        const flushed = await autosave.flush()
+        if (!flushed)
+          throw new Error('Não foi possível salvar as alterações antes de retirar do ar.')
         await editor.unpublish()
-        await editor.load()
-        autosave.withoutTracking(() => hydrateFromDocument())
-        autosave.reset(editVersion.value, payloadFromForm())
+        const loaded = await editor.load()
+        if (loaded)
+          rememberServerDocument()
       }
       finally {
         unpublishing.value = false
@@ -225,7 +305,7 @@ async function unpublish() {
     },
     {
       title: 'Retirar do ar?',
-      description: 'A página deixa de aparecer no site público. O conteúdo permanece no CMS.',
+      description: 'O conteúdo deixa de aparecer no site. O rascunho e o histórico permanecem no CMS.',
       confirmLabel: 'Retirar do ar',
       successMessage: 'Conteúdo retirado do ar.',
       errorMessage: 'Não foi possível retirar do ar.',
@@ -239,19 +319,24 @@ async function restoreRevision(revision: { id: string }) {
     return
   restoringId.value = revision.id
   try {
-    await autosave.flush()
+    const flushed = await autosave.flush()
+    if (!flushed) {
+      if (autosave.state.value !== 'conflict')
+        toast.error('Salve as alterações pendentes antes de restaurar.')
+      return
+    }
     await editor.restoreRevision(revision.id, editVersion.value)
-    await editor.load()
-    autosave.withoutTracking(() => hydrateFromDocument())
-    autosave.reset(editVersion.value, payloadFromForm())
+    const loaded = await editor.load()
+    if (loaded)
+      rememberServerDocument()
     historyOpen.value = false
-    toast.success('Revisão restaurada como rascunho.')
+    toast.success('Versão restaurada como rascunho.')
   }
   catch (error: unknown) {
     const normalized = editor.normalizeError(error)
     if (normalized.code === 'version_conflict')
       autosave.markConflict(normalized.details)
-    else
+    else if (normalized.code !== 'aborted')
       toast.error(normalized.message)
   }
   finally {
@@ -260,22 +345,39 @@ async function restoreRevision(revision: { id: string }) {
 }
 
 async function keepMine() {
-  await autosave.keepMine()
+  const kept = await autosave.keepMine()
+  if (!kept && autosave.lastError.value)
+    toast.error(autosave.lastError.value.message)
 }
 
 async function reloadServer() {
-  await autosave.reloadFromServer()
+  const reloaded = await autosave.reloadFromServer()
+  if (!reloaded && autosave.lastError.value)
+    toast.error(autosave.lastError.value.message)
 }
 </script>
 
 <template>
-  <div class="mx-auto max-w-4xl p-4 space-y-6 sm:p-6">
+  <div class="mx-auto max-w-4xl space-y-6">
     <CmsGate
       :allowed="access.canRead.value"
-      :error="editor.loadError.value"
-      @retry="editor.load()"
+      :error="displaced ? null : editor.loadError.value"
+      @retry="openDocument"
     >
-      <div v-if="editor.pending.value && !editor.document.value" class="space-y-4">
+      <CmsEmptyState
+        v-if="displaced"
+        icon="lucide:building-2"
+        title="Empresa alterada"
+        description="O conteúdo aberto era de outra empresa. O editor foi esvaziado para não misturar os dados."
+      >
+        <Button as-child>
+          <NuxtLink to="/cms">
+            Ir para a visão geral
+          </NuxtLink>
+        </Button>
+      </CmsEmptyState>
+
+      <div v-else-if="editor.pending.value && !editor.document.value" class="space-y-4">
         <div class="h-10 w-2/3 animate-pulse rounded-lg bg-muted" />
         <div class="h-64 animate-pulse rounded-xl bg-muted" />
       </div>
@@ -349,7 +451,7 @@ async function reloadServer() {
             </p>
             <div class="mt-3 flex flex-wrap gap-2">
               <Button size="sm" variant="outline" :disabled="autosave.reloading.value" @click="reloadServer">
-                Recarregar versão do servidor
+                Recarregar
               </Button>
               <Button size="sm" :disabled="autosave.reloading.value" @click="keepMine">
                 Manter minha versão
@@ -369,19 +471,20 @@ async function reloadServer() {
               :id="titleId"
               v-model="form.title"
               :maxlength="CMS_LIMITS.maxTitleLength"
-              :aria-invalid="Boolean(fieldErrors.title)"
+              :aria-invalid="Boolean(fieldError('title', 'payload.title'))"
             />
-            <p v-if="fieldErrors.title" class="text-xs text-destructive">
-              {{ fieldErrors.title }}
+            <p v-if="fieldError('title', 'payload.title')" class="text-xs text-destructive">
+              {{ fieldError('title', 'payload.title') }}
             </p>
           </div>
 
           <CmsSlugField
             v-model="form.slug"
             :source="form.title"
+            :auto="false"
             :prefix="slugPrefix"
-            :locked="isPublished"
-            :error="fieldErrors.slug"
+            :locked="slugLocked"
+            :error="fieldError('slug', 'payload.slug')"
             :disabled="!canEdit"
           />
 
@@ -443,13 +546,20 @@ async function reloadServer() {
           >
             <div class="space-y-2">
               <Label :for="sourceNameId">Fonte</Label>
-              <Input :id="sourceNameId" v-model="form.sourceName" />
+              <Input
+                :id="sourceNameId"
+                v-model="form.sourceName"
+                :aria-invalid="Boolean(fieldError('sourceName', 'payload.sourceName'))"
+              />
+              <p v-if="fieldError('sourceName', 'payload.sourceName')" class="text-xs text-destructive">
+                {{ fieldError('sourceName', 'payload.sourceName') }}
+              </p>
             </div>
             <div class="space-y-2">
               <Label :for="sourceUrlId">URL de origem</Label>
               <Input :id="sourceUrlId" v-model="form.sourceUrl" type="url" placeholder="https://" />
-              <p v-if="fieldErrors.sourceUrl" class="text-xs text-destructive">
-                {{ fieldErrors.sourceUrl }}
+              <p v-if="fieldError('sourceUrl', 'payload.sourceUrl')" class="text-xs text-destructive">
+                {{ fieldError('sourceUrl', 'payload.sourceUrl') }}
               </p>
             </div>
           </div>
@@ -465,7 +575,11 @@ async function reloadServer() {
                   :id="seoTitleId"
                   v-model="form.seoTitle"
                   :maxlength="CMS_LIMITS.maxSeoTitleLength"
+                  :aria-invalid="Boolean(fieldError('seo.title', 'payload.seo.title'))"
                 />
+                <p v-if="fieldError('seo.title', 'payload.seo.title')" class="text-xs text-destructive">
+                  {{ fieldError('seo.title', 'payload.seo.title') }}
+                </p>
               </div>
               <div class="space-y-2">
                 <div class="flex items-center justify-between gap-2">
@@ -483,7 +597,11 @@ async function reloadServer() {
                   v-model="form.seoDescription"
                   rows="3"
                   :maxlength="CMS_LIMITS.maxSeoDescriptionLength"
+                  :aria-invalid="Boolean(fieldError('seo.description', 'payload.seo.description'))"
                 />
+                <p v-if="fieldError('seo.description', 'payload.seo.description')" class="text-xs text-destructive">
+                  {{ fieldError('seo.description', 'payload.seo.description') }}
+                </p>
               </div>
             </div>
           </details>
