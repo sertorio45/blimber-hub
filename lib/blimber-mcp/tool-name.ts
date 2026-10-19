@@ -93,6 +93,12 @@ export function resolveBlimberMcpToolName(
   if (known.has(raw))
     return raw
 
+  // `cms.list_documents` is a real tool name. A connector prefix
+  // (`Blimber_Hub.cms.list_documents`) must not be stripped down to `list_documents`.
+  const cmsName = raw.match(/^(?:[\w ]+\.)?(cms\.\w+)$/)?.[1]
+  if (cmsName && known.has(cmsName))
+    return cmsName
+
   const stripped = stripMcpConnectorNamespace(raw)
   if (stripped !== raw && known.has(stripped))
     return stripped

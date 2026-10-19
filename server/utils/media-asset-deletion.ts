@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { createError, type H3Event } from 'h3'
+import type { H3Event } from 'h3'
+import { createError } from 'h3'
 
 import { recordSocialAudit } from '~/server/utils/social-audit'
 
@@ -21,6 +22,22 @@ export interface LinkedPostSummary {
   title: string | null
 }
 
+export type CmsAssetUsageKind = 'draft' | 'revision' | 'global'
+
+export interface CmsAssetUsageSummary {
+  /** Null for site-wide (`global`) usages such as logos in site settings. */
+  documentId: string | null
+  revisionId: string | null
+  usageKind: CmsAssetUsageKind
+  fieldPath: string
+}
+
+/** Everything that keeps an asset alive, grouped for "Onde este arquivo é usado". */
+export interface MediaAssetUsages {
+  socialPosts: LinkedPostSummary[]
+  cmsDocuments: CmsAssetUsageSummary[]
+}
+
 export interface MediaAssetDeletePreviewItem {
   id: string
   name: string
@@ -28,6 +45,8 @@ export interface MediaAssetDeletePreviewItem {
   purpose: string
   linkedPostCount: number
   linkedPosts: LinkedPostSummary[]
+  cmsUsageCount: number
+  usages: MediaAssetUsages
 }
 
 export interface MediaAssetDeletePreviewResult {
@@ -84,6 +103,102 @@ async function fetchLinkedPosts(
   return [...posts.values()]
 }
 
+export const CMS_ASSET_USAGES_TABLE = 'cms_asset_usages'
+const CMS_USAGE_SAMPLE_LIMIT = 50
+const CMS_USAGE_KINDS = new Set<CmsAssetUsageKind>(['draft', 'revision', 'global'])
+
+/**
+ * `cms_asset_usages` ships in a separate migration, so environments without it
+ * must keep deleting marketing assets. Only "relation does not exist" (Postgres
+ * 42P01, or PostgREST PGRST205 when the schema cache lacks the table) is
+ * tolerated; every other failure still blocks the deletion.
+ */
+export function isMissingRelationError(error: { code?: string | null } | null | undefined): boolean {
+  const code = String(error?.code || '')
+  return code === '42P01' || code === 'PGRST205'
+}
+
+export async function fetchCmsAssetUsages(
+  client: SupabaseClient,
+  tenantId: string,
+  assetId: string,
+): Promise<{ count: number, usages: CmsAssetUsageSummary[] }> {
+  const { data, count, error } = await client
+    .from(CMS_ASSET_USAGES_TABLE)
+    .select('document_id, revision_id, usage_kind, field_path', { count: 'exact' })
+    .eq('tenant_id', tenantId)
+    .eq('asset_id', assetId)
+    .limit(CMS_USAGE_SAMPLE_LIMIT)
+
+  if (error) {
+    if (isMissingRelationError(error))
+      return { count: 0, usages: [] }
+    throw createError({ statusCode: 400, statusMessage: error.message })
+  }
+
+  const rows = (data || []) as Array<{
+    document_id?: string | null
+    revision_id?: string | null
+    usage_kind?: string | null
+    field_path?: string | null
+  }>
+
+  const usages: CmsAssetUsageSummary[] = []
+  const seen = new Set<string>()
+  for (const row of rows) {
+    const usageKind = CMS_USAGE_KINDS.has(row.usage_kind as CmsAssetUsageKind)
+      ? row.usage_kind as CmsAssetUsageKind
+      : 'draft'
+    const item: CmsAssetUsageSummary = {
+      documentId: row.document_id ? String(row.document_id) : null,
+      revisionId: row.revision_id ? String(row.revision_id) : null,
+      usageKind,
+      fieldPath: String(row.field_path || ''),
+    }
+    const key = [item.documentId, item.revisionId, item.usageKind, item.fieldPath].join('|')
+    if (seen.has(key))
+      continue
+    seen.add(key)
+    usages.push(item)
+  }
+
+  return { count: typeof count === 'number' ? count : rows.length, usages }
+}
+
+export async function fetchMediaAssetUsages(
+  client: SupabaseClient,
+  tenantId: string,
+  assetId: string,
+): Promise<{ linkedPostCount: number, cmsUsageCount: number, usages: MediaAssetUsages }> {
+  const [linkedPostCount, socialPosts, cms] = await Promise.all([
+    fetchLinkedPostCount(client, tenantId, assetId),
+    fetchLinkedPosts(client, tenantId, assetId),
+    fetchCmsAssetUsages(client, tenantId, assetId),
+  ])
+
+  return {
+    linkedPostCount,
+    cmsUsageCount: cms.count,
+    usages: { socialPosts, cmsDocuments: cms.usages },
+  }
+}
+
+function isBlocked(item: MediaAssetDeletePreviewItem): boolean {
+  return item.linkedPostCount > 0 || item.cmsUsageCount > 0
+}
+
+function blockedMessage(blocked: MediaAssetDeletePreviewItem[], single: boolean): string {
+  const hasSocialLinks = blocked.some(item => item.linkedPostCount > 0)
+  if (single) {
+    return hasSocialLinks
+      ? 'Este arquivo está vinculado a uma publicação. Remova o vínculo antes de excluir.'
+      : 'Este arquivo está em uso no site. Remova-o das páginas antes de excluir.'
+  }
+  return hasSocialLinks
+    ? 'Alguns arquivos estão vinculados a publicações. Remova os vínculos antes de excluir.'
+    : 'Alguns arquivos estão em uso no site. Remova-os das páginas antes de excluir.'
+}
+
 export async function previewMediaAssetDeletion(
   client: SupabaseClient,
   tenantId: string,
@@ -116,21 +231,20 @@ export async function previewMediaAssetDeletion(
   const items: MediaAssetDeletePreviewItem[] = []
   for (const assetId of uniqueIds) {
     const asset = assetMap.get(assetId)!
-    const [linkedPostCount, linkedPosts] = await Promise.all([
-      fetchLinkedPostCount(client, tenantId, assetId),
-      fetchLinkedPosts(client, tenantId, assetId),
-    ])
+    const usage = await fetchMediaAssetUsages(client, tenantId, assetId)
     items.push({
       id: asset.id,
       name: asset.name,
       previewUrl: previewUrls.get(asset.object_path) || null,
       purpose: asset.purpose,
-      linkedPostCount,
-      linkedPosts,
+      linkedPostCount: usage.linkedPostCount,
+      linkedPosts: usage.usages.socialPosts,
+      cmsUsageCount: usage.cmsUsageCount,
+      usages: usage.usages,
     })
   }
 
-  const blocked = items.filter(item => item.linkedPostCount > 0)
+  const blocked = items.filter(isBlocked)
   return {
     assets: items,
     blocked,
@@ -159,7 +273,7 @@ export async function deleteMediaAsset(
   if (preview.blocked.length) {
     throw createError({
       statusCode: 409,
-      statusMessage: 'Este arquivo está vinculado a uma publicação. Remova o vínculo antes de excluir.',
+      statusMessage: blockedMessage(preview.blocked, true),
       data: {
         blocked: preview.blocked,
       },
@@ -217,7 +331,7 @@ export async function deleteMediaAssetsBulk(
   if (!preview.canDeleteAll) {
     throw createError({
       statusCode: 409,
-      statusMessage: 'Alguns arquivos estão vinculados a publicações. Remova os vínculos antes de excluir.',
+      statusMessage: blockedMessage(preview.blocked, false),
       data: {
         blocked: preview.blocked,
       },

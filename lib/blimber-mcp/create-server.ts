@@ -8,6 +8,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
+import type { CmsToolName } from './cms'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import {
   formatToolError,
@@ -16,12 +17,18 @@ import {
   META_TOOL_SCHEMAS,
   type MetaToolName,
 } from '../meta-ads'
-import { invokeAdsGoogleTool, ADS_GOOGLE_TOOL_NAMES } from './ads/google'
+import { ADS_GOOGLE_TOOL_NAMES, invokeAdsGoogleTool } from './ads/google'
 import {
   GOOGLE_ADS_TOOL_DESCRIPTIONS,
   GOOGLE_ADS_TOOL_SCHEMAS,
   type GoogleAdsToolName,
 } from '../google-ads'
+import {
+  CMS_TOOL_DESCRIPTIONS,
+  CMS_TOOL_NAMES,
+  CMS_TOOL_SCHEMAS,
+  invokeCmsTool,
+} from './cms'
 import { BLIMBER_MCP_VERSION, buildBlimberMcpRegistry } from './registry'
 import { formatBlimberMcpError } from './errors'
 import {
@@ -42,6 +49,7 @@ export type BlimberMcpRemoteToolName =
   | MarketingToolName
   | MetaToolName
   | GoogleAdsToolName
+  | CmsToolName
 
 type RegisteredToolsMap = Record<string, unknown>
 
@@ -61,6 +69,7 @@ export function listBlimberMcpRemoteToolNames(): BlimberMcpRemoteToolName[] {
     ...(Object.keys(META_TOOL_DESCRIPTIONS) as MetaToolName[]),
     ...(Object.keys(MARKETING_TOOL_DESCRIPTIONS) as MarketingToolName[]),
     ...ADS_GOOGLE_TOOL_NAMES,
+    ...CMS_TOOL_NAMES,
   ]
 }
 
@@ -256,6 +265,25 @@ export function createBlimberMcpServer(
     )
   }
 
+  // Appended last so Meta write tools stay early for connectors with a tool cap.
+  for (const name of CMS_TOOL_NAMES) {
+    const schema = CMS_TOOL_SCHEMAS[name]
+    server.tool(
+      name,
+      CMS_TOOL_DESCRIPTIONS[name],
+      zodObjectShape(schema),
+      async (args) => {
+        try {
+          const data = await invokeCmsTool(name, ctx, args)
+          return toolTextPayload({ ok: true, tool: name, data })
+        }
+        catch (error) {
+          return toolTextPayload(formatBlimberMcpError(error), true)
+        }
+      },
+    )
+  }
+
   const knownNames = listBlimberMcpRemoteToolNames()
   installToolNameAliasResolver(server, knownNames)
 
@@ -273,6 +301,10 @@ export function createBlimberMcpServer(
       ...ADS_GOOGLE_TOOL_NAMES.map(name => ({
         name,
         description: GOOGLE_ADS_TOOL_DESCRIPTIONS[name],
+      })),
+      ...CMS_TOOL_NAMES.map(name => ({
+        name,
+        description: CMS_TOOL_DESCRIPTIONS[name],
       })),
     ],
   )

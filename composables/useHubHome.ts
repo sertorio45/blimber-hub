@@ -46,6 +46,7 @@ export interface HubModuleTile {
 
 const MODULE_DESCRIPTIONS: Record<string, string> = {
   crm: MODULE_DESCRIPTIONS_PT.crm,
+  cms: MODULE_DESCRIPTIONS_PT.cms,
   marketing: MODULE_DESCRIPTIONS_PT.marketing,
   ads: MODULE_DESCRIPTIONS_PT.ads,
   whatsapp: MODULE_DESCRIPTIONS_PT.whatsapp,
@@ -196,12 +197,12 @@ export function buildHubActions(input: {
       icon: '/icons/modules/marketing/marketing.svg',
     })
   }
-  if (has('article')) {
+  if (has('cms') && can('cms.read')) {
     actions.push({
-      title: 'Artigos',
-      description: 'Conteúdo do CMS',
-      to: '/articles',
-      icon: 'lucide:book-a',
+      title: 'CMS',
+      description: 'Páginas e publicações do site',
+      to: '/cms',
+      icon: 'lucide:layout-template',
     })
   }
 

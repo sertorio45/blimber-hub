@@ -77,6 +77,41 @@ export interface ArticleUpdateForm extends ArticleForm {
   id: string
 }
 
+export type ArticlePublishStatus = 'published' | 'draft' | 'arquived' | 'scheduled'
+
+/** Rows as stored in Supabase (`articles`, `articles_category`, `articles_tag`, `articles_tag_relations`). */
+export interface TenantScopedRecord {
+  id: number
+  tenant_id: string
+}
+
+export interface ArticleRecord extends TenantScopedRecord {
+  title: string | null
+  slug: string | null
+  content: string | null
+  meta_description: string | null
+  publish_status: ArticlePublishStatus | null
+  category_id: number | null
+  author_id: string | null
+  thumb_url: string | null
+  created_at: string
+  update_at: string | null
+}
+
+export interface ArticleTermRecord extends TenantScopedRecord {
+  title: string | null
+  slug: string | null
+  description: string | null
+  publish_status: ArticlePublishStatus | null
+  created_at: string
+}
+
+export interface ArticleTagRelationRecord extends TenantScopedRecord {
+  article_id: number | null
+  tag_id: number | null
+  created_at: string
+}
+
 export interface ValidationError {
   message: string
   field?: string

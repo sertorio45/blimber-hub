@@ -1,26 +1,22 @@
-import { serverSupabaseClient, serverSupabaseUser } from '#supabase/server'
-import { isWrongTenantForScopedUser } from '~/server/utils/tenant-access'
+import { defineEventHandler } from 'h3'
 
-import { defineEventHandler, getRouterParam } from 'h3'
+import { requireArticleContext } from '~/server/utils/articles/context'
+import { databaseError, findTenantRow, readRowId } from '~/server/utils/articles/repository'
+import { ARTICLE_TABLES } from '~/server/utils/articles/schemas'
 
 export default defineEventHandler(async (event) => {
-  const user = await serverSupabaseUser(event)
-  if (!user) {
-    return { status: 401, message: 'Unauthorized' }
-  }
+  const { client, tenantId } = await requireArticleContext(event, 'delete')
+  const id = readRowId(event, ARTICLE_TABLES.articles)
+  await findTenantRow(client, ARTICLE_TABLES.articles, tenantId, id, 'id, tenant_id')
 
-  const client = await serverSupabaseClient(event)
-  const id = getRouterParam(event, 'id')
-  const { tenantId, role } = event.context.auth || {}
+  const { error } = await client
+    .from(ARTICLE_TABLES.articles)
+    .delete()
+    .eq('id', id)
+    .eq('tenant_id', tenantId)
 
-  const { data: article } = await client.from('articles').select('tenant_id').eq('id', id).single()
-  if (!article || (isWrongTenantForScopedUser(role, tenantId, article.tenant_id))) {
-    return { status: 403, message: 'Forbidden' }
-  }
+  if (error)
+    throw databaseError(error, 'Erro ao excluir artigo')
 
-  const { error } = await client.from('articles').delete().eq('id', id)
-  if (error) {
-    return { status: 400, message: error.message }
-  }
-  return { success: true }
+  return { data: { id } }
 })

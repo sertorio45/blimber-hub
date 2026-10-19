@@ -86,7 +86,7 @@ paths:
           schema: { type: boolean, default: false }
         - name: module
           in: query
-          schema: { type: string, enum: [crm, article, marketing, whatsapp] }
+          schema: { type: string, enum: [crm, cms, article, marketing, whatsapp] }
         - name: integrationProvider
           in: query
           schema: { type: string, enum: [meta, google_ads, google_analytics, linkedin, whatsapp] }

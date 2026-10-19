@@ -3,13 +3,13 @@ import { z } from 'zod'
 
 import { serverSupabaseServiceRole, serverSupabaseUser } from '#supabase/server'
 
-import { ASSIGNABLE_TENANT_MODULE_NAMES } from '~/constants/modules'
+import { ACCEPTED_TENANT_MODULE_INPUT_NAMES } from '~/constants/modules'
 import { isStaffRole } from '~/constants/roles'
 import { recordAuditEvent } from '~/server/utils/audit-events'
 import { getTenantModulesState, syncTenantModules } from '~/server/utils/tenant-modules'
 
 const schema = z.object({
-  modules: z.array(z.enum(ASSIGNABLE_TENANT_MODULE_NAMES)).min(1),
+  modules: z.array(z.enum(ACCEPTED_TENANT_MODULE_INPUT_NAMES)).min(1),
 })
 
 export default defineEventHandler(async (event) => {

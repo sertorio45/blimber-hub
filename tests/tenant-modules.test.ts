@@ -89,7 +89,7 @@ describe('tenant modules helpers', () => {
   it('expands the all bundle to every module slug', () => {
     expect(resolveTenantModuleSlugs([TENANT_MODULE_BUNDLE_ALL])).toEqual([
       'crm',
-      'article',
+      'cms',
       'marketing',
       'whatsapp',
     ])

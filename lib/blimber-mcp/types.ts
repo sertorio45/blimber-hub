@@ -10,6 +10,7 @@ export type BlimberMcpNamespace =
   | 'ads.meta'
   | 'ads.google'
   | 'crm'
+  | 'cms'
   | 'brand'
 
 /** Alias used by the registry catalog. */

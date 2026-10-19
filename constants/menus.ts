@@ -230,14 +230,64 @@ export const navMenu: NavMenu[] = [
     heading: '',
     items: [
       {
-        title: 'Articles',
-        icon: 'i-lucide-book-a',
+        title: 'CMS',
+        icon: 'i-lucide-layout-template',
         roles: ['admin', 'funcionario', 'cliente', 'atendente'],
         children: [
-          { title: 'View articles', icon: 'i-lucide-file-text', link: '/articles' },
-          { title: 'Create', icon: 'i-lucide-plus-circle', link: '/articles/new' },
-          { title: 'Categories', icon: 'i-lucide-folder', link: '/articles/category' },
-          { title: 'Tags', icon: 'i-lucide-tags', link: '/articles/tag' },
+          {
+            title: 'Visão geral',
+            icon: 'i-lucide-layout-dashboard',
+            link: '/cms',
+            capability: 'cms.read',
+          },
+          {
+            title: 'Páginas',
+            icon: 'i-lucide-file',
+            link: '/cms/pages',
+            capability: 'cms.read',
+          },
+          {
+            title: 'Publicações',
+            icon: 'i-lucide-newspaper',
+            link: '/cms/publications',
+            capability: 'cms.read',
+          },
+          {
+            title: 'Coleções',
+            icon: 'i-lucide-layers',
+            link: '/cms/collections',
+            capability: 'cms.read',
+          },
+          {
+            title: 'Mídia',
+            icon: 'i-lucide-images',
+            link: '/cms/media',
+            capability: 'cms.media.read',
+          },
+          {
+            title: 'Configurações',
+            icon: 'i-lucide-settings',
+            link: '/cms/settings',
+            capability: 'cms.settings.manage',
+          },
+          {
+            /**
+             * Legacy `/articles` editor stays reachable while content migrates to
+             * CMS publications. Ungated on purpose: it was ungated before, and
+             * `cms.*` grants only exist once the entitlement migration runs.
+             */
+            title: 'Artigos (legado)',
+            icon: 'i-lucide-book-a',
+            link: '/articles',
+            keepGroup: true,
+            defaultExpanded: false,
+            children: [
+              { title: 'Ver artigos', icon: 'i-lucide-file-text', link: '/articles' },
+              { title: 'Novo artigo', icon: 'i-lucide-plus-circle', link: '/articles/new' },
+              { title: 'Categorias', icon: 'i-lucide-folder', link: '/articles/category' },
+              { title: 'Tags', icon: 'i-lucide-tags', link: '/articles/tag' },
+            ],
+          },
         ],
       },
     ],

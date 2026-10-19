@@ -1,6 +1,6 @@
 import type { BlimberMcpSupabaseLike } from '../types'
 import { z } from 'zod'
-import { COMMERCIAL_MODULE_SLUGS, resolveTenantModuleSlugs } from '../../../constants/modules'
+import { COMMERCIAL_MODULE_SLUGS, LEGACY_MODULE_ALIASES, normalizeCommercialModuleSlug, resolveTenantModuleSlugs } from '../../../constants/modules'
 import { BlimberMcpError } from '../errors'
 
 const providers = ['meta', 'google_ads', 'google_analytics', 'linkedin', 'whatsapp'] as const
@@ -11,7 +11,7 @@ export const listClientsSchema = z.object({
   limit: z.number().int().min(1).max(100).default(50),
   cursor: z.string().uuid().optional(),
   includeInactive: z.boolean().default(false),
-  module: z.enum(COMMERCIAL_MODULE_SLUGS as [string, ...string[]]).optional(),
+  module: z.enum([...COMMERCIAL_MODULE_SLUGS, ...Object.keys(LEGACY_MODULE_ALIASES)] as [string, ...string[]]).optional(),
   integrationProvider: z.enum(providers).optional(),
   integrationStatus: z.enum(['active', 'ready', 'missing']).optional(),
 }).refine(value => !value.integrationStatus || Boolean(value.integrationProvider), {
@@ -53,6 +53,7 @@ function integrationState(row: IntegrationRow) {
 /** Administrative inventory. Only call through the globally authenticated MCP/API. */
 export async function listClients(client: Pick<BlimberMcpSupabaseLike, 'from'>, rawArgs: unknown) {
   const args = listClientsSchema.parse(rawArgs)
+  const requestedModule = normalizeCommercialModuleSlug(args.module)
   const clients: Array<{
     id: string
     name: string
@@ -122,7 +123,7 @@ export async function listClients(client: Pick<BlimberMcpSupabaseLike, 'from'>, 
       scanned++
       const activeModules = resolveTenantModuleSlugs(modulesByTenant.get(row.id) || [])
       const states = integrationsByTenant.get(row.id) || []
-      if (args.module && !activeModules.includes(args.module))
+      if (requestedModule && !activeModules.includes(requestedModule))
         continue
       if (args.integrationProvider) {
         const state = states.find(item => item.provider === args.integrationProvider)

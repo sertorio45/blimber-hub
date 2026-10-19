@@ -19,13 +19,14 @@ const emit = defineEmits<{
 
 const colorMode = useColorMode()
 const editorRef = ref<any>(null)
+const isReady = ref(false)
 
 // Configuração base do editor
 const editorConfig = {
   height: props.height,
   menubar: true,
   skin: 'tinymce-5',
-  content_css: window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'tinymce-5',
+  content_css: 'tinymce-5',
   base_url: '/tinymce',
   suffix: '.min',
   plugins: [
@@ -136,15 +137,19 @@ watch(colorMode, () => {
   updateEditorTheme()
 })
 
-// Atualiza o tema quando o componente é montado
+// `window` only exists in the browser, so the editor boots after mount.
 onMounted(() => {
+  editorConfig.content_css = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'tinymce-5'
+  isReady.value = true
   updateEditorTheme()
 })
 </script>
 
 <template>
   <div class="w-full">
+    <Skeleton v-if="!isReady" class="w-full rounded-md" :style="{ height: `${height}px` }" />
     <Editor
+      v-else
       :model-value="modelValue"
       :init="editorConfig"
       :disabled="disabled"

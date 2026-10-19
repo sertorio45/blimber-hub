@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, watch } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 
 import ArticleFloatingMenu from '~/components/articles/ArticleFloatingMenu.vue'
 import Tiny from '~/components/articles/Tiny.vue'
@@ -23,7 +23,7 @@ interface ArticleForm {
 }
 
 interface ArticleCategory {
-  id: string
+  id: number
   title: string
   tenant_id: string
   created_at?: string
@@ -67,30 +67,13 @@ function updateSlug() {
 async function fetchCategories() {
   try {
     const response = await $fetch('/api/articles/category', { method: 'GET' })
-
-    // Verificar se a resposta é um array ou tem status de erro
-    if (response && typeof response === 'object' && 'status' in response) {
-      // Se for um objeto de erro
-      if (response.status !== 200) {
-        throw new TypeError(response.message || 'Erro ao buscar categorias')
-      }
-    }
-
-    // Verificar se a resposta é um array
-    if (Array.isArray(response)) {
-      // Filtrar categorias pelo tenant do Pinia
-      categories.value = response.filter(category => category.tenant_id === tenantStore.tenantId)
-    }
-    else {
-      // Se não for um array, tratar como erro
-      throw new TypeError('Resposta inválida ao buscar categorias')
-    }
+    categories.value = response.data as unknown as ArticleCategory[]
   }
-  catch (error) {
+  catch (error: any) {
     console.error('Erro ao buscar categorias:', error)
     toast({
       title: 'Erro',
-      description: error instanceof Error ? error.message : 'Não foi possível carregar as categorias',
+      description: error?.data?.message || 'Não foi possível carregar as categorias',
       variant: 'destructive',
     })
     // Definir categorias como array vazio em caso de erro
@@ -126,12 +109,11 @@ async function saveArticle() {
     content: form.value.content,
     meta_description: form.value.description,
     publish_status: form.value.publish_status || 'draft',
-    tenant_id: tenantStore.tenantId,
     category_id: form.value.category_id,
   }
 
   try {
-    const _response = await $fetch('/api/articles', {
+    await $fetch('/api/articles', {
       method: 'POST',
       body: articleData,
     })
@@ -285,7 +267,7 @@ onMounted(() => {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectGroup>
-                        <SelectItem v-for="category in categories" :key="category.id" :value="category.id">
+                        <SelectItem v-for="category in categories" :key="category.id" :value="String(category.id)">
                           {{ category.title }}
                         </SelectItem>
                       </SelectGroup>
@@ -344,7 +326,12 @@ onMounted(() => {
             <CardDescription> Escreva o conteúdo do seu artigo usando o editor abaixo </CardDescription>
           </CardHeader>
           <CardContent>
-            <Tiny v-model="form.content" :height="500" :disabled="loading" />
+            <ClientOnly>
+              <Tiny v-model="form.content" :height="500" :disabled="loading" />
+              <template #fallback>
+                <Skeleton class="h-[500px] w-full rounded-md" />
+              </template>
+            </ClientOnly>
           </CardContent>
         </Card>
       </form>

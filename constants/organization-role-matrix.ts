@@ -6,6 +6,9 @@
  * Tests assert this matrix; if seed SQL drifts, tests fail.
  */
 
+import type { CmsCapability } from '~/constants/workspace'
+import { CMS_CAPABILITIES } from '~/constants/workspace'
+
 export type AgencyRoleSlug
   = | 'owner'
     | 'agency_admin'
@@ -64,6 +67,104 @@ export const ACCESS_ACTION_CAPABILITY: Record<AccessAction, string> = {
   view_reports: 'marketing.social.reports',
 }
 
+/**
+ * CMS capability tiers, kept in sync with
+ * supabase/migrations/20261019110000_cms_module_entitlement.sql.
+ */
+export const CMS_READ_ONLY_CAPABILITIES = [
+  'cms.read',
+  'cms.media.read',
+] as const satisfies readonly CmsCapability[]
+
+/** Baseline for collaborators (`atendente`): draft content, never publish. */
+export const CMS_CONTRIBUTOR_CAPABILITIES = [
+  'cms.read',
+  'cms.publications.create',
+  'cms.publications.update',
+  'cms.media.read',
+  'cms.media.upload',
+] as const satisfies readonly CmsCapability[]
+
+export const CMS_AUTHOR_CAPABILITIES = [
+  'cms.read',
+  'cms.pages.create',
+  'cms.pages.update',
+  'cms.publications.create',
+  'cms.publications.update',
+  'cms.media.read',
+  'cms.media.upload',
+] as const satisfies readonly CmsCapability[]
+
+export const CMS_EDITOR_CAPABILITIES = [
+  ...CMS_AUTHOR_CAPABILITIES,
+  'cms.pages.delete',
+  'cms.publications.delete',
+  'cms.media.delete',
+  'cms.navigation.manage',
+] as const satisfies readonly CmsCapability[]
+
+export const CMS_PUBLISHER_CAPABILITIES = [
+  ...CMS_EDITOR_CAPABILITIES,
+  'cms.publish',
+] as const satisfies readonly CmsCapability[]
+
+export const CMS_SITE_ADMIN_CAPABILITIES: readonly CmsCapability[] = CMS_CAPABILITIES
+
+export type CmsRolePresetSlug = 'cms_author' | 'cms_editor' | 'cms_publisher' | 'cms_site_admin'
+
+export interface CmsRolePreset {
+  slug: CmsRolePresetSlug
+  name: string
+  description: string
+  capabilities: readonly CmsCapability[]
+}
+
+/** Scope caps every CMS preset needs to reach the tenant, per organization type. */
+export const CMS_PRESET_BASE_CAPABILITIES: Record<'agency' | 'direct', readonly string[]> = {
+  agency: ['organization.read', 'organization.tenants.read', 'agency.clients.read'],
+  direct: ['organization.read'],
+}
+
+/**
+ * System cargo templates (organization_id IS NULL) seeded for agency and direct
+ * organizations. They carry `cms.*` plus the scope caps above only; a member who
+ * also works on Marketing needs per-user grants or a custom cargo.
+ */
+export const CMS_ROLE_PRESETS: readonly CmsRolePreset[] = [
+  {
+    slug: 'cms_author',
+    name: 'Autor CMS',
+    description: 'Cria e edita páginas e publicações do site e envia mídia. Sem excluir nem publicar.',
+    capabilities: CMS_AUTHOR_CAPABILITIES,
+  },
+  {
+    slug: 'cms_editor',
+    name: 'Editor CMS',
+    description: 'Tudo do Autor, mais excluir conteúdo e mídia e gerenciar menus do site. Sem publicar.',
+    capabilities: CMS_EDITOR_CAPABILITIES,
+  },
+  {
+    slug: 'cms_publisher',
+    name: 'Publicador CMS',
+    description: 'Tudo do Editor, mais publicar páginas e publicações no site.',
+    capabilities: CMS_PUBLISHER_CAPABILITIES,
+  },
+  {
+    slug: 'cms_site_admin',
+    name: 'Administrador do site',
+    description: 'Acesso total ao CMS, incluindo aparência e configurações do site.',
+    capabilities: CMS_SITE_ADMIN_CAPABILITIES,
+  },
+]
+
+/** Default `cms.*` per legacy app role (`role_capabilities`). Staff short-circuits to everything. */
+export const CMS_LEGACY_ROLE_DEFAULTS: Record<'admin' | 'funcionario' | 'cliente' | 'atendente', readonly CmsCapability[]> = {
+  admin: CMS_CAPABILITIES,
+  funcionario: CMS_CAPABILITIES,
+  cliente: CMS_CAPABILITIES,
+  atendente: CMS_CONTRIBUTOR_CAPABILITIES,
+}
+
 export const AGENCY_ROLE_CAPABILITIES: Record<AgencyRoleSlug, readonly string[]> = {
   owner: [
     'organization.read',
@@ -113,6 +214,7 @@ export const AGENCY_ROLE_CAPABILITIES: Record<AgencyRoleSlug, readonly string[]>
     'marketing.social.automations.manage',
     'marketing.social.manage',
     'marketing.social.approve',
+    ...CMS_CAPABILITIES,
   ],
   agency_admin: [
     'organization.read',
@@ -160,6 +262,7 @@ export const AGENCY_ROLE_CAPABILITIES: Record<AgencyRoleSlug, readonly string[]>
     'marketing.social.automations.manage',
     'marketing.social.manage',
     'marketing.social.approve',
+    ...CMS_CAPABILITIES,
   ],
   marketing_manager: [
     'organization.read',
@@ -199,6 +302,7 @@ export const AGENCY_ROLE_CAPABILITIES: Record<AgencyRoleSlug, readonly string[]>
     'marketing.social.automations.read',
     'marketing.social.automations.manage',
     'marketing.social.approve',
+    ...CMS_CONTRIBUTOR_CAPABILITIES,
   ],
   social_media: [
     'organization.read',
@@ -219,6 +323,7 @@ export const AGENCY_ROLE_CAPABILITIES: Record<AgencyRoleSlug, readonly string[]>
     'marketing.social.packages.read',
     'marketing.social.ops_metrics.read',
     'marketing.social.automations.read',
+    ...CMS_CONTRIBUTOR_CAPABILITIES,
   ],
   designer: [
     'organization.read',
@@ -234,6 +339,7 @@ export const AGENCY_ROLE_CAPABILITIES: Record<AgencyRoleSlug, readonly string[]>
     'marketing.social.briefing.create',
     'marketing.social.library.manage',
     'marketing.social.brand_guide.read',
+    ...CMS_CONTRIBUTOR_CAPABILITIES,
   ],
   copywriter: [
     'organization.read',
@@ -249,6 +355,7 @@ export const AGENCY_ROLE_CAPABILITIES: Record<AgencyRoleSlug, readonly string[]>
     'marketing.social.briefing.create',
     'marketing.social.library.manage',
     'marketing.social.brand_guide.read',
+    ...CMS_CONTRIBUTOR_CAPABILITIES,
   ],
   internal_approver: [
     'organization.read',
@@ -259,6 +366,7 @@ export const AGENCY_ROLE_CAPABILITIES: Record<AgencyRoleSlug, readonly string[]>
     'marketing.social.comment',
     'marketing.social.approval.internal',
     'marketing.social.approve',
+    ...CMS_READ_ONLY_CAPABILITIES,
   ],
   analyst: [
     'organization.read',
@@ -269,6 +377,7 @@ export const AGENCY_ROLE_CAPABILITIES: Record<AgencyRoleSlug, readonly string[]>
     'marketing.social.packages.read',
     'marketing.social.ops_metrics.read',
     'marketing.social.automations.read',
+    ...CMS_READ_ONLY_CAPABILITIES,
   ],
 }
 
@@ -291,6 +400,7 @@ export const DIRECT_ROLE_CAPABILITIES: Record<DirectRoleSlug, readonly string[]>
     'marketing.social.publish',
     'marketing.social.reports',
     'marketing.social.integrations',
+    ...CMS_CAPABILITIES,
   ],
   approver: [
     'organization.read',
@@ -299,6 +409,7 @@ export const DIRECT_ROLE_CAPABILITIES: Record<DirectRoleSlug, readonly string[]>
     'marketing.social.approval.client',
     'marketing.social.approve',
     'marketing.social.reports',
+    ...CMS_READ_ONLY_CAPABILITIES,
   ],
   editor: [
     'organization.read',
@@ -307,11 +418,13 @@ export const DIRECT_ROLE_CAPABILITIES: Record<DirectRoleSlug, readonly string[]>
     'marketing.social.update',
     'marketing.social.comment',
     'marketing.social.approval.submit',
+    ...CMS_CONTRIBUTOR_CAPABILITIES,
   ],
   viewer: [
     'organization.read',
     'marketing.social.read',
     'marketing.social.reports',
+    ...CMS_READ_ONLY_CAPABILITIES,
   ],
 }
 

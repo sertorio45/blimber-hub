@@ -1,10 +1,11 @@
 <script setup lang="ts">
+import type { ArticleTermRecord } from '~/types/articles'
+
 import { onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 
 import ArticleFloatingMenu from '~/components/articles/ArticleFloatingMenu.vue'
 import { useToast } from '~/components/ui/toast'
-import { useTenantStore } from '~/stores/tenant'
 
 definePageMeta({
   middleware: ['auth', 'role'],
@@ -48,19 +49,14 @@ const loading = ref(true)
 async function loadCategory() {
   loading.value = true
   try {
-    const response = await $fetch(`/api/articles/tag/${route.params.id}`)
-    let data = response
-    if (response && typeof response === 'object' && 'data' in response && response.data) {
-      data = response.data
-    }
-    if (data && typeof data === 'object' && 'id' in data) {
-      form.value = {
-        id: data.id,
-        title: data.title || '',
-        slug: data.slug || '',
-        description: data.description || '',
-        publish_status: data.publish_status || 'draft',
-      }
+    const response = await $fetch<{ data: ArticleTermRecord }>(`/api/articles/tag/${route.params.id}`)
+    const { data } = response
+    form.value = {
+      id: data.id,
+      title: data.title || '',
+      slug: data.slug || '',
+      description: data.description || '',
+      publish_status: data.publish_status || 'draft',
     }
   }
   catch (e: any) {
@@ -91,13 +87,11 @@ async function saveCategory() {
     toast({ title: 'Error', description: 'Fill all required fields', variant: 'destructive' })
     return
   }
-  const tenantId = useTenantStore().tenantId
   const categoryData: any = {
     title: form.value.title,
     slug: form.value.slug,
     description: form.value.description,
     publish_status: form.value.publish_status,
-    tenant_id: tenantId,
   }
   try {
     await $fetch(`/api/articles/tag/${route.params.id}`, { method: 'PUT', body: categoryData })

@@ -7,10 +7,10 @@ import DataTable from '~/components/ui/table/DataTable.vue'
 import DataTablePagination from '~/components/ui/table/DataTablePagination.vue'
 import DataTableRowActions from '~/components/ui/table/DataTableRowActions.vue'
 import DataTableToolbar from '~/components/ui/table/DataTableToolbar.vue'
-import { isStaffRole } from '~/constants/roles'
 import { deleteWithConfirm } from '~/composables/useConfirmDelete'
 import { useTenantPage } from '~/composables/useTenantPage'
 import { useTenantRoleFilter } from '~/composables/useTenantRoleFilter'
+import { isStaffRole } from '~/constants/roles'
 
 definePageMeta({
   middleware: ['auth'],
@@ -21,7 +21,7 @@ const isStaff = computed(() => isStaffRole(currentRole.value))
 
 const selectedItems = ref([])
 
-const { data: articlesRaw, pending: loading, refresh: refreshArticles } = useFetch<any[]>('/api/articles')
+const { data: articlesRaw, pending: loading, refresh: refreshArticles } = useFetch('/api/articles', { transform: response => response.data })
 const { filteredData: articles } = useTenantRoleFilter<any>(articlesRaw as any, 'tenant_id')
 
 async function handleDelete(article: any) {
