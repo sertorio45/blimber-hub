@@ -31,6 +31,11 @@ export function cmsNotFound(message = 'Conteúdo não encontrado'): Error {
   return cmsError(404, 'not_found', message)
 }
 
+/** Withdrawn content: crawlers should drop the URL instead of retrying. */
+export function cmsGone(message = 'Este conteúdo foi retirado'): Error {
+  return cmsError(410, 'gone', message)
+}
+
 export function cmsForbidden(message = 'Sem permissão para esta ação'): Error {
   return cmsError(403, 'forbidden', message)
 }
@@ -125,6 +130,8 @@ function codeForStatus(statusCode: number, message: string): CmsErrorCode {
     return /m[óo]dulo n[ãa]o contratado/i.test(message) ? 'module_disabled' : 'forbidden'
   if (statusCode === 404)
     return 'not_found'
+  if (statusCode === 410)
+    return 'gone'
   if (statusCode === 409)
     return 'version_conflict'
   if (statusCode === 413)

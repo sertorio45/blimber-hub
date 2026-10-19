@@ -3,7 +3,10 @@ import type { CmsFakeCall, CmsFakeRow, CmsTestEvent } from './helpers/cms-fake-s
 import { beforeEach, describe, expect, it } from 'vitest'
 import listPublications from '~/server/api/public/cms/v1/sites/[siteKey]/publications.get'
 import resolvePublic from '~/server/api/public/cms/v1/sites/[siteKey]/resolve.get'
-import { CMS_PUBLIC_CACHE_CONTROL } from '~/server/utils/cms/http'
+import sitemapJson from '~/server/api/public/cms/v1/sites/[siteKey]/sitemap.get'
+import sitemapXml from '~/server/api/public/cms/v1/sites/[siteKey]/sitemap.xml.get'
+import { CMS_PUBLIC_CACHE_CONTROL, CMS_ROBOTS_INDEX, CMS_ROBOTS_NOINDEX } from '~/server/utils/cms/http'
+import { enqueueCmsInvalidation } from '~/server/utils/cms/outbox'
 import { CmsFakeSupabase, createCmsEvent } from './helpers/cms-fake-supabase'
 
 const TENANT_A = '11111111-1111-4111-8111-111111111111'
@@ -41,7 +44,15 @@ function siteRow(overrides: CmsFakeRow): CmsFakeRow {
     default_locale: 'pt-BR',
     timezone: 'America/Sao_Paulo',
     status: 'active',
-    settings: {},
+    settings: {
+      menus: {
+        header: [{ label: 'Início', href: '/' }],
+        poisoned: [{ label: 'X', href: 'javascript:alert(1)' }],
+      },
+      theme: { colorPrimary: '#112233', webhookUrl: 'https://hooks.example/secret' },
+      seo: { title: 'Empresa A', trackingId: 'UA-SECRET' },
+      webhooks: { url: 'https://hooks.example/secret-out' },
+    },
     created_at: '2026-10-01T00:00:00.000Z',
     updated_at: '2026-10-01T00:00:00.000Z',
     ...overrides,
@@ -201,6 +212,7 @@ function createDatabase() {
       route('/artigos/retirado', DOC_WITHDRAWN, { revision_id: REV_WITHDRAWN }),
       route('/noticias/noticia', DOC_NEWS, { revision_id: REV_NEWS }),
       route('/sobre', DOC_PAGE, { revision_id: REV_PAGE }),
+      route('/quem-somos', DOC_PAGE, { route_kind: 'redirect' }),
       route('/artigos/artigo-publico', DOC_OTHER, {
         tenant_id: TENANT_B,
         site_id: SITE_B,
@@ -284,7 +296,13 @@ describe('entrega pública do CMS', () => {
     expect(fake.callsTo('cms_documents', 'select')[0]?.columns).not.toContain('draft_payload')
     expect(fake.callsTo('cms_revisions', 'select')[0]?.columns).toContain('snapshot')
     expect(event.node.res.getHeader('cache-control')).toBe(CMS_PUBLIC_CACHE_CONTROL)
+    expect(event.node.res.getHeader('vary')).toBe('Accept-Encoding')
     expect(event.node.res.getHeader('access-control-allow-origin')).toBe('*')
+    expect(event.node.res.getHeader('access-control-allow-methods')).toBe('GET, OPTIONS')
+    expect(event.node.res.getHeader('x-robots-tag')).toBe(CMS_ROBOTS_INDEX)
+    expect(serialized).not.toContain('hooks.example')
+    expect(serialized).not.toContain('UA-SECRET')
+    expect(serialized).not.toContain('javascript:')
   })
 
   it('caminho não publicado, desconhecido ou de outro site responde 404', async () => {
@@ -376,5 +394,128 @@ describe('entrega pública do CMS', () => {
     const other = await list('empresa-b')
     expect(other.data.map(item => item.id)).toEqual([DOC_OTHER])
     expect(JSON.stringify(other)).not.toContain('Artigo publicado')
+    expect(JSON.stringify(response)).not.toContain('hooks.example')
+  })
+
+  it('resolve devolve SEO, menus e tokens de tema sem o restante das settings', async () => {
+    const revision = fake.db.cms_revisions!.find(row => row.id === REV_PUBLISHED)
+    revision!.snapshot = {
+      ...(revision!.snapshot as object),
+      seo: { title: 'Título SEO', description: 'Descrição pública', noindex: true },
+    }
+
+    const event = createCmsEvent({
+      path: '/api/public/cms/v1/sites/empresa-a/resolve',
+      params: { siteKey: 'empresa-a' },
+      query: { path: '/artigos/artigo-publico' },
+      client: fake,
+    })
+    const response = await run(resolvePublic, event)
+    const data = response.data as {
+      seo?: { title?: string, noindex?: boolean }
+      site?: { menus?: unknown, theme?: Record<string, string>, seo?: { title?: string } }
+    }
+
+    expect(data.seo).toEqual({ title: 'Título SEO', description: 'Descrição pública', noindex: true })
+    expect(data.site).toMatchObject({
+      siteKey: 'empresa-a',
+      name: 'Empresa A',
+      locale: 'pt-BR',
+      menus: [{ key: 'header', items: [{ label: 'Início', href: '/' }] }],
+      theme: { colorPrimary: '#112233' },
+      seo: { title: 'Empresa A' },
+    })
+    expect(data.site?.theme).not.toHaveProperty('webhookUrl')
+    expect(JSON.stringify(response)).not.toContain('hooks.example')
+    expect(JSON.stringify(response)).not.toContain('UA-SECRET')
+    expect(event.node.res.getHeader('x-robots-tag')).toBe(CMS_ROBOTS_NOINDEX)
+    assertNoDraftPayload()
+  })
+
+  it('caminho antigo responde 301 e conteúdo retirado responde 410', async () => {
+    const redirect = await resolve('empresa-a', '/quem-somos')
+    expect(redirect.data).toMatchObject({
+      redirect: { to: '/sobre', status: 301 },
+      site: { siteKey: 'empresa-a' },
+    })
+
+    fake.calls = []
+    const withdrawn = createCmsEvent({
+      path: '/api/public/cms/v1/sites/empresa-a/resolve',
+      params: { siteKey: 'empresa-a' },
+      query: { path: '/artigos/retirado' },
+      client: fake,
+    })
+    expect(await failureOf(run(resolvePublic, withdrawn))).toEqual({ status: 410, code: 'gone' })
+    expect(withdrawn.node.res.getHeader('cache-control')).toBe('no-store')
+    expect(withdrawn.node.res.getHeader('x-robots-tag')).toBe(CMS_ROBOTS_NOINDEX)
+    assertNoDraftPayload()
+    expect(fake.callsTo('cms_revisions')).toHaveLength(0)
+  })
+
+  it('sitemap lista só caminhos publicados e nunca seleciona draft_payload', async () => {
+    const event = createCmsEvent({
+      path: '/api/public/cms/v1/sites/empresa-a/sitemap',
+      params: { siteKey: 'empresa-a' },
+      client: fake,
+    })
+    const response = await run(sitemapJson, event)
+
+    expect(response.data.map(entry => entry.path)).toEqual([
+      '/artigos/artigo-publico',
+      '/artigos/english',
+      '/noticias/noticia',
+      '/sobre',
+    ])
+    expect(response.data.find(entry => entry.path === '/artigos/english')?.locale).toBe('en')
+    expect(JSON.stringify(response)).not.toContain('Rascunho')
+    expect(JSON.stringify(response)).not.toContain('Retirado')
+    expect(JSON.stringify(response)).not.toContain('hooks.example')
+    assertNoDraftPayload()
+    expect(event.node.res.getHeader('cache-control')).toBe(CMS_PUBLIC_CACHE_CONTROL)
+    expect(event.node.res.getHeader('x-robots-tag')).toBe(CMS_ROBOTS_NOINDEX)
+
+    fake.db.cms_site_domains = [{
+      site_id: SITE_A,
+      tenant_id: TENANT_A,
+      hostname: 'www.empresa-a.test',
+      environment: 'production',
+      is_primary: true,
+      verified_at: '2026-10-01T00:00:00.000Z',
+      verification_token: 'token-secreto',
+    }]
+    fake.calls = []
+    const xmlEvent = createCmsEvent({
+      path: '/api/public/cms/v1/sites/empresa-a/sitemap.xml',
+      params: { siteKey: 'empresa-a' },
+      client: fake,
+    })
+    const xml = await run(sitemapXml, xmlEvent)
+    expect(xml).toContain('<loc>https://www.empresa-a.test/sobre</loc>')
+    expect(xml).not.toContain('token-secreto')
+    expect(xml).not.toContain('/artigos/retirado')
+    expect(xmlEvent.node.res.getHeader('content-type')).toBe('application/xml; charset=utf-8')
+    expect(fake.callsTo('cms_site_domains', 'select')[0]?.columns).toBe('hostname, verified_at')
+    assertNoDraftPayload()
+  })
+
+  it('a fila de invalidação não carrega rascunho', async () => {
+    await enqueueCmsInvalidation(fake, {
+      tenantId: TENANT_A,
+      siteId: SITE_A,
+      documentId: DOC_PUBLISHED,
+      revisionId: REV_PUBLISHED,
+      eventType: 'publish',
+      payload: { path: '/artigos/artigo-publico' },
+    })
+    const row = fake.db.cms_event_outbox?.[0]
+    expect(row).toMatchObject({
+      tenant_id: TENANT_A,
+      site_id: SITE_A,
+      document_id: DOC_PUBLISHED,
+      event_type: 'publish',
+    })
+    expect(JSON.stringify(row)).not.toContain('draft_payload')
+    expect(JSON.stringify(row)).not.toContain('não publicar')
   })
 })

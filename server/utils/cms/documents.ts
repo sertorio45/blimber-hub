@@ -480,6 +480,8 @@ export async function publishDocument(ctx: CmsDocumentContext, input: CmsPublish
   })
   assertNoDbError(error, 'Erro ao publicar o conteúdo')
 
+  // The RPC writes the publish audit row. `cms_audit_events_enqueue_invalidation`
+  // copies it into `cms_event_outbox`. Do not insert a second job here.
   const result = publishRpcResultSchema.safeParse(data)
   if (!result.success) {
     console.error('[cms] unexpected publish result', result.error)
@@ -496,6 +498,7 @@ export async function publishDocument(ctx: CmsDocumentContext, input: CmsPublish
 
 export async function unpublishDocument(ctx: CmsDocumentContext): Promise<CmsDocument> {
   assertCmsCapability(ctx, 'cms.publish', 'Sem permissão para despublicar')
+  // Unpublish audit (and its outbox job) is written inside `cms_unpublish_document`.
   await callUnpublish(ctx, ctx.document.id)
   return mapDocument(await reloadDocument(ctx))
 }

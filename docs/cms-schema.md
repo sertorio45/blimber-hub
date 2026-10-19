@@ -1,6 +1,6 @@
 # CMS — esquema Postgres
 
-Migration: `supabase/migrations/20261019100000_cms_foundation.sql`
+Migrations: `supabase/migrations/20261019100000_cms_foundation.sql`, `supabase/migrations/20261019110000_cms_module_entitlement.sql`, `supabase/migrations/20261019120000_cms_event_outbox.sql`
 Testes: `supabase/tests/cms_rls.sql` (`psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f supabase/tests/cms_rls.sql`)
 
 Nomes de tabelas e RPCs seguem `CMS_TABLES` / `CMS_RPC` em `lib/cms/contracts.ts`; colunas são o snake_case dos campos do contrato.
@@ -18,6 +18,7 @@ Nomes de tabelas e RPCs seguem `CMS_TABLES` / `CMS_RPC` em `lib/cms/contracts.ts
 | `cms_taxonomies` / `cms_terms` / `cms_revision_terms` | Categorias e tags; termos vinculados à revisão publicada. |
 | `cms_asset_usages` | Onde cada mídia é usada (`draft`, `revision`, `global`). Bloqueia excluir mídia em uso. |
 | `cms_audit_events` | Trilha de auditoria append-only (referências "soft" para sobreviver a exclusões). |
+| `cms_event_outbox` | Fila de invalidação do site público. Um trigger copia auditorias `publish` e `unpublish`; o payload é só o metadata da auditoria. Entrega do webhook ainda não existe. |
 | `cms_legacy_map` | De-para do conteúdo legado para documentos. |
 
 ## Integridade entre tenants
