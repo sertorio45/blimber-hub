@@ -1,15 +1,19 @@
 <script setup lang="ts">
-import type { CmsDocumentPayload, CmsPublicationType } from '~/lib/cms/contracts'
+import type { CmsDocumentPayload, CmsMediaRef, CmsPublicationType } from '~/lib/cms/contracts'
 
 import { computed, reactive, ref, watch } from 'vue'
 import { toast } from 'vue-sonner'
 
+import Tiny from '~/components/articles/Tiny.vue'
+import CmsAuthorField from '~/components/cms/CmsAuthorField.vue'
 import CmsAutosaveIndicator from '~/components/cms/CmsAutosaveIndicator.vue'
+import CmsCoverPicker from '~/components/cms/CmsCoverPicker.vue'
 import CmsEmptyState from '~/components/cms/CmsEmptyState.vue'
 import CmsGate from '~/components/cms/CmsGate.vue'
 import CmsRevisionHistorySheet from '~/components/cms/CmsRevisionHistorySheet.vue'
 import CmsSlugField from '~/components/cms/CmsSlugField.vue'
 import CmsStatusBadge from '~/components/cms/CmsStatusBadge.vue'
+import CmsTermField from '~/components/cms/CmsTermField.vue'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
@@ -67,6 +71,9 @@ const form = reactive({
   canonicalUrl: '',
   noindex: false,
   eventDate: '',
+  cover: null as CmsMediaRef | null,
+  authorId: '',
+  termIds: [] as string[],
 })
 const editVersion = ref(0)
 const fieldErrors = ref<Record<string, string>>({})
@@ -120,15 +127,19 @@ function payloadFromForm(): CmsDocumentPayload {
     delete seo.canonicalUrl
   if (!seo.noindex)
     delete seo.noindex
+  const publication = editor.document.value?.kind === 'publication'
+  const cover = publication
+    ? form.cover
+    : (current?.cover ?? null)
   const payload: CmsDocumentPayload = {
     title: form.title,
     slug: form.slug || undefined,
     excerpt: form.excerpt || undefined,
     body: form.body,
     blocks: current?.blocks ?? [],
-    cover: current?.cover ?? null,
-    authorId: current?.authorId ?? null,
-    termIds: current?.termIds ?? [],
+    cover,
+    authorId: publication ? (form.authorId || null) : (current?.authorId ?? null),
+    termIds: publication ? [...form.termIds] : (current?.termIds ?? []),
     seo,
   }
   if (form.publicationType === 'news') {
@@ -151,6 +162,9 @@ function applyPayload(payload: CmsDocumentPayload, publicationType?: CmsPublicat
   form.sourceName = payload.sourceName ?? ''
   form.sourceUrl = payload.sourceUrl ?? ''
   form.eventDate = payload.eventDate ? payload.eventDate.slice(0, 10) : ''
+  form.cover = payload.cover ?? null
+  form.authorId = payload.authorId ?? ''
+  form.termIds = [...(payload.termIds ?? [])]
   if (publicationType !== undefined)
     form.publicationType = publicationType
 }
@@ -229,6 +243,9 @@ function clearEditor() {
     form.canonicalUrl = ''
     form.noindex = false
     form.eventDate = ''
+    form.cover = null
+    form.authorId = ''
+    form.termIds = []
   })
   autosave.reset(0)
 }
@@ -385,7 +402,7 @@ async function reloadServer() {
 </script>
 
 <template>
-  <div class="mx-auto max-w-4xl space-y-6">
+  <div class="mx-auto max-w-6xl space-y-6">
     <CmsGate
       :allowed="access.canRead.value"
       :error="displaced ? null : editor.loadError.value"
@@ -546,64 +563,128 @@ async function reloadServer() {
             </p>
           </div>
 
-          <div class="space-y-2">
-            <Label :for="excerptId">Resumo</Label>
-            <Textarea
-              :id="excerptId"
-              v-model="form.excerpt"
-              rows="3"
-              :maxlength="CMS_LIMITS.maxExcerptLength"
-              :aria-invalid="Boolean(fieldErrors.excerpt)"
-            />
-            <p v-if="fieldErrors.excerpt" class="text-xs text-destructive">
-              {{ fieldErrors.excerpt }}
-            </p>
-          </div>
+          <div v-if="kind === 'publication'" class="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
+            <div class="min-w-0 space-y-6">
+              <div class="space-y-2">
+                <Label :for="excerptId">Resumo</Label>
+                <Textarea
+                  :id="excerptId"
+                  v-model="form.excerpt"
+                  rows="3"
+                  :maxlength="CMS_LIMITS.maxExcerptLength"
+                  :aria-invalid="Boolean(fieldErrors.excerpt)"
+                />
+                <p v-if="fieldErrors.excerpt" class="text-xs text-destructive">
+                  {{ fieldErrors.excerpt }}
+                </p>
+              </div>
 
-          <div class="space-y-2">
-            <Label :for="bodyId">Conteúdo</Label>
-            <Textarea
-              :id="bodyId"
-              v-model="form.body"
-              rows="12"
-              class="min-h-64 text-sm font-mono"
-              :aria-invalid="Boolean(fieldErrors.body)"
-            />
-            <p v-if="fieldErrors.body" class="text-xs text-destructive">
-              {{ fieldErrors.body }}
-            </p>
-          </div>
+              <div class="space-y-2">
+                <Label :for="bodyId">Conteúdo</Label>
+                <ClientOnly>
+                  <Tiny
+                    v-model="form.body"
+                    :height="520"
+                    :disabled="!canEdit"
+                  />
+                  <template #fallback>
+                    <div class="h-[520px] animate-pulse rounded-md bg-muted" />
+                  </template>
+                </ClientOnly>
+                <p v-if="fieldErrors.body" class="text-xs text-destructive">
+                  {{ fieldErrors.body }}
+                </p>
+              </div>
 
-          <div
-            v-if="kind === 'publication' && form.publicationType === 'news'"
-            class="grid gap-4 sm:grid-cols-2"
-          >
-            <div class="space-y-2">
-              <Label :for="sourceNameId">Fonte</Label>
-              <Input
-                :id="sourceNameId"
-                v-model="form.sourceName"
-                :aria-invalid="Boolean(fieldError('sourceName', 'payload.sourceName'))"
+              <div v-if="form.publicationType === 'news'" class="grid gap-4 sm:grid-cols-2">
+                <div class="space-y-2">
+                  <Label :for="sourceNameId">Fonte</Label>
+                  <Input
+                    :id="sourceNameId"
+                    v-model="form.sourceName"
+                    :aria-invalid="Boolean(fieldError('sourceName', 'payload.sourceName'))"
+                  />
+                  <p v-if="fieldError('sourceName', 'payload.sourceName')" class="text-xs text-destructive">
+                    {{ fieldError('sourceName', 'payload.sourceName') }}
+                  </p>
+                </div>
+                <div class="space-y-2">
+                  <Label :for="sourceUrlId">URL de origem</Label>
+                  <Input :id="sourceUrlId" v-model="form.sourceUrl" type="url" placeholder="https://" />
+                  <p v-if="fieldError('sourceUrl', 'payload.sourceUrl')" class="text-xs text-destructive">
+                    {{ fieldError('sourceUrl', 'payload.sourceUrl') }}
+                  </p>
+                </div>
+                <div class="space-y-2">
+                  <Label for="cms-event-date">Data do fato</Label>
+                  <Input id="cms-event-date" v-model="form.eventDate" type="date" />
+                  <p v-if="fieldError('eventDate', 'payload.eventDate')" class="text-xs text-destructive">
+                    {{ fieldError('eventDate', 'payload.eventDate') }}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <aside class="lg:sticky lg:top-4 space-y-6">
+              <CmsCoverPicker
+                v-model="form.cover"
+                :disabled="!canEdit"
+                :error="fieldError('cover', 'payload.cover')"
               />
-              <p v-if="fieldError('sourceName', 'payload.sourceName')" class="text-xs text-destructive">
-                {{ fieldError('sourceName', 'payload.sourceName') }}
-              </p>
-            </div>
-            <div class="space-y-2">
-              <Label :for="sourceUrlId">URL de origem</Label>
-              <Input :id="sourceUrlId" v-model="form.sourceUrl" type="url" placeholder="https://" />
-              <p v-if="fieldError('sourceUrl', 'payload.sourceUrl')" class="text-xs text-destructive">
-                {{ fieldError('sourceUrl', 'payload.sourceUrl') }}
-              </p>
-            </div>
-            <div class="space-y-2">
-              <Label for="cms-event-date">Data do fato</Label>
-              <Input id="cms-event-date" v-model="form.eventDate" type="date" />
-              <p v-if="fieldError('eventDate', 'payload.eventDate')" class="text-xs text-destructive">
-                {{ fieldError('eventDate', 'payload.eventDate') }}
-              </p>
-            </div>
+              <CmsAuthorField
+                v-model="form.authorId"
+                :site-id="editor.document.value.siteId"
+                :disabled="!canEdit"
+                :error="fieldError('authorId', 'payload.authorId')"
+              />
+              <CmsTermField
+                v-model="form.termIds"
+                :site-id="editor.document.value.siteId"
+                kind="category"
+                label="Categorias"
+                :disabled="!canEdit"
+                :error="fieldError('termIds', 'payload.termIds')"
+              />
+              <CmsTermField
+                v-model="form.termIds"
+                :site-id="editor.document.value.siteId"
+                kind="tag"
+                label="Tags"
+                :disabled="!canEdit"
+                :error="fieldError('termIds', 'payload.termIds')"
+              />
+            </aside>
           </div>
+
+          <template v-else>
+            <div class="space-y-2">
+              <Label :for="excerptId">Resumo</Label>
+              <Textarea
+                :id="excerptId"
+                v-model="form.excerpt"
+                rows="3"
+                :maxlength="CMS_LIMITS.maxExcerptLength"
+                :aria-invalid="Boolean(fieldErrors.excerpt)"
+              />
+              <p v-if="fieldErrors.excerpt" class="text-xs text-destructive">
+                {{ fieldErrors.excerpt }}
+              </p>
+            </div>
+
+            <div class="space-y-2">
+              <Label :for="bodyId">Conteúdo</Label>
+              <Textarea
+                :id="bodyId"
+                v-model="form.body"
+                rows="12"
+                class="min-h-64 text-sm font-mono"
+                :aria-invalid="Boolean(fieldErrors.body)"
+              />
+              <p v-if="fieldErrors.body" class="text-xs text-destructive">
+                {{ fieldErrors.body }}
+              </p>
+            </div>
+          </template>
 
           <details class="border rounded-xl p-4">
             <summary class="cursor-pointer text-sm font-medium">

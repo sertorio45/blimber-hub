@@ -44,12 +44,14 @@ export const CMS_DEFAULT_TIMEZONE = 'America/Sao_Paulo'
 
 export const cmsDocumentKindSchema = z.enum(['page', 'publication'])
 export const cmsPublicationTypeSchema = z.enum(['article', 'news'])
+export const cmsTaxonomyKindSchema = z.enum(['category', 'tag'])
 export const cmsWorkflowStatusSchema = z.enum(['draft', 'in_review', 'changes_requested', 'approved'])
 export const cmsPublicStatusSchema = z.enum(['unpublished', 'published', 'withdrawn'])
 export const cmsSiteStatusSchema = z.enum(['active', 'suspended', 'archived'])
 
 export type CmsDocumentKind = z.infer<typeof cmsDocumentKindSchema>
 export type CmsPublicationType = z.infer<typeof cmsPublicationTypeSchema>
+export type CmsTaxonomyKind = z.infer<typeof cmsTaxonomyKindSchema>
 export type CmsWorkflowStatus = z.infer<typeof cmsWorkflowStatusSchema>
 export type CmsPublicStatus = z.infer<typeof cmsPublicStatusSchema>
 export type CmsSiteStatus = z.infer<typeof cmsSiteStatusSchema>
@@ -248,6 +250,115 @@ export const cmsListQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(CMS_LIMITS.maxPageSize).default(CMS_LIMITS.defaultPageSize),
 })
 export type CmsListQuery = z.infer<typeof cmsListQuerySchema>
+
+const cmsNameSchema = z.string().trim().min(1).max(160)
+const cmsBioSchema = z.string().trim().max(2000)
+
+export const cmsSiteQuerySchema = z.object({
+  siteId: uuid,
+})
+export type CmsSiteQuery = z.infer<typeof cmsSiteQuerySchema>
+
+export const cmsTermListQuerySchema = cmsSiteQuerySchema.extend({
+  kind: cmsTaxonomyKindSchema.optional(),
+  taxonomyId: uuid.optional(),
+})
+export type CmsTermListQuery = z.infer<typeof cmsTermListQuerySchema>
+
+export const cmsAuthorSchema = z.object({
+  id: uuid,
+  tenantId: uuid,
+  siteId: uuid,
+  name: z.string(),
+  slug: z.string(),
+  bio: z.string().nullable(),
+  avatarAssetId: uuid.nullable(),
+  userId: uuid.nullable(),
+  createdAt: isoDate,
+  updatedAt: isoDate,
+})
+export type CmsAuthor = z.infer<typeof cmsAuthorSchema>
+
+export const cmsCreateAuthorInputSchema = z.object({
+  siteId: uuid,
+  name: cmsNameSchema,
+  slug: cmsSlugSchema.optional(),
+  bio: cmsBioSchema.nullable().optional(),
+})
+export type CmsCreateAuthorInput = z.infer<typeof cmsCreateAuthorInputSchema>
+
+export const cmsUpdateAuthorInputSchema = z.object({
+  name: cmsNameSchema.optional(),
+  slug: cmsSlugSchema.optional(),
+  bio: cmsBioSchema.nullable().optional(),
+})
+export type CmsUpdateAuthorInput = z.infer<typeof cmsUpdateAuthorInputSchema>
+
+export const cmsTaxonomySchema = z.object({
+  id: uuid,
+  tenantId: uuid,
+  siteId: uuid,
+  kind: cmsTaxonomyKindSchema,
+  name: z.string(),
+  slug: z.string(),
+  createdAt: isoDate,
+  updatedAt: isoDate,
+})
+export type CmsTaxonomy = z.infer<typeof cmsTaxonomySchema>
+
+export const cmsCreateTaxonomyInputSchema = z.object({
+  siteId: uuid,
+  kind: cmsTaxonomyKindSchema,
+  name: cmsNameSchema,
+  slug: cmsSlugSchema.optional(),
+})
+export type CmsCreateTaxonomyInput = z.infer<typeof cmsCreateTaxonomyInputSchema>
+
+export const cmsUpdateTaxonomyInputSchema = z.object({
+  name: cmsNameSchema.optional(),
+  slug: cmsSlugSchema.optional(),
+})
+export type CmsUpdateTaxonomyInput = z.infer<typeof cmsUpdateTaxonomyInputSchema>
+
+/** `kind` is copied from the parent taxonomy so the editor can group terms without a second lookup. */
+export const cmsTermSchema = z.object({
+  id: uuid,
+  tenantId: uuid,
+  siteId: uuid,
+  taxonomyId: uuid,
+  kind: cmsTaxonomyKindSchema,
+  name: z.string(),
+  slug: z.string(),
+  parentId: uuid.nullable(),
+  createdAt: isoDate,
+  updatedAt: isoDate,
+})
+export type CmsTerm = z.infer<typeof cmsTermSchema>
+
+export const cmsCreateTermInputSchema = z.object({
+  siteId: uuid,
+  taxonomyId: uuid.optional(),
+  kind: cmsTaxonomyKindSchema.optional(),
+  name: cmsNameSchema,
+  slug: cmsSlugSchema.optional(),
+  parentId: uuid.nullable().optional(),
+}).superRefine((value, ctx) => {
+  if (!value.taxonomyId && !value.kind) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['kind'],
+      message: 'Informe a taxonomia ou o tipo',
+    })
+  }
+})
+export type CmsCreateTermInput = z.infer<typeof cmsCreateTermInputSchema>
+
+export const cmsUpdateTermInputSchema = z.object({
+  name: cmsNameSchema.optional(),
+  slug: cmsSlugSchema.optional(),
+  parentId: uuid.nullable().optional(),
+})
+export type CmsUpdateTermInput = z.infer<typeof cmsUpdateTermInputSchema>
 
 // ---- Response envelopes ----
 

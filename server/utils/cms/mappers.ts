@@ -1,4 +1,5 @@
 import type {
+  CmsAuthor,
   CmsDocument,
   CmsDocumentKind,
   CmsDocumentPayload,
@@ -9,16 +10,22 @@ import type {
   CmsRevision,
   CmsSite,
   CmsSiteStatus,
+  CmsTaxonomy,
+  CmsTaxonomyKind,
+  CmsTerm,
   CmsWorkflowStatus,
 } from '~/lib/cms/contracts'
 
 import {
+  cmsAuthorSchema,
   cmsDocumentPayloadSchema,
   cmsDocumentSchema,
   cmsDocumentSummarySchema,
   cmsPublicDocumentSchema,
   cmsRevisionSchema,
   cmsSiteSchema,
+  cmsTaxonomySchema,
+  cmsTermSchema,
 } from '~/lib/cms/contracts'
 import { cmsError } from '~/server/utils/cms/errors'
 
@@ -80,6 +87,42 @@ export interface CmsRevisionRow extends CmsRevisionSummaryRow {
   snapshot: unknown
 }
 
+export interface CmsAuthorRow {
+  id: string
+  tenant_id: string
+  site_id: string
+  name: string
+  slug: string
+  bio: string | null
+  avatar_asset_id: string | null
+  user_id: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface CmsTaxonomyRow {
+  id: string
+  tenant_id: string
+  site_id: string
+  kind: CmsTaxonomyKind
+  name: string
+  slug: string
+  created_at: string
+  updated_at: string
+}
+
+export interface CmsTermRow {
+  id: string
+  tenant_id: string
+  site_id: string
+  taxonomy_id: string
+  name: string
+  slug: string
+  parent_id: string | null
+  created_at: string
+  updated_at: string
+}
+
 export const SITE_COLUMNS
   = 'id, tenant_id, site_key, name, default_locale, timezone, status, settings, created_at, updated_at'
 
@@ -114,6 +157,15 @@ export const REVISION_SUMMARY_COLUMNS
   = 'id, tenant_id, site_id, document_id, revision_number, reason, created_by, created_at'
 
 export const REVISION_COLUMNS = `${REVISION_SUMMARY_COLUMNS}, snapshot`
+
+export const AUTHOR_COLUMNS
+  = 'id, tenant_id, site_id, name, slug, bio, avatar_asset_id, user_id, created_at, updated_at'
+
+export const TAXONOMY_COLUMNS
+  = 'id, tenant_id, site_id, kind, name, slug, created_at, updated_at'
+
+export const TERM_COLUMNS
+  = 'id, tenant_id, site_id, taxonomy_id, name, slug, parent_id, created_at, updated_at'
 
 export type CmsRevisionSummary = Omit<CmsRevision, 'snapshot'>
 
@@ -222,6 +274,49 @@ export interface CmsPublicSource {
   revisionId: string
   path: string
   content: unknown
+}
+
+export function mapAuthor(row: CmsAuthorRow): CmsAuthor {
+  return parseOrFail(cmsAuthorSchema.safeParse({
+    id: row.id,
+    tenantId: row.tenant_id,
+    siteId: row.site_id,
+    name: row.name,
+    slug: row.slug,
+    bio: row.bio ?? null,
+    avatarAssetId: row.avatar_asset_id ?? null,
+    userId: row.user_id ?? null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }), 'author', row.id)
+}
+
+export function mapTaxonomy(row: CmsTaxonomyRow): CmsTaxonomy {
+  return parseOrFail(cmsTaxonomySchema.safeParse({
+    id: row.id,
+    tenantId: row.tenant_id,
+    siteId: row.site_id,
+    kind: row.kind,
+    name: row.name,
+    slug: row.slug,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }), 'taxonomy', row.id)
+}
+
+export function mapTerm(row: CmsTermRow, kind: CmsTaxonomyKind): CmsTerm {
+  return parseOrFail(cmsTermSchema.safeParse({
+    id: row.id,
+    tenantId: row.tenant_id,
+    siteId: row.site_id,
+    taxonomyId: row.taxonomy_id,
+    kind,
+    name: row.name,
+    slug: row.slug,
+    parentId: row.parent_id ?? null,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }), 'term', row.id)
 }
 
 export function mapPublicDocument(source: CmsPublicSource): CmsPublicDocument {
