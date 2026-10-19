@@ -91,6 +91,11 @@ export function createCmsAutosave<T>(options: CmsAutosaveOptions<T>) {
   let suppress = 0
   let disposed = false
 
+  /** Fresh read — avoids control-flow narrowing across `await inFlight`. */
+  function readState(): CmsAutosaveState {
+    return state.value
+  }
+
   function clearTimer() {
     if (timer) {
       clearTimeout(timer)
@@ -131,14 +136,17 @@ export function createCmsAutosave<T>(options: CmsAutosaveOptions<T>) {
   }
 
   async function persist(): Promise<boolean> {
-    if (disposed || abandoned || state.value === 'conflict')
+    if (disposed || abandoned || readState() === 'conflict')
       return false
     if (!enabled())
       return !isDirty.value
     if (inFlight) {
       await inFlight
+      const after = readState()
+      if (after === 'conflict')
+        return false
       if (!isDirty.value)
-        return state.value !== 'error' && state.value !== 'conflict'
+        return after !== 'error'
       return persist()
     }
     clearTimer()

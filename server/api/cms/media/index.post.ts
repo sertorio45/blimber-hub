@@ -3,7 +3,8 @@ import type { MediaUploadResult } from '~/server/utils/media/service'
 
 import { readMultipartFormData } from 'h3'
 
-import { cmsError, requireCmsMediaContext, withCmsErrors } from '~/server/utils/media/cms-adapter'
+import { cmsError, withCmsErrors } from '~/server/utils/cms/errors'
+import { requireCmsMediaContext } from '~/server/utils/media/cms-adapter'
 import { uploadAsset } from '~/server/utils/media/service'
 
 type CmsUploadResponse = CmsItem<MediaUploadResult['asset']> & { meta: MediaUploadResult['meta'] }

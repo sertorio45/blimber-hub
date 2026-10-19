@@ -35,10 +35,21 @@ const usageDialog = ref<{ asset: CmsMediaAsset, usages: CmsMediaUsages } | null>
 
 const gateError = computed(() => media.loadError.value)
 
+function asMediaLike(asset: CmsMediaAsset) {
+  const mime = typeof asset.mime_type === 'string' ? asset.mime_type : ''
+  return {
+    mimeType: mime,
+    mime_type: mime,
+    previewUrl: asset.previewUrl,
+    preview_url: asset.preview_url,
+  }
+}
+
 function previewOf(asset: CmsMediaAsset): string | null {
-  if (!mediaAssetMimeType(asset).startsWith('image/'))
+  const like = asMediaLike(asset)
+  if (!mediaAssetMimeType(like).startsWith('image/'))
     return null
-  return mediaAssetPreviewUrl(asset)
+  return mediaAssetPreviewUrl(like)
 }
 
 async function onFilesSelected(event: Event) {

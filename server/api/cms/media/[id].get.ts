@@ -5,7 +5,8 @@ import type { MediaAssetWithPreview } from '~/server/utils/media/service'
 import { getRouterParam } from 'h3'
 import { z } from 'zod'
 
-import { cmsError, requireCmsMediaContext, withCmsErrors } from '~/server/utils/media/cms-adapter'
+import { cmsError, withCmsErrors } from '~/server/utils/cms/errors'
+import { requireCmsMediaContext } from '~/server/utils/media/cms-adapter'
 import { getAsset, getAssetUsages } from '~/server/utils/media/service'
 
 type CmsMediaDetail = MediaAssetWithPreview & { usages: MediaAssetUsages }

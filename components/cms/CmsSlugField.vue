@@ -36,7 +36,8 @@ const errorId = `${inputId}-error`
 const touched = ref(false)
 const unlocked = ref(false)
 
-const isReadonly = computed(() => props.disabled || (props.locked && !unlocked.value))
+// Named to avoid clashing with Vue's auto-imported `isReadonly` helper.
+const fieldReadonly = computed(() => props.disabled || (props.locked && !unlocked.value))
 
 watch(() => props.source, (value) => {
   if (props.auto && !touched.value && !props.locked)
@@ -80,13 +81,13 @@ const describedBy = computed(() => [props.error ? errorId : null, hintId].filter
     </div>
     <div
       class="flex items-center border rounded-md bg-background shadow-sm focus-within:ring-1 focus-within:ring-ring"
-      :class="[error ? 'border-destructive' : 'border-input', isReadonly ? 'bg-muted/40' : '']"
+      :class="[error ? 'border-destructive' : 'border-input', fieldReadonly ? 'bg-muted/40' : '']"
     >
       <span class="max-w-[45%] select-none truncate pl-3 text-sm text-muted-foreground" aria-hidden="true">{{ prefix }}</span>
       <input
         :id="inputId"
         :value="modelValue"
-        :readonly="isReadonly"
+        :readonly="fieldReadonly"
         :maxlength="CMS_LIMITS.maxSlugLength"
         :aria-invalid="Boolean(error) || undefined"
         :aria-describedby="describedBy"
@@ -98,7 +99,7 @@ const describedBy = computed(() => [props.error ? errorId : null, hintId].filter
         @input="onInput"
         @blur="onBlur"
       >
-      <Icon v-if="isReadonly && locked" name="lucide:lock" class="mr-3 size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+      <Icon v-if="fieldReadonly && locked" name="lucide:lock" class="mr-3 size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
     </div>
     <p v-if="error" :id="errorId" class="text-xs text-destructive">
       {{ error }}

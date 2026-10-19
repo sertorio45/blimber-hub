@@ -5,7 +5,8 @@ import { getQuery } from 'h3'
 import { z } from 'zod'
 
 import { CMS_LIMITS } from '~/lib/cms/contracts'
-import { cmsError, requireCmsMediaContext, withCmsErrors } from '~/server/utils/media/cms-adapter'
+import { cmsError, withCmsErrors } from '~/server/utils/cms/errors'
+import { requireCmsMediaContext } from '~/server/utils/media/cms-adapter'
 import { listAssets, MEDIA_KINDS } from '~/server/utils/media/service'
 
 const querySchema = z.object({

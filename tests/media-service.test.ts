@@ -291,7 +291,7 @@ describe('cms adapter', () => {
   it('wraps the module gate in the CMS error envelope', async () => {
     workspace.modules = ['marketing']
     workspace.capabilities = ['cms.media.read']
-    const { toCmsError } = await import('~/server/utils/media/cms-adapter')
+    const { toCmsError } = await import('~/server/utils/cms/errors')
 
     const error = await requireCmsMediaContext(fakeEvent(), 'read').catch(toCmsError)
     expect(error).toMatchObject({

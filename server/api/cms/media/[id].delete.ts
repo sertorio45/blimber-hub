@@ -4,7 +4,8 @@ import type { DeleteMediaAssetResult, MediaAssetDeletePreviewItem } from '~/serv
 import { getRouterParam, isError } from 'h3'
 import { z } from 'zod'
 
-import { cmsError, requireCmsMediaContext, withCmsErrors } from '~/server/utils/media/cms-adapter'
+import { cmsError, withCmsErrors } from '~/server/utils/cms/errors'
+import { requireCmsMediaContext } from '~/server/utils/media/cms-adapter'
 import { deleteAsset } from '~/server/utils/media/service'
 
 /**
