@@ -4,6 +4,11 @@ import type {
   CmsPage,
   CmsPublicationType,
   CmsPublicDocument,
+  CmsPublicMenu,
+  CmsPublicSiteChrome,
+  CmsSeo,
+  CmsSitemapEntry,
+  CmsThemeTokens,
 } from '~/lib/cms/contracts'
 import type { WorkspaceClient } from '~/server/utils/workspace-context'
 
@@ -12,11 +17,15 @@ import { z } from 'zod'
 import {
   CMS_LIMITS,
   CMS_TABLES,
+  CMS_THEME_TOKEN_KEYS,
   cmsDocumentPayloadSchema,
   cmsPublicationTypeSchema,
+  cmsPublicMenuSchema,
+  cmsSeoSchema,
   cmsSiteKeySchema,
+  cmsThemeTokensSchema,
 } from '~/lib/cms/contracts'
-import { assertNoDbError, cmsError, cmsNotFound } from '~/server/utils/cms/errors'
+import { assertNoDbError, cmsError, cmsGone, cmsNotFound } from '~/server/utils/cms/errors'
 import { mapPublicDocument } from '~/server/utils/cms/mappers'
 import { cursorFilter, decodeCmsCursor, paginate } from '~/server/utils/cms/pagination'
 
@@ -32,9 +41,13 @@ const PATH_PATTERN = /^\/$|^(?:\/[a-z0-9][a-z0-9._~-]*)+$/
 /** Same rule as the `*_locale_format` CHECK constraints. */
 const LOCALE_PATTERN = /^[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$/
 
-export const PUBLIC_SITE_COLUMNS = 'id, tenant_id, site_key, default_locale, status'
+export const PUBLIC_SITE_COLUMNS = 'id, tenant_id, site_key, name, default_locale, status'
+/** Settings are read only to project menus, theme and default SEO. The raw object is never returned. */
+export const PUBLIC_SITE_DELIVERY_COLUMNS = `${PUBLIC_SITE_COLUMNS}, settings`
 export const PUBLIC_ROUTE_COLUMNS = 'path, locale, route_kind, document_id, revision_id'
-export const PUBLIC_DOCUMENT_COLUMNS = 'id, kind, publication_type, locale, published_revision_id, published_at'
+export const PUBLIC_DOCUMENT_COLUMNS = 'id, kind, publication_type, locale, public_status, published_revision_id, published_at'
+export const PUBLIC_SITEMAP_DOCUMENT_COLUMNS = `${PUBLIC_DOCUMENT_COLUMNS}, updated_at`
+export const PUBLIC_DOMAIN_COLUMNS = 'hostname, verified_at'
 export const PUBLIC_REVISION_COLUMNS = 'id, document_id, snapshot'
 
 /** Summary projection straight from the snapshot JSON: body and blocks never leave the database. */
@@ -57,8 +70,10 @@ interface PublicSiteRow {
   id: string
   tenant_id: string
   site_key: string
+  name?: string | null
   default_locale: string
   status: string
+  settings?: Record<string, unknown> | null
 }
 
 interface PublicRouteRow {
@@ -74,15 +89,24 @@ interface PublicDocumentRow {
   kind: CmsDocumentKind
   publication_type: CmsPublicationType | null
   locale: string
+  public_status: string
   published_revision_id: string | null
   published_at: string | null
+  updated_at?: string | null
 }
 
 export interface CmsPublicRedirect {
   redirect: { to: string, status: 301 }
+  site: CmsPublicSiteChrome
 }
 
-export type CmsPublicResolveResult = CmsPublicDocument | CmsPublicRedirect
+/** Published document plus the site chrome the renderer needs for `<head>` and layout. */
+export type CmsPublicDelivery = CmsPublicDocument & {
+  seo: CmsSeo
+  site: CmsPublicSiteChrome
+}
+
+export type CmsPublicResolveResult = CmsPublicDelivery | CmsPublicRedirect
 
 const cmsPublicSummaryContentSchema = cmsDocumentPayloadSchema.omit({ body: true, blocks: true })
 export type CmsPublicSummaryContent = z.infer<typeof cmsPublicSummaryContentSchema>
@@ -122,15 +146,86 @@ function pageNotFound(): Error {
   return cmsNotFound('Página não encontrada')
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null
+}
+
+function readTheme(settings: Record<string, unknown>): CmsThemeTokens {
+  const raw = asRecord(settings.theme)
+  if (!raw)
+    return {}
+  const picked: Record<string, string> = {}
+  for (const key of CMS_THEME_TOKEN_KEYS) {
+    const value = raw[key]
+    if (typeof value === 'string')
+      picked[key] = value
+  }
+  const parsed = cmsThemeTokensSchema.safeParse(picked)
+  return parsed.success ? parsed.data : {}
+}
+
+function readMenus(settings: Record<string, unknown>): CmsPublicMenu[] {
+  const raw = settings.menus
+  const candidates: unknown[] = []
+  if (Array.isArray(raw)) {
+    candidates.push(...raw)
+  }
+  else {
+    const record = asRecord(raw)
+    if (record) {
+      for (const [key, items] of Object.entries(record))
+        candidates.push({ key, items })
+    }
+  }
+
+  const menus: CmsPublicMenu[] = []
+  for (const candidate of candidates) {
+    const parsed = cmsPublicMenuSchema.safeParse(candidate)
+    if (parsed.success)
+      menus.push(parsed.data)
+    if (menus.length >= 8)
+      break
+  }
+  return menus
+}
+
+function readSiteSeo(settings: Record<string, unknown>): CmsSeo {
+  const parsed = cmsSeoSchema.safeParse(asRecord(settings.seo) ?? {})
+  if (!parsed.success)
+    return {}
+  const seo = parsed.data
+  if (seo.canonicalUrl && !seo.canonicalUrl.startsWith('https://'))
+    delete seo.canonicalUrl
+  return seo
+}
+
+/** Projects only the public slice of `settings`. Webhook URLs and other keys are dropped. */
+export function readPublicSiteChrome(site: PublicSiteRow, locale: string): CmsPublicSiteChrome {
+  const settings = asRecord(site.settings) ?? {}
+  return {
+    siteKey: site.site_key,
+    name: site.name?.trim() || site.site_key,
+    locale,
+    defaultLocale: site.default_locale,
+    menus: readMenus(settings),
+    theme: readTheme(settings),
+    seo: readSiteSeo(settings),
+  }
+}
+
 /** Only `active` sites are served; suspended, archived and unknown keys all answer 404. */
-export async function loadPublicSite(client: WorkspaceClient, siteKey: string | null | undefined): Promise<PublicSiteRow> {
+export async function loadPublicSite(
+  client: WorkspaceClient,
+  siteKey: string | null | undefined,
+  options: { includeSettings?: boolean } = {},
+): Promise<PublicSiteRow> {
   const key = cmsSiteKeySchema.safeParse(siteKey ?? '')
   if (!key.success)
     throw siteNotFound()
 
   const { data, error } = await client
     .from(CMS_TABLES.sites)
-    .select(PUBLIC_SITE_COLUMNS)
+    .select(options.includeSettings ? PUBLIC_SITE_DELIVERY_COLUMNS : PUBLIC_SITE_COLUMNS)
     .eq('site_key', key.data)
     .eq('status', 'active')
     .maybeSingle()
@@ -148,7 +243,7 @@ function resolveLocale(site: PublicSiteRow, locale: string | undefined): string 
   return locale
 }
 
-async function loadPublishedDocument(
+async function loadRouteDocument(
   client: WorkspaceClient,
   site: PublicSiteRow,
   documentId: string,
@@ -159,12 +254,24 @@ async function loadPublishedDocument(
     .eq('id', documentId)
     .eq('site_id', site.id)
     .eq('tenant_id', site.tenant_id)
-    .eq('public_status', 'published')
     .is('deleted_at', null)
     .maybeSingle()
   assertNoDbError(error)
-  const row = data as PublicDocumentRow | null
-  return row?.published_revision_id && row.published_at ? row : null
+  return data as PublicDocumentRow | null
+}
+
+/**
+ * Missing and unpublished paths stay 404. A document that was live and then
+ * withdrawn is 410 so crawlers drop the URL. `draft_payload` is never selected.
+ */
+function assertDeliverable(row: PublicDocumentRow | null): PublicDocumentRow {
+  if (!row)
+    throw pageNotFound()
+  if (row.public_status === 'withdrawn')
+    throw cmsGone()
+  if (row.public_status !== 'published' || !row.published_revision_id || !row.published_at)
+    throw pageNotFound()
+  return row
 }
 
 async function resolveRedirect(
@@ -172,9 +279,6 @@ async function resolveRedirect(
   site: PublicSiteRow,
   route: PublicRouteRow,
 ): Promise<CmsPublicRedirect> {
-  if (!route.document_id || !await loadPublishedDocument(client, site, route.document_id))
-    throw pageNotFound()
-
   const { data, error } = await client
     .from(CMS_TABLES.routes)
     .select(PUBLIC_ROUTE_COLUMNS)
@@ -189,7 +293,7 @@ async function resolveRedirect(
   if (!target || target.path === route.path)
     throw pageNotFound()
 
-  return { redirect: { to: target.path, status: 301 } }
+  return { redirect: { to: target.path, status: 301 }, site: readPublicSiteChrome(site, route.locale) }
 }
 
 /**
@@ -201,7 +305,7 @@ export async function resolvePublicPath(
   siteKey: string | null | undefined,
   query: z.infer<typeof cmsPublicResolveQuerySchema>,
 ): Promise<CmsPublicResolveResult> {
-  const site = await loadPublicSite(client, siteKey)
+  const site = await loadPublicSite(client, siteKey, { includeSettings: true })
   const locale = resolveLocale(site, query.locale)
   const path = normalizeCmsPath(query.path)
   if (!isValidCmsPath(path))
@@ -220,13 +324,11 @@ export async function resolvePublicPath(
   const route = routeRow as PublicRouteRow | null
   if (!route?.document_id)
     throw pageNotFound()
+
+  const document = assertDeliverable(await loadRouteDocument(client, site, route.document_id))
   if (route.route_kind === 'redirect')
     return resolveRedirect(client, site, route)
   if (route.route_kind !== 'document')
-    throw pageNotFound()
-
-  const document = await loadPublishedDocument(client, site, route.document_id)
-  if (!document)
     throw pageNotFound()
 
   const { data: revisionRow, error: revisionError } = await client
@@ -243,12 +345,17 @@ export async function resolvePublicPath(
   if (!revision)
     throw pageNotFound()
 
-  return mapPublicDocument({
+  const published = mapPublicDocument({
     document,
     revisionId: revision.id,
     path: route.path,
     content: revision.snapshot,
   })
+  return {
+    ...published,
+    seo: published.content.seo,
+    site: readPublicSiteChrome(site, locale),
+  }
 }
 
 type SummaryRevisionRow = { id: string, document_id: string } & Record<string, unknown>
@@ -353,4 +460,112 @@ export async function listPublicPublications(
   }
 
   return { data: items, nextCursor: page.nextCursor }
+}
+
+interface SitemapDocumentRow extends PublicDocumentRow {
+  updated_at: string | null
+}
+
+function xmlEscape(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+async function loadPrimaryHostname(client: WorkspaceClient, site: PublicSiteRow): Promise<string | null> {
+  const { data, error } = await client
+    .from(CMS_TABLES.siteDomains)
+    .select(PUBLIC_DOMAIN_COLUMNS)
+    .eq('site_id', site.id)
+    .eq('tenant_id', site.tenant_id)
+    .eq('environment', 'production')
+    .eq('is_primary', true)
+    .not('verified_at', 'is', null)
+    .maybeSingle()
+  assertNoDbError(error)
+  const hostname = (data as { hostname?: string } | null)?.hostname
+  return hostname || null
+}
+
+/**
+ * Canonical published paths of one site. Redirects, drafts and withdrawn
+ * documents are omitted. `loc` is absolute only when a verified primary
+ * hostname exists; otherwise it repeats the site-relative `path`.
+ */
+export async function listPublicSitemap(
+  client: WorkspaceClient,
+  siteKey: string | null | undefined,
+  locale?: string,
+): Promise<CmsSitemapEntry[]> {
+  const site = await loadPublicSite(client, siteKey)
+  const resolvedLocale = locale ? resolveLocale(site, locale) : null
+
+  let request = client
+    .from(CMS_TABLES.documents)
+    .select(PUBLIC_SITEMAP_DOCUMENT_COLUMNS)
+    .eq('site_id', site.id)
+    .eq('tenant_id', site.tenant_id)
+    .eq('public_status', 'published')
+    .is('deleted_at', null)
+    .not('published_revision_id', 'is', null)
+  if (resolvedLocale)
+    request = request.eq('locale', resolvedLocale)
+
+  const { data, error } = await request
+    .order('published_at', { ascending: false })
+    .limit(CMS_LIMITS.maxSitemapEntries)
+  assertNoDbError(error)
+
+  const documents = (data ?? []) as SitemapDocumentRow[]
+  if (!documents.length)
+    return []
+
+  const { data: routeRows, error: routeError } = await client
+    .from(CMS_TABLES.routes)
+    .select(PUBLIC_ROUTE_COLUMNS)
+    .eq('site_id', site.id)
+    .eq('tenant_id', site.tenant_id)
+    .eq('route_kind', 'document')
+    .in('document_id', documents.map(row => row.id))
+  assertNoDbError(routeError)
+
+  const paths = new Map<string, string>()
+  for (const route of (routeRows ?? []) as PublicRouteRow[]) {
+    if (route.document_id)
+      paths.set(`${route.document_id}:${route.locale}`, route.path)
+  }
+
+  const hostname = await loadPrimaryHostname(client, site)
+  const entries: CmsSitemapEntry[] = []
+  for (const document of documents) {
+    if (!document.published_at)
+      continue
+    const path = paths.get(`${document.id}:${document.locale}`)
+    if (!path)
+      continue
+    entries.push({
+      path,
+      loc: hostname ? `https://${hostname}${path}` : path,
+      lastmod: document.updated_at || document.published_at,
+      locale: document.locale,
+      kind: document.kind,
+      publicationType: document.publication_type ?? null,
+    })
+  }
+
+  entries.sort((left, right) => left.path.localeCompare(right.path) || left.locale.localeCompare(right.locale))
+  return entries
+}
+
+export function renderSitemapXml(entries: CmsSitemapEntry[]): string {
+  const urls = entries.map(entry => [
+    '  <url>',
+    `    <loc>${xmlEscape(entry.loc)}</loc>`,
+    `    <lastmod>${xmlEscape(entry.lastmod)}</lastmod>`,
+    '  </url>',
+  ].join('\n')).join('\n')
+  const body = urls ? `\n${urls}\n` : '\n'
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${body}</urlset>\n`
 }

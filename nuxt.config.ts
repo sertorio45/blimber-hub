@@ -161,6 +161,8 @@ export default defineNuxtConfig({
     ollamaDefaultModel: process.env.OLLAMA_DEFAULT_MODEL || 'qwen',
     ollamaCfAccessClientId: process.env.OLLAMA_CF_ACCESS_CLIENT_ID || '',
     ollamaCfAccessClientSecret: process.env.OLLAMA_CF_ACCESS_CLIENT_SECRET || '',
+    /** HMAC key for public preview tokens. `NUXT_CMS_PREVIEW_SECRET` overrides this. */
+    cmsPreviewSecret: process.env.CMS_PREVIEW_SECRET || '',
 
     public: {
       // Required by the WhatsApp Embedded Signup popup, which runs in the browser.

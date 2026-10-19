@@ -28,6 +28,7 @@ const SERVER_CODES: readonly CmsErrorCode[] = [
   'unauthenticated',
   'forbidden',
   'not_found',
+  'gone',
   'validation_failed',
   'version_conflict',
   'route_conflict',
@@ -46,6 +47,8 @@ function codeForStatus(status: number): CmsClientErrorCode {
     return 'forbidden'
   if (status === 404)
     return 'not_found'
+  if (status === 410)
+    return 'gone'
   if (status === 409)
     return 'version_conflict'
   if (status === 413)
@@ -59,6 +62,7 @@ export const DEFAULT_CMS_ERROR_MESSAGES: Partial<Record<CmsClientErrorCode, stri
   unauthenticated: 'Sua sessão expirou. Entre novamente.',
   forbidden: 'Você não tem permissão para esta ação.',
   not_found: 'Conteúdo não encontrado.',
+  gone: 'Este conteúdo foi retirado.',
   module_disabled: 'O CMS não está contratado para esta empresa.',
   network_error: 'Sem conexão com o servidor. Verifique sua internet.',
   no_tenant: 'Selecione uma empresa para continuar.',

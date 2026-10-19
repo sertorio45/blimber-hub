@@ -19,6 +19,7 @@ export const CMS_TABLES = {
   assetUsages: 'cms_asset_usages',
   auditEvents: 'cms_audit_events',
   legacyMap: 'cms_legacy_map',
+  eventOutbox: 'cms_event_outbox',
 } as const
 
 export const CMS_RPC = {
@@ -32,6 +33,8 @@ export const CMS_LIMITS = {
   maxBlockDepth: 4,
   maxPageSize: 100,
   defaultPageSize: 25,
+  maxSitemapEntries: 5000,
+  previewTokenTtlSeconds: 10 * 60,
   maxTitleLength: 200,
   maxSlugLength: 160,
   maxExcerptLength: 600,
@@ -195,6 +198,109 @@ export const cmsPublicDocumentSchema = z.object({
 })
 export type CmsPublicDocument = z.infer<typeof cmsPublicDocumentSchema>
 
+/**
+ * Theme tokens the public renderer may read from `cms_sites.settings.theme`.
+ * Anything else in settings (webhooks, verification tokens) stays on the server.
+ */
+export const CMS_THEME_TOKEN_KEYS = [
+  'colorBackground',
+  'colorForeground',
+  'colorPrimary',
+  'colorPrimaryForeground',
+  'colorMuted',
+  'colorBorder',
+  'fontFamily',
+  'fontFamilyHeading',
+  'radius',
+] as const
+
+const cmsThemeTokenSchema = z.string().trim().min(1).max(80).regex(/^[#\w(),.%\s-]+$/)
+
+export const cmsThemeTokensSchema = z.object({
+  colorBackground: cmsThemeTokenSchema.optional(),
+  colorForeground: cmsThemeTokenSchema.optional(),
+  colorPrimary: cmsThemeTokenSchema.optional(),
+  colorPrimaryForeground: cmsThemeTokenSchema.optional(),
+  colorMuted: cmsThemeTokenSchema.optional(),
+  colorBorder: cmsThemeTokenSchema.optional(),
+  fontFamily: cmsThemeTokenSchema.optional(),
+  fontFamilyHeading: cmsThemeTokenSchema.optional(),
+  radius: cmsThemeTokenSchema.optional(),
+})
+export type CmsThemeTokens = z.infer<typeof cmsThemeTokensSchema>
+
+/** Site-relative path or https URL. `javascript:` and other schemes are rejected. */
+export const cmsPublicHrefSchema = z.string().trim().min(1).max(1024).refine(
+  value => value.startsWith('/') || value.startsWith('https://'),
+  'Use um caminho do site ou um link https',
+)
+
+const cmsPublicMenuLinkSchema = z.object({
+  label: z.string().trim().min(1).max(80),
+  href: cmsPublicHrefSchema,
+})
+
+export const cmsPublicMenuItemSchema = cmsPublicMenuLinkSchema.extend({
+  children: z.array(cmsPublicMenuLinkSchema).max(30).optional(),
+})
+export type CmsPublicMenuItem = z.infer<typeof cmsPublicMenuItemSchema>
+
+export const cmsPublicMenuSchema = z.object({
+  key: z.string().trim().min(1).max(40).regex(/^[a-z0-9_-]+$/),
+  items: z.array(cmsPublicMenuItemSchema).max(40),
+})
+export type CmsPublicMenu = z.infer<typeof cmsPublicMenuSchema>
+
+/** Menus, theme and default SEO copied from site settings. Never the raw settings object. */
+export const cmsPublicSiteChromeSchema = z.object({
+  siteKey: cmsSiteKeySchema,
+  name: z.string().min(1).max(160),
+  locale: z.string(),
+  defaultLocale: z.string(),
+  menus: z.array(cmsPublicMenuSchema).max(8),
+  theme: cmsThemeTokensSchema,
+  seo: cmsSeoSchema,
+})
+export type CmsPublicSiteChrome = z.infer<typeof cmsPublicSiteChromeSchema>
+
+export const cmsSitemapEntrySchema = z.object({
+  path: z.string(),
+  loc: z.string(),
+  lastmod: isoDate,
+  locale: z.string(),
+  kind: cmsDocumentKindSchema,
+  publicationType: cmsPublicationTypeSchema.nullable(),
+})
+export type CmsSitemapEntry = z.infer<typeof cmsSitemapEntrySchema>
+
+/**
+ * Block types the public Nuxt renderer knows how to paint. Unknown `type`
+ * values are skipped. `media` is always a `CmsMediaRef` (asset id), never a URL.
+ */
+export const CMS_PUBLIC_BLOCK_RENDER_MAP = {
+  hero: ['title', 'subtitle', 'media', 'href'],
+  rich_text: ['html'],
+  heading: ['level', 'text'],
+  image: ['media', 'caption'],
+  quote: ['text', 'citation'],
+  embed: ['url', 'title'],
+  button: ['label', 'href'],
+  gallery: ['items'],
+} as const
+
+export const cmsPreviewTokenInputSchema = z.object({
+  revisionId: uuid.optional(),
+})
+export type CmsPreviewTokenInput = z.infer<typeof cmsPreviewTokenInputSchema>
+
+export const cmsPreviewTokenSchema = z.object({
+  token: z.string().min(1),
+  expiresAt: isoDate,
+  revisionId: uuid,
+  previewPath: z.string().min(1),
+})
+export type CmsPreviewToken = z.infer<typeof cmsPreviewTokenSchema>
+
 // ---- Admin API inputs ----
 
 export const cmsCreateSiteInputSchema = z.object({
@@ -264,6 +370,7 @@ export type CmsErrorCode
   = | 'unauthenticated'
     | 'forbidden'
     | 'not_found'
+    | 'gone'
     | 'validation_failed'
     | 'version_conflict'
     | 'route_conflict'
