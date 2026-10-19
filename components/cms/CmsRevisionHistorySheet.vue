@@ -4,6 +4,7 @@ import type { CmsPage } from '~/lib/cms/contracts'
 
 import { ref, watch } from 'vue'
 
+import CmsAuditFeed from '~/components/cms/CmsAuditFeed.vue'
 import CmsEmptyState from '~/components/cms/CmsEmptyState.vue'
 import { CMS_REVISION_REASON_LABELS, formatCmsDateTime } from '~/composables/cms/cmsDisplay'
 import { visibleCmsError } from '~/composables/cms/useCmsApi'
@@ -11,10 +12,12 @@ import { visibleCmsError } from '~/composables/cms/useCmsApi'
 const props = withDefaults(defineProps<{
   /** Injected so the sheet stays agnostic of how revisions are fetched. */
   load: (cursor?: string | null) => Promise<CmsPage<CmsRevisionSummary>>
+  documentId?: string | null
   canRestore?: boolean
   restoringId?: string | null
   publishedRevisionId?: string | null
 }>(), {
+  documentId: null,
   canRestore: false,
   restoringId: null,
   publishedRevisionId: null,
@@ -23,6 +26,7 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{ restore: [revision: CmsRevisionSummary] }>()
 
 const open = defineModel<boolean>('open', { default: false })
+const tab = ref<'revisions' | 'audit'>('revisions')
 
 const revisions = ref<CmsRevisionSummary[]>([])
 const nextCursor = ref<string | null>(null)
@@ -73,8 +77,10 @@ async function loadMore() {
 }
 
 watch(open, (isOpen) => {
-  if (isOpen)
-    void loadFirst()
+  if (!isOpen)
+    return
+  tab.value = 'revisions'
+  void loadFirst()
 })
 
 defineExpose({ reload: loadFirst })
@@ -86,11 +92,34 @@ defineExpose({ reload: loadFirst })
       <SheetHeader class="border-b px-6 py-4">
         <SheetTitle>Histórico</SheetTitle>
         <SheetDescription>
-          Versões salvas em publicações e restaurações. Restaurar cria um novo rascunho; o site só muda quando você publicar.
+          Versões publicadas e o que aconteceu com este conteúdo. Restaurar cria um novo rascunho; o site só muda quando você publicar.
         </SheetDescription>
       </SheetHeader>
 
-      <div class="flex-1 overflow-y-auto px-6 py-4">
+      <div class="flex gap-1 border-b px-6 py-2">
+        <button
+          type="button"
+          class="rounded-md px-2.5 py-1 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          :class="tab === 'revisions' ? 'bg-muted font-medium' : 'text-muted-foreground'"
+          @click="tab = 'revisions'"
+        >
+          Versões
+        </button>
+        <button
+          type="button"
+          class="rounded-md px-2.5 py-1 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          :class="tab === 'audit' ? 'bg-muted font-medium' : 'text-muted-foreground'"
+          @click="tab = 'audit'"
+        >
+          Atividade
+        </button>
+      </div>
+
+      <div v-if="tab === 'audit'" class="flex-1 overflow-y-auto px-6 py-4">
+        <CmsAuditFeed :document-id="documentId" title="" />
+      </div>
+
+      <div v-else class="flex-1 overflow-y-auto px-6 py-4">
         <div v-if="loading && !revisions.length" class="space-y-3" aria-busy="true">
           <Skeleton v-for="index in 4" :key="index" class="h-16 w-full" />
         </div>

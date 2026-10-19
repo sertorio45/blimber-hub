@@ -1,4 +1,4 @@
-import type { CmsDocumentKind, CmsPublicationType, CmsPublicStatus, CmsRevision, CmsSite } from '~/lib/cms/contracts'
+import type { CmsDocumentKind, CmsPublicationJobStatus, CmsPublicationType, CmsPublicStatus, CmsRevision, CmsSite } from '~/lib/cms/contracts'
 
 import { CMS_LIMITS } from '~/lib/cms/contracts'
 
@@ -15,6 +15,30 @@ export const CMS_PUBLICATION_TYPE_HINTS: Record<CmsPublicationType, string> = {
 export const CMS_KIND_LABELS: Record<CmsDocumentKind, string> = {
   page: 'Página',
   publication: 'Publicação',
+}
+
+export const CMS_JOB_STATUS_LABELS: Record<CmsPublicationJobStatus, string> = {
+  pending: 'Agendado',
+  processing: 'Publicando',
+  retrying: 'Nova tentativa',
+  published: 'Publicado',
+  failed: 'Falhou',
+  cancelled: 'Cancelado',
+}
+
+export const CMS_AUDIT_ACTION_LABELS: Record<string, string> = {
+  'publish': 'Publicação',
+  'unpublish': 'Retirado do ar',
+  'revision.restore': 'Restauração',
+  'document.draft_save': 'Rascunho salvo',
+  'document.create': 'Criação',
+  'document.trash': 'Enviado para a lixeira',
+  'schedule': 'Agendamento',
+  'schedule.cancel': 'Agendamento cancelado',
+  'schedule.fulfilled': 'Agendamento publicado',
+  'schedule.failed': 'Falha no agendamento',
+  'redirect.upsert': 'Redirecionamento salvo',
+  'redirect.delete': 'Redirecionamento removido',
 }
 
 export const CMS_REVISION_REASON_LABELS: Record<CmsRevision['reason'], string> = {
@@ -93,6 +117,27 @@ export function formatCmsDateTime(value: string | null | undefined): string {
     return '—'
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? '—' : dateTimeFormatter.format(date)
+}
+
+export function formatCmsDateTimeInZone(value: string | null | undefined, timeZone: string): string {
+  if (!value)
+    return '—'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime()))
+    return '—'
+  try {
+    return new Intl.DateTimeFormat('pt-BR', {
+      timeZone,
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    }).format(date)
+  }
+  catch {
+    return formatCmsDateTime(value)
+  }
 }
 
 const relativeFormatter = new Intl.RelativeTimeFormat('pt-BR', { numeric: 'auto' })

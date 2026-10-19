@@ -4,10 +4,12 @@ import type { CmsSite } from '~/lib/cms/contracts'
 import { computed, ref, watch } from 'vue'
 import { toast } from 'vue-sonner'
 
+import CmsAuditFeed from '~/components/cms/CmsAuditFeed.vue'
 import CmsCreateSiteDialog from '~/components/cms/CmsCreateSiteDialog.vue'
 import CmsEmptyState from '~/components/cms/CmsEmptyState.vue'
 import CmsGate from '~/components/cms/CmsGate.vue'
 import CmsPageHeader from '~/components/cms/CmsPageHeader.vue'
+import CmsRedirectsPanel from '~/components/cms/CmsRedirectsPanel.vue'
 import { cmsFieldErrors, cmsRoutePrefixes, cmsSlugify } from '~/composables/cms/cmsDisplay'
 import { useCmsAccess } from '~/composables/cms/useCmsAccess'
 import { normalizeCmsError } from '~/composables/cms/useCmsApi'
@@ -192,96 +194,101 @@ async function save() {
         </Button>
       </CmsEmptyState>
 
-      <form v-else class="border rounded-xl bg-card p-5 space-y-5" novalidate @submit.prevent="save">
-        <div class="space-y-1.5">
-          <Label for="cms-site-name">Nome</Label>
-          <Input id="cms-site-name" v-model="name" maxlength="160" autocomplete="off" :aria-invalid="Boolean(errors.name) || undefined" />
-          <p v-if="errors.name" class="text-xs text-destructive">
-            {{ errors.name }}
-          </p>
-        </div>
-
-        <div class="space-y-1.5">
-          <Label for="cms-site-key">Chave pública</Label>
-          <div class="flex gap-2">
-            <Input id="cms-site-key" :model-value="currentSite.siteKey" readonly class="font-mono" />
-            <Button type="button" variant="outline" :aria-label="copied ? 'Chave copiada' : 'Copiar chave'" @click="copySiteKey">
-              <Icon :name="copied ? 'lucide:check' : 'lucide:copy'" class="size-4" aria-hidden="true" />
-            </Button>
-          </div>
-          <p class="text-xs text-muted-foreground">
-            O front-end usa esta chave para buscar o conteúdo. Ela não pode ser alterada.
-          </p>
-          <p v-if="errors.siteKey" class="text-xs text-destructive">
-            {{ errors.siteKey }}
-          </p>
-        </div>
-
-        <div class="grid gap-4 sm:grid-cols-2">
+      <template v-else>
+        <form class="border rounded-xl bg-card p-5 space-y-5" novalidate @submit.prevent="save">
           <div class="space-y-1.5">
-            <Label for="cms-locale">Idioma</Label>
-            <Select :model-value="locale" @update:model-value="value => (locale = String(value))">
-              <SelectTrigger id="cms-locale" aria-label="Idioma">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem v-for="option in localeOptions" :key="option.value" :value="option.value">
-                  {{ option.label }}
-                </SelectItem>
-              </SelectContent>
-            </Select>
+            <Label for="cms-site-name">Nome</Label>
+            <Input id="cms-site-name" v-model="name" maxlength="160" autocomplete="off" :aria-invalid="Boolean(errors.name) || undefined" />
+            <p v-if="errors.name" class="text-xs text-destructive">
+              {{ errors.name }}
+            </p>
           </div>
-          <div class="space-y-1.5">
-            <Label for="cms-timezone">Fuso horário</Label>
-            <Select :model-value="timezone" @update:model-value="value => (timezone = String(value))">
-              <SelectTrigger id="cms-timezone" aria-label="Fuso horário">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem v-for="zone in timezoneOptions" :key="zone" :value="zone">
-                  {{ zone }}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
 
-        <fieldset class="space-y-4">
-          <legend class="text-sm font-medium">
-            Endereços
-          </legend>
-          <p class="text-xs text-muted-foreground">
-            Prefixo antes do slug. Uma notícia em <span class="font-mono">lancamento</span> fica em <span class="font-mono">/{{ newsPrefix || 'noticias' }}/lancamento</span>.
-          </p>
+          <div class="space-y-1.5">
+            <Label for="cms-site-key">Chave pública</Label>
+            <div class="flex gap-2">
+              <Input id="cms-site-key" :model-value="currentSite.siteKey" readonly class="font-mono" />
+              <Button type="button" variant="outline" :aria-label="copied ? 'Chave copiada' : 'Copiar chave'" @click="copySiteKey">
+                <Icon :name="copied ? 'lucide:check' : 'lucide:copy'" class="size-4" aria-hidden="true" />
+              </Button>
+            </div>
+            <p class="text-xs text-muted-foreground">
+              O front-end usa esta chave para buscar o conteúdo. Ela não pode ser alterada.
+            </p>
+            <p v-if="errors.siteKey" class="text-xs text-destructive">
+              {{ errors.siteKey }}
+            </p>
+          </div>
+
           <div class="grid gap-4 sm:grid-cols-2">
             <div class="space-y-1.5">
-              <Label for="cms-route-article">Artigos</Label>
-              <Input id="cms-route-article" v-model="articlePrefix" maxlength="80" class="font-mono" autocomplete="off" spellcheck="false" />
-              <p v-if="errors.articlePrefix" class="text-xs text-destructive">
-                {{ errors.articlePrefix }}
-              </p>
+              <Label for="cms-locale">Idioma</Label>
+              <Select :model-value="locale" @update:model-value="value => (locale = String(value))">
+                <SelectTrigger id="cms-locale" aria-label="Idioma">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem v-for="option in localeOptions" :key="option.value" :value="option.value">
+                    {{ option.label }}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div class="space-y-1.5">
-              <Label for="cms-route-news">Notícias</Label>
-              <Input id="cms-route-news" v-model="newsPrefix" maxlength="80" class="font-mono" autocomplete="off" spellcheck="false" />
-              <p v-if="errors.newsPrefix" class="text-xs text-destructive">
-                {{ errors.newsPrefix }}
-              </p>
+              <Label for="cms-timezone">Fuso horário</Label>
+              <Select :model-value="timezone" @update:model-value="value => (timezone = String(value))">
+                <SelectTrigger id="cms-timezone" aria-label="Fuso horário">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem v-for="zone in timezoneOptions" :key="zone" :value="zone">
+                    {{ zone }}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
-        </fieldset>
 
-        <p v-if="errors.form" role="alert" class="border border-destructive/30 rounded-md bg-destructive/5 px-3 py-2 text-sm text-destructive">
-          {{ errors.form }}
-        </p>
+          <fieldset class="space-y-4">
+            <legend class="text-sm font-medium">
+              Endereços
+            </legend>
+            <p class="text-xs text-muted-foreground">
+              Prefixo antes do slug. Uma notícia em <span class="font-mono">lancamento</span> fica em <span class="font-mono">/{{ newsPrefix || 'noticias' }}/lancamento</span>.
+            </p>
+            <div class="grid gap-4 sm:grid-cols-2">
+              <div class="space-y-1.5">
+                <Label for="cms-route-article">Artigos</Label>
+                <Input id="cms-route-article" v-model="articlePrefix" maxlength="80" class="font-mono" autocomplete="off" spellcheck="false" />
+                <p v-if="errors.articlePrefix" class="text-xs text-destructive">
+                  {{ errors.articlePrefix }}
+                </p>
+              </div>
+              <div class="space-y-1.5">
+                <Label for="cms-route-news">Notícias</Label>
+                <Input id="cms-route-news" v-model="newsPrefix" maxlength="80" class="font-mono" autocomplete="off" spellcheck="false" />
+                <p v-if="errors.newsPrefix" class="text-xs text-destructive">
+                  {{ errors.newsPrefix }}
+                </p>
+              </div>
+            </div>
+          </fieldset>
 
-        <div class="flex justify-end">
-          <Button type="submit" :disabled="saving || !name.trim()">
-            <Icon v-if="saving" name="lucide:loader-circle" class="mr-2 size-4 animate-spin" aria-hidden="true" />
-            {{ saving ? 'Salvando…' : 'Salvar' }}
-          </Button>
-        </div>
-      </form>
+          <p v-if="errors.form" role="alert" class="border border-destructive/30 rounded-md bg-destructive/5 px-3 py-2 text-sm text-destructive">
+            {{ errors.form }}
+          </p>
+
+          <div class="flex justify-end">
+            <Button type="submit" :disabled="saving || !name.trim()">
+              <Icon v-if="saving" name="lucide:loader-circle" class="mr-2 size-4 animate-spin" aria-hidden="true" />
+              {{ saving ? 'Salvando…' : 'Salvar' }}
+            </Button>
+          </div>
+        </form>
+
+        <CmsRedirectsPanel :site-id="currentSite.id" :can-manage="access.canPublish.value" />
+        <CmsAuditFeed :site-id="currentSite.id" title="Atividade recente" />
+      </template>
     </div>
 
     <CmsCreateSiteDialog v-model:open="createOpen" :create="createSite" />
