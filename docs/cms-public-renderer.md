@@ -87,6 +87,15 @@ Redirect:
 
 Feed de artigos e notícias **publicados**, do mais novo para o mais antigo. `type` é `article` ou `news`. Cada item tem o mesmo formato do documento, porém `content` não traz `body` nem `blocks` (lista). Para a página inteira, chame `resolve` com o `path` do item.
 
+## Coleções
+
+- `GET /sites/:siteKey/collections` → `{ "data": [{ "key", "name", "schema" }] }` com as definições do site.
+- `GET /sites/:siteKey/collections/:collectionKey?limit=` → `{ "data": { "collection": { "key", "name", "schema" }, "entries": [{ "id", "payload", "updatedAt" }] } }`.
+
+Só entram registros salvos como **publicados**, do atualizado mais recente para o mais antigo. Registro em rascunho nunca sai por esta rota — salvar um registro como publicado já basta, não há etapa extra. Coleção ou site desconhecido/inativo responde 404.
+
+Blocos `testimonials`, `cards` e `faq` podem ser **vinculados** a uma coleção (`props.collectionKey`, `props.collectionLimit`): nesse caso o `resolve` substitui `props.items` pelos registros publicados da coleção na leitura — a página guarda só a referência, nunca uma cópia. Registros com campo numérico `ordem` são ordenados por ele; os demais, do atualizado mais recente. Se a coleção não existir, os `items` gravados na página são usados como fallback. O mapeamento é por tipo de bloco: depoimentos (`depoimento`/`nome`/`papel`), FAQ (`pergunta`/`resposta`) e cartões (`titulo`/`nome`, `descricao`/`resumo`/`bio`, `href`/`link`/`url`/`site-url`).
+
 ## Sitemap
 
 - `GET /sites/:siteKey/sitemap` → `{ "data": [ { "path", "loc", "lastmod", "locale", "kind", "publicationType" } ] }`

@@ -321,7 +321,26 @@ describe('documentos CMS — rascunho', () => {
     expect(document().title).toBe('Página A')
   })
 
-  it('não altera o slug de um documento já publicado', async () => {
+  it('salvar já publica: documento novo vai ao ar sem etapa de publicação', async () => {
+    const response = await run(saveDraft, createCmsEvent({
+      params: { id: DOC_A },
+      body: {
+        expectedVersion: 1,
+        payload: { title: 'Página A', slug: 'pagina-a' },
+      },
+    }))
+
+    expect(response.data).toMatchObject({
+      publicStatus: 'published',
+      hasUnpublishedChanges: false,
+      editVersion: 2,
+    })
+    expect(document()).toMatchObject({ public_status: 'published', has_unpublished_changes: false })
+    expect(fake.rpcCalls.map(call => call.name)).toEqual([CMS_RPC.publishRevision])
+    expect(fake.rpcCalls[0]?.args).toMatchObject({ p_document_id: DOC_A, p_expected_version: 2 })
+  })
+
+  it('salvar documento já publicado atualiza o endereço no ar', async () => {
     Object.assign(document(), {
       public_status: 'published',
       published_at: '2026-10-19T12:00:00.000Z',
@@ -341,19 +360,34 @@ describe('documentos CMS — rascunho', () => {
     }))
 
     expect(response.data).toMatchObject({
-      slug: 'ao-vivo',
+      slug: 'novo-endereco',
       title: 'Título novo',
       editVersion: 6,
       tenantId: TENANT_A,
-      hasUnpublishedChanges: true,
+      publicStatus: 'published',
+      hasUnpublishedChanges: false,
     })
-    expect(document()).toMatchObject({ slug: 'ao-vivo', tenant_id: TENANT_A, edit_version: 6 })
+    expect(document()).toMatchObject({ slug: 'novo-endereco', tenant_id: TENANT_A, edit_version: 6 })
     expect(document().draft_payload).toMatchObject({ slug: 'novo-endereco', title: 'Título novo' })
     const update = fake.callsTo('cms_documents', 'update')[0]
-    expect(update?.payload).toMatchObject({ slug: 'ao-vivo' })
     expect(update?.payload).not.toHaveProperty('tenant_id')
     expect(update?.filters).toContainEqual({ op: 'eq', column: 'tenant_id', value: TENANT_A })
     expect(update?.filters).toContainEqual({ op: 'eq', column: 'edit_version', value: 5 })
+  })
+
+  it('salvar sem título retorna 422 e não grava nem publica', async () => {
+    const failure = await failureOf(run(saveDraft, createCmsEvent({
+      params: { id: DOC_A },
+      body: {
+        expectedVersion: 1,
+        payload: { title: '', slug: 'pagina-a' },
+      },
+    })))
+
+    expect(failure).toMatchObject({ status: 422, code: 'validation_failed' })
+    expect(fake.callsTo('cms_documents', 'update')).toHaveLength(0)
+    expect(fake.rpcCalls).toHaveLength(0)
+    expect(document()).toMatchObject({ title: 'Página A', edit_version: 1, public_status: 'unpublished' })
   })
 
   it('bloco desconhecido na página retorna 422 e não grava', async () => {

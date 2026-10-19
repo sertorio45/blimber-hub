@@ -369,8 +369,34 @@ export class CmsFakeSupabase {
   async rpc(name: string, args: Record<string, unknown>) {
     this.rpcCalls.push({ name, args })
     const handler = this.rpcHandlers[name]
-    if (!handler)
+    if (!handler) {
+      // Saving a document publishes it (no separate publish step), so the
+      // double mirrors `cms_publish_revision` for save-driven calls.
+      if (name === 'cms_publish_revision') {
+        const doc = (this.db.cms_documents ?? []).find(row => row.id === args.p_document_id)
+        if (!doc)
+          return { data: null, error: { code: 'P0404', message: 'not_found' } }
+        const payload = (doc.draft_payload ?? {}) as Record<string, unknown>
+        const revisionId = randomUUID()
+        if (typeof payload.slug === 'string' && payload.slug)
+          doc.slug = payload.slug
+        doc.public_status = 'published'
+        doc.has_unpublished_changes = false
+        doc.published_revision_id = revisionId
+        doc.published_at = typeof doc.published_at === 'string' ? doc.published_at : this.now()
+        const slug = typeof payload.slug === 'string' ? payload.slug : null
+        return {
+          data: {
+            revision_id: revisionId,
+            revision_number: 1,
+            path: doc.is_home ? '/' : `/${slug ?? ''}`,
+            published_at: doc.published_at,
+          },
+          error: null,
+        }
+      }
       return { data: null, error: { code: '42883', message: `function ${name} does not exist` } }
+    }
     const result = handler(args, this.db)
     return { data: result.data ?? null, error: result.error ?? null }
   }

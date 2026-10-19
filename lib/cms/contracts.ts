@@ -97,7 +97,7 @@ export interface CmsBlock {
 export const cmsBlockSchema: z.ZodType<CmsBlock> = z.lazy(() => z.object({
   id: z.string().min(1).max(64),
   // Registry IDs are camelCase (richText, imageText, latestPublications).
-  type: z.string().min(1).max(80).regex(/^[a-z][a-zA-Z0-9_.-]*$/),
+  type: z.string().min(1).max(80).regex(/^[a-z][\w.-]*$/),
   version: z.number().int().positive(),
   props: z.record(z.unknown()),
   children: z.array(cmsBlockSchema).max(CMS_LIMITS.maxBlocksPerDocument).optional(),
@@ -282,6 +282,25 @@ export const cmsSitemapEntrySchema = z.object({
   publicationType: cmsPublicationTypeSchema.nullable(),
 })
 export type CmsSitemapEntry = z.infer<typeof cmsSitemapEntrySchema>
+
+/** Public projection of a collection definition: schema only, no tenant internals. */
+export interface CmsPublicCollection {
+  key: string
+  name: string
+  schema: CmsCollectionSchema
+}
+
+/** One published collection entry as served by the public API. */
+export interface CmsPublicCollectionEntry {
+  id: string
+  payload: Record<string, unknown>
+  updatedAt: string
+}
+
+export interface CmsPublicCollectionFeed {
+  collection: CmsPublicCollection
+  entries: CmsPublicCollectionEntry[]
+}
 
 /**
  * Block types the public Nuxt renderer knows how to paint. Unknown `type`

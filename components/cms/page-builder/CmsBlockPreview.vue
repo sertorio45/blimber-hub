@@ -25,6 +25,12 @@ function items(value: unknown): Record<string, unknown>[] {
   return value.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object')
 }
 
+/** Linked blocks render collection entries on the site; the preview never shows manual copies. */
+function collectionKeyOf(block: CmsBlock): string {
+  const raw = record(block).collectionKey
+  return typeof raw === 'string' ? raw.trim() : ''
+}
+
 function linkLabel(value: unknown): string {
   if (!value || typeof value !== 'object')
     return ''
@@ -125,7 +131,10 @@ const backgroundClass: Record<string, string> = {
         <h3 v-if="text(record(block).title)" class="mb-3 font-semibold">
           {{ text(record(block).title) }}
         </h3>
-        <div class="grid gap-3" :class="record(block).columns === '2' ? 'sm:grid-cols-2' : record(block).columns === '4' ? 'sm:grid-cols-2 lg:grid-cols-4' : 'sm:grid-cols-3'">
+        <p v-if="collectionKeyOf(block)" class="text-sm text-muted-foreground">
+          Itens automáticos da coleção “{{ collectionKeyOf(block) }}” — gerenciados em Coleções.
+        </p>
+        <div v-else class="grid gap-3" :class="record(block).columns === '2' ? 'sm:grid-cols-2' : record(block).columns === '4' ? 'sm:grid-cols-2 lg:grid-cols-4' : 'sm:grid-cols-3'">
           <div v-for="(item, index) in items(record(block).items)" :key="index" class="border rounded-lg p-3">
             <p class="text-sm font-medium">
               {{ text(item.title, 'Cartão') }}
@@ -144,7 +153,10 @@ const backgroundClass: Record<string, string> = {
         <h3 v-if="text(record(block).title)" class="font-semibold">
           {{ text(record(block).title) }}
         </h3>
-        <details v-for="(item, index) in items(record(block).items)" :key="index" class="border rounded-lg px-3 py-2">
+        <p v-if="collectionKeyOf(block)" class="text-sm text-muted-foreground">
+          Itens automáticos da coleção “{{ collectionKeyOf(block) }}” — gerenciados em Coleções.
+        </p>
+        <details v-for="(item, index) in collectionKeyOf(block) ? [] : items(record(block).items)" :key="index" class="border rounded-lg px-3 py-2">
           <summary class="cursor-pointer text-sm font-medium">
             {{ text(item.question, 'Pergunta') }}
           </summary>
@@ -152,7 +164,7 @@ const backgroundClass: Record<string, string> = {
             {{ text(item.answer) }}
           </p>
         </details>
-        <p v-if="!items(record(block).items).length" class="text-sm text-muted-foreground">
+        <p v-if="!collectionKeyOf(block) && !items(record(block).items).length" class="text-sm text-muted-foreground">
           Nenhuma pergunta
         </p>
       </div>
@@ -194,7 +206,10 @@ const backgroundClass: Record<string, string> = {
         <h3 v-if="text(record(block).title)" class="font-semibold">
           {{ text(record(block).title) }}
         </h3>
-        <blockquote v-for="(item, index) in items(record(block).items)" :key="index" class="border-l-2 pl-3">
+        <p v-if="collectionKeyOf(block)" class="text-sm text-muted-foreground">
+          Itens automáticos da coleção “{{ collectionKeyOf(block) }}” — gerenciados em Coleções.
+        </p>
+        <blockquote v-for="(item, index) in collectionKeyOf(block) ? [] : items(record(block).items)" :key="index" class="border-l-2 pl-3">
           <p class="text-sm">
             {{ text(item.quote, 'Depoimento') }}
           </p>
@@ -202,7 +217,7 @@ const backgroundClass: Record<string, string> = {
             {{ text(item.author, 'Autor') }}<span v-if="text(item.role)"> · {{ text(item.role) }}</span>
           </footer>
         </blockquote>
-        <p v-if="!items(record(block).items).length" class="text-sm text-muted-foreground">
+        <p v-if="!collectionKeyOf(block) && !items(record(block).items).length" class="text-sm text-muted-foreground">
           Nenhum depoimento
         </p>
       </div>

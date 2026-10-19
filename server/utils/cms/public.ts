@@ -3,6 +3,8 @@ import type {
   CmsDocumentPayload,
   CmsPage,
   CmsPublicationType,
+  CmsPublicCollection,
+  CmsPublicCollectionFeed,
   CmsPublicDocument,
   CmsPublicMenu,
   CmsPublicSiteChrome,
@@ -18,6 +20,8 @@ import {
   CMS_LIMITS,
   CMS_TABLES,
   CMS_THEME_TOKEN_KEYS,
+  cmsCollectionKeySchema,
+  cmsCollectionSchemaSchema,
   cmsDocumentPayloadSchema,
   cmsPublicationTypeSchema,
   cmsPublicMenuSchema,
@@ -125,6 +129,10 @@ export const cmsPublicListQuerySchema = z.object({
   cursor: z.string().max(200).optional(),
   locale: z.string().max(16).optional(),
   limit: z.coerce.number().int().min(1).max(CMS_LIMITS.maxPageSize).default(CMS_LIMITS.defaultPageSize),
+})
+
+export const cmsPublicCollectionQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(CMS_LIMITS.maxPageSize).default(CMS_LIMITS.maxPageSize),
 })
 
 /** Mirrors SQL `cms_normalize_path`: leading slash, lowercase, single slashes, no trailing slash. */
@@ -351,9 +359,11 @@ export async function resolvePublicPath(
     path: route.path,
     content: revision.snapshot,
   })
+  const content = await expandCollectionBlocks(client, site, published.content)
   return {
     ...published,
-    seo: published.content.seo,
+    content,
+    seo: content.seo,
     site: readPublicSiteChrome(site, locale),
   }
 }
@@ -557,6 +567,233 @@ export async function listPublicSitemap(
 
   entries.sort((left, right) => left.path.localeCompare(right.path) || left.locale.localeCompare(right.locale))
   return entries
+}
+
+export const PUBLIC_COLLECTION_COLUMNS = 'id, key, name, schema'
+export const PUBLIC_ENTRY_COLUMNS = 'id, payload, updated_at'
+
+interface PublicCollectionRow {
+  id: string
+  key: string
+  name: string
+  schema: unknown
+}
+
+interface PublicEntryRow {
+  id: string
+  payload: Record<string, unknown> | null
+  updated_at: string
+}
+
+function mapPublicCollection(row: PublicCollectionRow): CmsPublicCollection | null {
+  const schema = cmsCollectionSchemaSchema.safeParse(row.schema)
+  if (!schema.success) {
+    console.error('[cms] invalid collection schema', row.id)
+    return null
+  }
+  return { key: row.key, name: row.name, schema: schema.data }
+}
+
+async function loadSiteCollections(
+  client: WorkspaceClient,
+  site: PublicSiteRow,
+): Promise<PublicCollectionRow[]> {
+  const { data, error } = await client
+    .from(CMS_TABLES.collectionDefinitions)
+    .select(PUBLIC_COLLECTION_COLUMNS)
+    .eq('site_id', site.id)
+    .eq('tenant_id', site.tenant_id)
+    .order('key', { ascending: true })
+  assertNoDbError(error)
+  return (data ?? []) as PublicCollectionRow[]
+}
+
+/** Collection definitions of an active site (key, name and field schema only). */
+export async function listPublicCollections(
+  client: WorkspaceClient,
+  siteKey: string | null | undefined,
+): Promise<CmsPublicCollection[]> {
+  const site = await loadPublicSite(client, siteKey)
+  const rows = await loadSiteCollections(client, site)
+  return rows
+    .map(mapPublicCollection)
+    .filter((item): item is CmsPublicCollection => item !== null)
+}
+
+/**
+ * Published entries of one collection, most recently updated first. Draft
+ * entries never leave the Hub, mirroring how documents only serve published
+ * revisions. Unknown sites and collection keys both answer 404.
+ */
+export async function listPublicCollectionEntries(
+  client: WorkspaceClient,
+  siteKey: string | null | undefined,
+  collectionKey: string | null | undefined,
+  query: z.infer<typeof cmsPublicCollectionQuerySchema>,
+): Promise<CmsPublicCollectionFeed> {
+  const key = cmsCollectionKeySchema.safeParse(collectionKey ?? '')
+  if (!key.success)
+    throw cmsNotFound('Coleção não encontrada')
+
+  const site = await loadPublicSite(client, siteKey)
+  const rows = await loadSiteCollections(client, site)
+  const definition = rows.find(row => row.key === key.data)
+  const collection = definition ? mapPublicCollection(definition) : null
+  if (!definition || !collection)
+    throw cmsNotFound('Coleção não encontrada')
+
+  return {
+    collection,
+    entries: await loadPublishedCollectionEntries(client, site, definition.id, query.limit),
+  }
+}
+
+async function loadPublishedCollectionEntries(
+  client: WorkspaceClient,
+  site: PublicSiteRow,
+  definitionId: string,
+  limit: number,
+): Promise<CmsPublicCollectionFeed['entries']> {
+  const { data, error } = await client
+    .from(CMS_TABLES.entries)
+    .select(PUBLIC_ENTRY_COLUMNS)
+    .eq('definition_id', definitionId)
+    .eq('site_id', site.id)
+    .eq('tenant_id', site.tenant_id)
+    .eq('status', 'published')
+    .order('updated_at', { ascending: false })
+    .order('id', { ascending: false })
+    .limit(limit)
+  assertNoDbError(error)
+
+  return ((data ?? []) as PublicEntryRow[]).map(row => ({
+    id: row.id,
+    payload: row.payload ?? {},
+    updatedAt: row.updated_at,
+  }))
+}
+
+const COLLECTION_BLOCK_TYPES = new Set(['testimonials', 'cards', 'faq'])
+
+function payloadText(payload: Record<string, unknown>, ...keys: string[]): string {
+  for (const key of keys) {
+    const value = payload[key]
+    if (typeof value === 'string' && value.trim())
+      return value
+    if (typeof value === 'number')
+      return String(value)
+  }
+  return ''
+}
+
+/** Maps one collection entry to the item shape each linked block renders. */
+function collectionBlockItem(type: string, payload: Record<string, unknown>): Record<string, string> | null {
+  if (type === 'testimonials') {
+    const item = {
+      quote: payloadText(payload, 'depoimento', 'quote', 'texto', 'descricao'),
+      author: payloadText(payload, 'nome', 'author', 'autor'),
+      role: payloadText(payload, 'papel', 'role', 'cargo'),
+    }
+    return item.quote || item.author ? item : null
+  }
+  if (type === 'faq') {
+    const item = {
+      question: payloadText(payload, 'pergunta', 'question', 'titulo'),
+      answer: payloadText(payload, 'resposta', 'answer', 'descricao'),
+    }
+    return item.question || item.answer ? item : null
+  }
+  const item = {
+    title: payloadText(payload, 'titulo', 'nome', 'title'),
+    description: payloadText(payload, 'descricao', 'resumo', 'bio', 'depoimento', 'texto'),
+    href: payloadText(payload, 'href', 'link', 'url', 'site-url'),
+  }
+  return item.title || item.description ? item : null
+}
+
+/** Entries with a numeric `ordem` field are presented in that order; others keep newest-first. */
+function orderCollectionEntries(entries: CmsPublicCollectionFeed['entries']): CmsPublicCollectionFeed['entries'] {
+  const hasOrder = entries.some(entry => typeof entry.payload.ordem === 'number')
+  if (!hasOrder)
+    return entries
+  const rank = (entry: CmsPublicCollectionFeed['entries'][number]) =>
+    typeof entry.payload.ordem === 'number' ? entry.payload.ordem : Number.POSITIVE_INFINITY
+  return [...entries].sort((a, b) => rank(a) - rank(b))
+}
+
+interface PublicBlock {
+  type?: unknown
+  props?: Record<string, unknown>
+  children?: PublicBlock[]
+  [key: string]: unknown
+}
+
+/**
+ * Collection-linked blocks (`testimonials`, `cards`, `faq` with
+ * `props.collectionKey`) never carry a copy of the data: at read time their
+ * `items` are replaced with the collection's published entries. A missing
+ * collection keeps the stored fallback items, so a page never breaks.
+ */
+export async function expandCollectionBlocks(
+  client: WorkspaceClient,
+  site: PublicSiteRow,
+  content: CmsDocumentPayload,
+): Promise<CmsDocumentPayload> {
+  if (!content.blocks?.length)
+    return content
+
+  const keys = new Set<string>()
+  const collect = (blocks: PublicBlock[]) => {
+    for (const block of blocks) {
+      if (COLLECTION_BLOCK_TYPES.has(String(block.type)) && typeof block.props?.collectionKey === 'string' && block.props.collectionKey.trim())
+        keys.add(block.props.collectionKey.trim())
+      if (Array.isArray(block.children))
+        collect(block.children)
+    }
+  }
+  collect(content.blocks as PublicBlock[])
+  if (!keys.size)
+    return content
+
+  const definitions = await loadSiteCollections(client, site)
+  const itemsByKey = new Map<string, Array<Record<string, string>>>()
+
+  const expand = async (blocks: PublicBlock[]): Promise<PublicBlock[]> => {
+    const out: PublicBlock[] = []
+    for (const block of blocks) {
+      const next: PublicBlock = { ...block }
+      if (Array.isArray(block.children))
+        next.children = await expand(block.children)
+      const type = String(block.type)
+      const key = typeof block.props?.collectionKey === 'string' ? block.props.collectionKey.trim() : ''
+      if (key && COLLECTION_BLOCK_TYPES.has(type)) {
+        const cacheKey = `${type}:${key}`
+        if (!itemsByKey.has(cacheKey)) {
+          const definition = definitions.find(row => row.key === key)
+          if (definition) {
+            const limitRaw = block.props?.collectionLimit
+            const limit = typeof limitRaw === 'number' && Number.isInteger(limitRaw) && limitRaw > 0
+              ? Math.min(limitRaw, 20)
+              : 6
+            const entries = orderCollectionEntries(
+              await loadPublishedCollectionEntries(client, site, definition.id, CMS_LIMITS.maxPageSize),
+            )
+            itemsByKey.set(cacheKey, entries
+              .map(entry => collectionBlockItem(type, entry.payload))
+              .filter((item): item is Record<string, string> => item !== null)
+              .slice(0, limit))
+          }
+        }
+        const items = itemsByKey.get(cacheKey)
+        if (items)
+          next.props = { ...(block.props ?? {}), items }
+      }
+      out.push(next)
+    }
+    return out
+  }
+
+  return { ...content, blocks: await expand(content.blocks as PublicBlock[]) as CmsDocumentPayload['blocks'] }
 }
 
 export function renderSitemapXml(entries: CmsSitemapEntry[]): string {

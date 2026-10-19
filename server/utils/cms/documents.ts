@@ -356,6 +356,17 @@ export async function createDocument(ctx: CmsContext, input: CmsCreateDocumentIn
   return mapDocument(row)
 }
 
+/** The home page lives at `/`, so it is the only document allowed without a slug. */
+const homePublishablePayloadSchema = cmsPublishablePayloadSchema.extend({ slug: cmsSlugSchema.optional() })
+
+/**
+ * There is no separate publish step in the product: saving is going live,
+ * like collections entries saved as published. The draft row is still the
+ * working copy (optimistic locking, restore, trash all build on it), but a
+ * successful save immediately freezes a published revision and rewrites the
+ * public route, so the public API reflects the save without another action.
+ * The explicit publish endpoint stays for scheduled jobs and API clients.
+ */
 export async function saveDraft(ctx: CmsDocumentContext, input: CmsSaveDraftInput): Promise<CmsDocument> {
   const document = ctx.document
   assertCmsCapability(ctx, documentCapability(document.kind, 'update'))
@@ -387,16 +398,24 @@ export async function saveDraft(ctx: CmsDocumentContext, input: CmsSaveDraftInpu
     }
   }
 
+  // Saving is publishing, so the payload must be publishable before anything
+  // is written; a rejected save leaves the live revision untouched.
+  const publishable = (document.is_home ? homePublishablePayloadSchema : cmsPublishablePayloadSchema).safeParse(payload)
+  if (!publishable.success)
+    throw cmsValidationError(publishable.error, 'Revise os campos obrigatórios para salvar')
+
   const row = await writeDraft(ctx, payload, input.expectedVersion, { publicationType })
   if (document.kind === 'publication' && cover !== undefined)
     await syncDraftCoverUsage(ctx, cover)
+  await callPublishRevision(ctx, row.id, row.edit_version)
+  const published = await loadTenantDocument(ctx, row.id)
   await recordCmsAudit(ctx, {
     action: 'document.draft_save',
-    siteId: row.site_id,
-    documentId: row.id,
-    metadata: { editVersion: row.edit_version },
+    siteId: published.site_id,
+    documentId: published.id,
+    metadata: { editVersion: published.edit_version },
   })
-  return mapDocument(row)
+  return mapDocument(published)
 }
 
 async function callUnpublish(ctx: CmsContext, documentId: string): Promise<void> {
@@ -458,26 +477,11 @@ const publishRpcResultSchema = z.object({
   published_at: z.string(),
 })
 
-/** The home page lives at `/`, so it is the only document allowed without a slug. */
-const homePublishablePayloadSchema = cmsPublishablePayloadSchema.extend({ slug: cmsSlugSchema.optional() })
-
-export async function publishDocument(ctx: CmsDocumentContext, input: CmsPublishInput): Promise<CmsPublishResult> {
-  const document = ctx.document
-  assertCmsCapability(ctx, 'cms.publish', 'Sem permissão para publicar')
-
-  if (document.edit_version !== input.expectedVersion)
-    throw cmsVersionConflict(conflictDetails(document))
-
-  assertPayloadLimits(document.draft_payload)
-  const schema = document.is_home ? homePublishablePayloadSchema : cmsPublishablePayloadSchema
-  const publishable = schema.safeParse(document.draft_payload ?? {})
-  if (!publishable.success)
-    throw cmsValidationError(publishable.error, 'Revise os campos obrigatórios antes de publicar')
-  assertPageBlocks(document.kind, publishable.data.blocks)
-
+/** Freezes the current draft as the live revision (route + revision + status). */
+async function callPublishRevision(ctx: CmsContext, documentId: string, expectedVersion: number): Promise<CmsPublishResult> {
   const { data, error } = await ctx.client.rpc(CMS_RPC.publishRevision, {
-    p_document_id: document.id,
-    p_expected_version: input.expectedVersion,
+    p_document_id: documentId,
+    p_expected_version: expectedVersion,
     p_actor: ctx.userId,
   })
   assertNoDbError(error, 'Erro ao publicar o conteúdo')
@@ -496,6 +500,23 @@ export async function publishDocument(ctx: CmsDocumentContext, input: CmsPublish
     path: result.data.path,
     publishedAt: result.data.published_at,
   }
+}
+
+export async function publishDocument(ctx: CmsDocumentContext, input: CmsPublishInput): Promise<CmsPublishResult> {
+  const document = ctx.document
+  assertCmsCapability(ctx, 'cms.publish', 'Sem permissão para publicar')
+
+  if (document.edit_version !== input.expectedVersion)
+    throw cmsVersionConflict(conflictDetails(document))
+
+  assertPayloadLimits(document.draft_payload)
+  const schema = document.is_home ? homePublishablePayloadSchema : cmsPublishablePayloadSchema
+  const publishable = schema.safeParse(document.draft_payload ?? {})
+  if (!publishable.success)
+    throw cmsValidationError(publishable.error, 'Revise os campos obrigatórios antes de publicar')
+  assertPageBlocks(document.kind, publishable.data.blocks)
+
+  return callPublishRevision(ctx, document.id, input.expectedVersion)
 }
 
 export async function unpublishDocument(ctx: CmsDocumentContext): Promise<CmsDocument> {

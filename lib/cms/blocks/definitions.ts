@@ -122,6 +122,24 @@ export const imageTextPropsSchema = z.object({
   ], 'left'),
 })
 
+/**
+ * Optional link to a structured collection. When `collectionKey` is filled,
+ * the public API replaces `items` with the collection's published entries at
+ * read time — the page stores only the reference, never a copy of the data.
+ * `items` stays as the fallback used when the collection is missing.
+ */
+function collectionLinkProps() {
+  return {
+    collectionKey: text('Coleção vinculada (chave)', 64, 'Ex.: depoimentos — vazio = itens manuais'),
+    collectionLimit: field(z.number().int().min(1).max(20).default(6), {
+      label: 'Quantidade da coleção',
+      widget: 'number',
+      min: 1,
+      max: 20,
+    }),
+  }
+}
+
 export const cardsPropsSchema = z.object({
   title: text('Título', 160),
   columns: choice('Colunas', [
@@ -129,11 +147,13 @@ export const cardsPropsSchema = z.object({
     { value: '3', label: '3' },
     { value: '4', label: '4' },
   ], '3'),
+  ...collectionLinkProps(),
   items: list('Cartões', 'Cartão', cardItemSchema, 12),
 })
 
 export const faqPropsSchema = z.object({
   title: text('Título', 160),
+  ...collectionLinkProps(),
   items: list('Perguntas', 'Pergunta', faqItemSchema, 20),
 })
 
@@ -160,6 +180,7 @@ export const galleryPropsSchema = z.object({
 
 export const testimonialsPropsSchema = z.object({
   title: text('Título', 160),
+  ...collectionLinkProps(),
   items: list('Depoimentos', 'Depoimento', testimonialItemSchema, 12),
 })
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { CmsBlock, CmsDocumentPayload, CmsMediaRef, CmsPublicationJob, CmsPublicationType } from '~/lib/cms/contracts'
+import type { CmsBlock, CmsDocumentPayload, CmsMediaRef, CmsPublicationType } from '~/lib/cms/contracts'
 
 import { computed, reactive, ref, watch } from 'vue'
 import { toast } from 'vue-sonner'
@@ -11,7 +11,6 @@ import CmsCoverPicker from '~/components/cms/CmsCoverPicker.vue'
 import CmsEmptyState from '~/components/cms/CmsEmptyState.vue'
 import CmsGate from '~/components/cms/CmsGate.vue'
 import CmsRevisionHistorySheet from '~/components/cms/CmsRevisionHistorySheet.vue'
-import CmsSchedulePanel from '~/components/cms/CmsSchedulePanel.vue'
 import CmsSlugField from '~/components/cms/CmsSlugField.vue'
 import CmsStatusBadge from '~/components/cms/CmsStatusBadge.vue'
 import CmsTermField from '~/components/cms/CmsTermField.vue'
@@ -81,7 +80,6 @@ const form = reactive({
 const editVersion = ref(0)
 const fieldErrors = ref<Record<string, string>>({})
 const actionError = ref<string | null>(null)
-const publishing = ref(false)
 const unpublishing = ref(false)
 const historyOpen = ref(false)
 const restoringId = ref<string | null>(null)
@@ -295,50 +293,6 @@ function suggestSeoDescription() {
   form.seoDescription = suggestion
 }
 
-async function publish() {
-  if (!access.canPublish.value || publishing.value)
-    return
-  publishing.value = true
-  actionError.value = null
-  fieldErrors.value = {}
-  try {
-    const flushed = await autosave.flush()
-    if (!flushed) {
-      if (autosave.state.value !== 'conflict')
-        actionError.value = 'Não foi possível salvar antes de publicar.'
-      return
-    }
-    const result = await editor.publish(editVersion.value)
-    const loaded = await editor.load()
-    if (loaded)
-      rememberServerDocument()
-    toast.success(`Publicado em ${result.path}`)
-  }
-  catch (error: unknown) {
-    const normalized = editor.normalizeError(error)
-    if (normalized.code === 'aborted')
-      return
-    if (normalized.code === 'version_conflict') {
-      autosave.markConflict(normalized.details)
-      return
-    }
-    if (normalized.code === 'route_conflict') {
-      fieldErrors.value = { slug: ROUTE_CONFLICT_MESSAGE }
-      actionError.value = ROUTE_CONFLICT_MESSAGE
-      return
-    }
-    if (normalized.code === 'validation_failed' || normalized.status === 422) {
-      fieldErrors.value = cmsFieldErrors(normalized.details)
-      actionError.value = normalized.message
-      return
-    }
-    actionError.value = normalized.message
-  }
-  finally {
-    publishing.value = false
-  }
-}
-
 async function unpublish() {
   if (!access.canPublish.value || unpublishing.value)
     return
@@ -409,35 +363,6 @@ async function reloadServer() {
   const reloaded = await autosave.reloadFromServer()
   if (!reloaded && autosave.lastError.value)
     toast.error(autosave.lastError.value.message)
-}
-
-const OPEN_JOB = new Set(['pending', 'processing', 'retrying'])
-
-async function loadSchedule(): Promise<CmsPublicationJob | null> {
-  const page = await editor.listJobs()
-  return page.data.find(item => OPEN_JOB.has(item.status)) ?? null
-}
-
-async function schedulePublication(input: { runAt: string, timezone: string }): Promise<CmsPublicationJob | null> {
-  if (!access.canPublish.value)
-    return null
-  const flushed = await autosave.flush()
-  if (!flushed) {
-    if (autosave.state.value !== 'conflict')
-      actionError.value = 'Não foi possível salvar antes de agendar.'
-    return null
-  }
-  return editor.schedule({
-    runAt: input.runAt,
-    timezone: input.timezone,
-    expectedVersion: editVersion.value,
-  })
-}
-
-async function cancelPublication(): Promise<CmsPublicationJob | null> {
-  if (!access.canPublish.value)
-    return null
-  return editor.cancelSchedule()
 }
 </script>
 
@@ -513,15 +438,6 @@ async function cancelPublication(): Promise<CmsPublicationJob | null> {
               >
                 Retirar do ar
               </Button>
-              <Button
-                v-if="access.canPublish.value"
-                size="sm"
-                :disabled="publishing || autosave.state.value === 'conflict'"
-                @click="publish"
-              >
-                <Icon name="lucide:upload" class="mr-2 size-4" aria-hidden="true" />
-                {{ isPublished ? 'Publicar alterações' : 'Publicar' }}
-              </Button>
             </div>
           </div>
 
@@ -549,15 +465,6 @@ async function cancelPublication(): Promise<CmsPublicationJob | null> {
           <p v-if="actionError" class="text-sm text-destructive" role="alert">
             {{ actionError }}
           </p>
-
-          <CmsSchedulePanel
-            v-if="access.canPublish.value"
-            :timezone="documentSite?.timezone || 'America/Sao_Paulo'"
-            :current-version="editVersion"
-            :load="loadSchedule"
-            :schedule="schedulePublication"
-            :cancel="cancelPublication"
-          />
         </header>
 
         <fieldset class="space-y-6" :disabled="!canEdit">

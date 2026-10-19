@@ -1,6 +1,8 @@
 import type { CmsFakeCall, CmsFakeRow, CmsTestEvent } from './helpers/cms-fake-supabase'
 
 import { beforeEach, describe, expect, it } from 'vitest'
+import getCollection from '~/server/api/public/cms/v1/sites/[siteKey]/collections/[collectionKey].get'
+import listCollections from '~/server/api/public/cms/v1/sites/[siteKey]/collections/index.get'
 import listPublications from '~/server/api/public/cms/v1/sites/[siteKey]/publications.get'
 import resolvePublic from '~/server/api/public/cms/v1/sites/[siteKey]/resolve.get'
 import sitemapJson from '~/server/api/public/cms/v1/sites/[siteKey]/sitemap.get'
@@ -34,6 +36,12 @@ const REV_PAGE = 'e1000000-0000-4000-8000-000000000006'
 const REV_OTHER = 'e1000000-0000-4000-8000-000000000007'
 const REV_POISON = 'e1000000-0000-4000-8000-000000000008'
 const REV_EN = 'e1000000-0000-4000-8000-000000000009'
+
+const COL_TESTIMONIALS = 'c1000000-0000-4000-8000-000000000001'
+const COL_OTHER_TENANT = 'c1000000-0000-4000-8000-000000000002'
+const ENTRY_PUBLISHED = 'c2000000-0000-4000-8000-000000000001'
+const ENTRY_DRAFT = 'c2000000-0000-4000-8000-000000000002'
+const ENTRY_OLDER = 'c2000000-0000-4000-8000-000000000003'
 
 let fake: CmsFakeSupabase
 
@@ -221,6 +229,66 @@ function createDatabase() {
       route('/artigos/envenenado', DOC_POISON, { revision_id: REV_POISON }),
       route('/artigos/english', DOC_EN, { locale: 'en', revision_id: REV_EN }),
       route('/suspenso', DOC_PUBLISHED, { site_id: SITE_SUSPENDED, tenant_id: TENANT_A }),
+    ],
+    cms_collection_definitions: [
+      {
+        id: COL_TESTIMONIALS,
+        tenant_id: TENANT_A,
+        site_id: SITE_A,
+        key: 'depoimentos',
+        name: 'Depoimentos',
+        schema: {
+          version: 1,
+          fields: [
+            { key: 'nome', label: 'Nome', type: 'text', required: true },
+            { key: 'depoimento', label: 'Depoimento', type: 'text', required: true },
+          ],
+        },
+        created_at: '2026-10-01T00:00:00.000Z',
+        updated_at: '2026-10-01T00:00:00.000Z',
+      },
+      {
+        id: COL_OTHER_TENANT,
+        tenant_id: TENANT_B,
+        site_id: SITE_B,
+        key: 'depoimentos',
+        name: 'Depoimentos B',
+        schema: { version: 1, fields: [{ key: 'nome', label: 'Nome', type: 'text', required: true }] },
+        created_at: '2026-10-01T00:00:00.000Z',
+        updated_at: '2026-10-01T00:00:00.000Z',
+      },
+    ],
+    cms_entries: [
+      {
+        id: ENTRY_OLDER,
+        tenant_id: TENANT_A,
+        site_id: SITE_A,
+        definition_id: COL_TESTIMONIALS,
+        status: 'published',
+        payload: { nome: 'Cliente antigo', depoimento: 'Bom.' },
+        created_at: '2026-10-01T00:00:00.000Z',
+        updated_at: '2026-10-02T00:00:00.000Z',
+      },
+      {
+        id: ENTRY_PUBLISHED,
+        tenant_id: TENANT_A,
+        site_id: SITE_A,
+        definition_id: COL_TESTIMONIALS,
+        status: 'published',
+        payload: { nome: 'Ricardo Alves1111', depoimento: 'Vendi meu imóvel acima da expectativa.' },
+        created_at: '2026-10-01T00:00:00.000Z',
+        updated_at: '2026-10-19T12:00:00.000Z',
+      },
+      {
+        id: ENTRY_DRAFT,
+        tenant_id: TENANT_A,
+        site_id: SITE_A,
+        definition_id: COL_TESTIMONIALS,
+        status: 'draft',
+        payload: { nome: 'Rascunho secreto', depoimento: 'Não publicar.' },
+        created_at: '2026-10-01T00:00:00.000Z',
+        updated_at: '2026-10-19T13:00:00.000Z',
+      },
     ],
   }
 }
@@ -497,6 +565,70 @@ describe('entrega pública do CMS', () => {
     expect(xmlEvent.node.res.getHeader('content-type')).toBe('application/xml; charset=utf-8')
     expect(fake.callsTo('cms_site_domains', 'select')[0]?.columns).toBe('hostname, verified_at')
     assertNoDraftPayload()
+  })
+
+  it('coleções públicas: lista definições e só registros publicados da própria empresa', async () => {
+    const listEvent = createCmsEvent({
+      path: '/api/public/cms/v1/sites/empresa-a/collections',
+      params: { siteKey: 'empresa-a' },
+      client: fake,
+    })
+    const listed = await run(listCollections, listEvent)
+    expect(listed.data.map(item => item.key)).toEqual(['depoimentos'])
+    expect(listed.data[0]).toMatchObject({ name: 'Depoimentos' })
+    expect(JSON.stringify(listed)).not.toContain('Depoimentos B')
+
+    const feedEvent = createCmsEvent({
+      path: '/api/public/cms/v1/sites/empresa-a/collections/depoimentos',
+      params: { siteKey: 'empresa-a', collectionKey: 'depoimentos' },
+      client: fake,
+    })
+    const feed = await run(getCollection, feedEvent)
+    expect(feed.data.collection.key).toBe('depoimentos')
+    expect(feed.data.entries.map(entry => entry.id)).toEqual([ENTRY_PUBLISHED, ENTRY_OLDER])
+    expect(feed.data.entries[0]?.payload).toMatchObject({ nome: 'Ricardo Alves1111' })
+    expect(JSON.stringify(feed)).not.toContain('Rascunho secreto')
+    expect(feedEvent.node.res.getHeader('cache-control')).toBe(CMS_PUBLIC_CACHE_CONTROL)
+
+    const missing = await failureOf(run(getCollection, createCmsEvent({
+      path: '/api/public/cms/v1/sites/empresa-a/collections/inexistente',
+      params: { siteKey: 'empresa-a', collectionKey: 'inexistente' },
+      client: fake,
+    })))
+    expect(missing).toMatchObject({ status: 404, code: 'not_found' })
+
+    const suspended = await failureOf(run(getCollection, createCmsEvent({
+      path: '/api/public/cms/v1/sites/site-suspenso/collections/depoimentos',
+      params: { siteKey: 'site-suspenso', collectionKey: 'depoimentos' },
+      client: fake,
+    })))
+    expect(suspended).toMatchObject({ status: 404, code: 'not_found' })
+  })
+
+  it('resolve expande bloco vinculado à coleção com registros publicados', async () => {
+    const revisionRow = fake.db.cms_revisions!.find(row => row.id === REV_PAGE)!
+    revisionRow.snapshot = {
+      title: 'Página publicada',
+      slug: 'sobre',
+      blocks: [{
+        id: 'depoimentos-1',
+        type: 'testimonials',
+        version: 1,
+        props: {
+          title: 'Depoimentos',
+          collectionKey: 'depoimentos',
+          collectionLimit: 6,
+          items: [{ quote: 'CÓPIA FIXA', author: 'Cópia', role: '' }],
+        },
+      }],
+    }
+
+    const response = await resolve('empresa-a', '/sobre')
+    const data = response.data as { content: { blocks: Array<{ props: { items: Array<{ author: string, quote: string }> } }> } }
+    const items = data.content.blocks[0]!.props.items
+    expect(items.map(item => item.author)).toEqual(['Ricardo Alves1111', 'Cliente antigo'])
+    expect(JSON.stringify(response)).not.toContain('CÓPIA FIXA')
+    expect(JSON.stringify(response)).not.toContain('Rascunho secreto')
   })
 
   it('a fila de invalidação não carrega rascunho', async () => {
