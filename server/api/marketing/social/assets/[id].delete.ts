@@ -1,13 +1,13 @@
 import { getRouterParam } from 'h3'
 
-import { deleteMediaAsset } from '~/server/utils/media-asset-deletion'
-import { requireSocialContext } from '~/server/utils/social-context'
+import { requireMarketingMediaContext } from '~/server/utils/media/marketing-adapter'
+import { deleteAsset } from '~/server/utils/media/service'
 
 export default defineEventHandler(async (event) => {
   const assetId = String(getRouterParam(event, 'id'))
-  const { client, tenantId, user } = await requireSocialContext(event, 'marketing.social.update')
+  const ctx = await requireMarketingMediaContext(event, 'delete')
 
-  await deleteMediaAsset(event, client, tenantId, user.id, assetId)
+  await deleteAsset(ctx, assetId)
 
   return { success: true }
 })
