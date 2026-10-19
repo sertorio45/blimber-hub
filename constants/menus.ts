@@ -231,7 +231,7 @@ export const navMenu: NavMenu[] = [
     items: [
       {
         title: 'CMS',
-        icon: 'i-lucide-layout-template',
+        icon: '/icons/modules/cms/cms.svg',
         roles: ['admin', 'funcionario', 'cliente', 'atendente'],
         children: [
           {

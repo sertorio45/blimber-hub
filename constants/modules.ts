@@ -23,7 +23,7 @@ export const MODULE_META: Record<string, ModuleMeta> = {
   cms: {
     slug: 'cms',
     title: 'CMS',
-    icon: 'lucide:layout-template',
+    icon: '/icons/modules/cms/cms.svg',
     basePath: '/cms',
     defaultPath: '/cms',
   },

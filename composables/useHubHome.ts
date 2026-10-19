@@ -202,7 +202,7 @@ export function buildHubActions(input: {
       title: 'CMS',
       description: 'Páginas e publicações do site',
       to: '/cms',
-      icon: 'lucide:layout-template',
+      icon: '/icons/modules/cms/cms.svg',
     })
   }
 
