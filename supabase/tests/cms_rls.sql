@@ -224,6 +224,27 @@ SELECT pg_temp.expect_error(
   '42501'
 );
 SELECT pg_temp.expect_error(
+  'cliente A não publica alterando public_status diretamente',
+  $sql$ UPDATE public.cms_documents d SET public_status = 'published' FROM fixture_ids f WHERE d.id = f.doc_a_client $sql$,
+  '42501'
+);
+SELECT pg_temp.expect_error(
+  'cliente A não cria documento já publicado',
+  $sql$
+    INSERT INTO public.cms_documents (tenant_id, site_id, kind, title, public_status)
+    SELECT tenant_a, site_a, 'page', 'Atalho', 'published' FROM fixture_ids
+  $sql$,
+  '42501'
+);
+SELECT pg_temp.expect_error(
+  'cliente A não reserva rotas diretamente',
+  $sql$
+    INSERT INTO public.cms_routes (tenant_id, site_id, path, route_kind)
+    SELECT tenant_a, site_a, '/atalho', 'document' FROM fixture_ids
+  $sql$,
+  '42501'
+);
+SELECT pg_temp.expect_error(
   'cliente A não executa o RPC de publicação',
   $sql$ SELECT public.cms_publish_revision(doc_a_client, 1, client_a) FROM fixture_ids $sql$,
   '42501'

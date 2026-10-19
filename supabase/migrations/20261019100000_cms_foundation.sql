@@ -665,6 +665,22 @@ BEGIN
 END
 $$;
 
+-- Publishing requires the `cms.publish` capability, which only the server can
+-- check. Public state and routes are therefore written exclusively through the
+-- service-role RPCs; `authenticated` keeps full access to editorial columns.
+REVOKE INSERT, UPDATE, DELETE ON public.cms_routes, public.cms_revision_terms FROM authenticated;
+GRANT SELECT ON public.cms_routes, public.cms_revision_terms TO authenticated;
+
+REVOKE INSERT, UPDATE ON public.cms_documents FROM authenticated;
+GRANT INSERT (
+  id, tenant_id, site_id, kind, publication_type, locale, title, slug, parent_id, is_home,
+  workflow_status, draft_payload, edit_version, has_unpublished_changes, created_by, updated_by, deleted_at
+) ON public.cms_documents TO authenticated;
+GRANT UPDATE (
+  site_id, publication_type, locale, title, slug, parent_id, is_home,
+  workflow_status, draft_payload, edit_version, has_unpublished_changes, updated_by, deleted_at
+) ON public.cms_documents TO authenticated;
+
 -- ---------------------------------------------------------------------------
 -- RPCs (service role only; the server authorizes the caller first)
 -- ---------------------------------------------------------------------------
