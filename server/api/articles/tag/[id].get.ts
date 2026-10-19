@@ -1,25 +1,5 @@
-import { serverSupabaseServiceRole, serverSupabaseUser } from '#supabase/server'
+import { defineEventHandler } from 'h3'
 
-import { defineEventHandler, getRouterParam } from 'h3'
+import { articleTagHandlers } from '~/server/utils/articles/terms'
 
-export default defineEventHandler(async (event) => {
-  // Autenticação do usuário
-  const user = await serverSupabaseUser(event)
-  if (!user) {
-    return { status: 401, message: 'Unauthorized' }
-  }
-
-  // Cliente Supabase
-  const client = await serverSupabaseServiceRole(event)
-  const id = getRouterParam(event, 'id')
-  const { tenantId, role } = event.context.auth || {}
-
-  // Buscar tag completa
-  const { data: tag, error } = await client.from('articles_tag').select('*').eq('id', id).single()
-
-  if (error || !tag) {
-    return { status: 404, message: 'Tag not found' }
-  }
-
-  return { status: 200, data: tag }
-})
+export default defineEventHandler(event => articleTagHandlers.get(event))

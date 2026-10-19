@@ -82,7 +82,12 @@ function handleCancel() {
         </div>
         <div class="space-y-2">
           <Label for="content">Content</Label>
-          <Tiny v-model="form.content" :disabled="props.loading" :height="400" />
+          <ClientOnly>
+            <Tiny v-model="form.content" :disabled="props.loading" :height="400" />
+            <template #fallback>
+              <Skeleton class="h-[400px] w-full rounded-md" />
+            </template>
+          </ClientOnly>
         </div>
       </div>
       <div class="md:col-span-4 space-y-6">

@@ -7,16 +7,16 @@ import DataTable from '~/components/ui/table/DataTable.vue'
 import DataTablePagination from '~/components/ui/table/DataTablePagination.vue'
 import DataTableRowActions from '~/components/ui/table/DataTableRowActions.vue'
 import DataTableToolbar from '~/components/ui/table/DataTableToolbar.vue'
-import { isStaffRole } from '~/constants/roles'
 import { deleteWithConfirm } from '~/composables/useConfirmDelete'
 import { useTenantPage } from '~/composables/useTenantPage'
 import { useTenantRoleFilter } from '~/composables/useTenantRoleFilter'
+import { isStaffRole } from '~/constants/roles'
 
 definePageMeta({
   middleware: ['auth'],
 })
 
-const { tenantId, currentRole, whenTenantReady } = useTenantPage()
+const { tenantId, currentRole } = useTenantPage()
 const isStaff = computed(() => isStaffRole(currentRole.value))
 
 const selectedItems = ref([])
@@ -30,7 +30,7 @@ watch(
   { immediate: true },
 )
 
-const { data: categoriesRaw, pending: loading, refresh: refreshCategories } = useFetch<any[]>('/api/articles/category')
+const { data: categoriesRaw, pending: loading, refresh: refreshCategories } = useFetch('/api/articles/category', { transform: response => response.data })
 
 const { filteredData: categories } = useTenantRoleFilter<any>(categoriesRaw as any, 'tenant_id') // Filter categories by tenantId
 

@@ -3,7 +3,6 @@ import { onMounted, ref } from 'vue'
 
 import ArticleFloatingMenu from '~/components/articles/ArticleFloatingMenu.vue'
 import { useToast } from '~/components/ui/toast'
-import { useTenantStore } from '~/stores/tenant'
 
 definePageMeta({
   middleware: ['auth', 'role'],
@@ -53,13 +52,11 @@ async function saveTag() {
     toast({ title: 'Error', description: 'Fill all required fields', variant: 'destructive' })
     return
   }
-  const tenantId = useTenantStore().tenantId
   const tagData: any = {
     title: form.value.title,
     slug: form.value.slug,
     description: form.value.description,
     publish_status: form.value.publish_status,
-    tenant_id: tenantId,
   }
   loading.value = true
   try {

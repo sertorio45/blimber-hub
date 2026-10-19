@@ -1,36 +1,41 @@
-import { serverSupabaseServiceRole, serverSupabaseUser } from '#supabase/server'
+import type { ArticleTagRelationRecord } from '~/types/articles'
 
-import { defineEventHandler, readBody } from 'h3'
+import { defineEventHandler } from 'h3'
+
+import { requireArticleContext } from '~/server/utils/articles/context'
+import { assertTagsInTenant, databaseError, findTenantRow } from '~/server/utils/articles/repository'
+import {
+  ARTICLE_TABLES,
+  articleTagRelationsInputSchema,
+  readArticleBody,
+} from '~/server/utils/articles/schemas'
 
 export default defineEventHandler(async (event) => {
-  const user = await serverSupabaseUser(event)
-  if (!user)
-    return { status: 401, message: 'Unauthorized' }
+  const { client, tenantId } = await requireArticleContext(event, 'update')
+  const input = await readArticleBody(event, articleTagRelationsInputSchema)
 
-  const client = await serverSupabaseServiceRole(event)
-  const body = await readBody(event)
-  const { article_id, tenant_id, tag_ids } = body
+  await findTenantRow(client, ARTICLE_TABLES.articles, tenantId, input.article_id, 'id, tenant_id')
+  const tagIds = [...new Set(input.tag_ids)]
+  await assertTagsInTenant(client, tenantId, tagIds)
 
-  if (!article_id || !tenant_id || !Array.isArray(tag_ids)) {
-    return { status: 400, message: 'Missing article_id, tenant_id or tag_ids' }
-  }
-
-  // Remove todas as relações antigas desse artigo/tenant
-  const { error: delError } = await client
-    .from('articles_tag_relations')
+  const { error: deleteError } = await client
+    .from(ARTICLE_TABLES.tagRelations)
     .delete()
-    .eq('article_id', article_id)
-    .eq('tenant_id', tenant_id)
-  if (delError)
-    return { status: 400, message: delError.message }
+    .eq('article_id', input.article_id)
+    .eq('tenant_id', tenantId)
+  if (deleteError)
+    throw databaseError(deleteError, 'Erro ao atualizar tags do artigo')
 
-  // Insere as novas relações
-  if (tag_ids.length > 0) {
-    const inserts = tag_ids.map((tag_id: number) => ({ article_id, tenant_id, tag_id }))
-    const { error: insError } = await client.from('articles_tag_relations').insert(inserts)
-    if (insError)
-      return { status: 400, message: insError.message }
-  }
+  if (!tagIds.length)
+    return { data: [] as ArticleTagRelationRecord[] }
 
-  return { status: 200, message: 'Tag relations updated' }
+  const { data, error } = await client
+    .from(ARTICLE_TABLES.tagRelations)
+    .insert(tagIds.map(tagId => ({ article_id: input.article_id, tag_id: tagId, tenant_id: tenantId })))
+    .select()
+
+  if (error)
+    throw databaseError(error, 'Erro ao atualizar tags do artigo')
+
+  return { data: (data || []) as ArticleTagRelationRecord[] }
 })

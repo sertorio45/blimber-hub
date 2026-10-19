@@ -67,25 +67,20 @@ const loading = ref(true)
 async function loadArticle() {
   loading.value = true
   try {
-    const response: any = await $fetch(`/api/articles/${route.params.id}`)
-    if (response && typeof response === 'object' && 'status' in response && response.status !== 200) {
-      throw new Error(response.message || 'Erro ao buscar artigo')
-    }
-    if (response && typeof response === 'object' && 'data' in response) {
-      const data: any = response.data
-      form.value = {
-        id: data.id || '',
-        title: data.title || '',
-        slug: data.slug || '',
-        content: data.content || '',
-        description: data.meta_description || data.description || '',
-        category_id: data.category_id || '',
-        publish_status: data.publish_status || '',
-      }
+    const response = await $fetch(`/api/articles/${route.params.id}`)
+    const data: any = response.data
+    form.value = {
+      id: data.id || '',
+      title: data.title || '',
+      slug: data.slug || '',
+      content: data.content || '',
+      description: data.meta_description || '',
+      category_id: data.category_id || '',
+      publish_status: data.publish_status || '',
     }
   }
   catch (e: any) {
-    toast({ title: 'Erro', description: e.message || 'Erro ao carregar artigo', variant: 'destructive' })
+    toast({ title: 'Erro', description: e?.data?.message || 'Erro ao carregar artigo', variant: 'destructive' })
   }
   loading.value = false
 }
@@ -105,10 +100,9 @@ const {
         method: 'GET',
         query: { tenant_id: tenantStore.tenantId },
       })
-      // Garante que só retorna categorias do tenant atual
-      return Array.isArray(response) ? response.filter(cat => cat.tenant_id === tenantStore.tenantId) : []
+      return response.data as any[]
     }
-    catch (e) {
+    catch {
       return []
     }
   },
@@ -133,8 +127,7 @@ const { data: relations } = await useAsyncData(
         article_id: route.params.id,
       },
     })
-    // Filtra relations para garantir que só retorna do tenant atual
-    return Array.isArray(res) ? res.filter(r => r.tenant_id === tenantId.value) : []
+    return res.data as any[]
   },
   {
     lazy: true,
@@ -151,8 +144,7 @@ const { data: allTags } = await useAsyncData(
     const res = await $fetch('/api/articles/tag', {
       method: 'GET',
     })
-    // Filtra tags para garantir que só retorna do tenant atual
-    return Array.isArray(res) ? res.filter(tag => tag.tenant_id === tenantId.value) : []
+    return res.data as any[]
   },
   {
     lazy: true,
@@ -215,10 +207,9 @@ async function syncTags(allTagsList: any[]) {
         body: {
           title,
           slug: generateSlug(title),
-          tenant_id: tenantId.value,
         },
       })
-      tag = created?.body?.id ? created.body : created
+      tag = created?.data
     }
     if (tag && tag.id)
       tagIds.push(tag.id)
@@ -228,7 +219,6 @@ async function syncTags(allTagsList: any[]) {
     method: 'POST',
     body: {
       article_id: route.params.id,
-      tenant_id: tenantId.value,
       tag_ids: tagIds,
     },
   })
@@ -260,9 +250,8 @@ async function saveArticle() {
     title: form.value.title,
     slug: form.value.slug,
     content: form.value.content,
-    description: form.value.description,
+    meta_description: form.value.description,
     publish_status: form.value.publish_status,
-    tenant_id: tenantId.value,
     category_id: form.value.category_id,
   }
   try {
@@ -279,10 +268,6 @@ async function saveArticle() {
     })
   }
 }
-
-const selectedTags = computed(() =>
-  Array.isArray(allTags.value) ? allTags.value.filter(tag => selectedTagTitles.value.includes(tag.title)) : [],
-)
 </script>
 
 <template>
@@ -457,7 +442,12 @@ const selectedTags = computed(() =>
             <CardDescription> Escreva o conteúdo do seu artigo usando o editor abaixo </CardDescription>
           </CardHeader>
           <CardContent>
-            <Tiny v-model="form.content" :height="500" :disabled="loading" />
+            <ClientOnly>
+              <Tiny v-model="form.content" :height="500" :disabled="loading" />
+              <template #fallback>
+                <Skeleton class="h-[500px] w-full rounded-md" />
+              </template>
+            </ClientOnly>
           </CardContent>
         </Card>
       </form>
