@@ -7,7 +7,7 @@ import CmsEmptyState from '~/components/cms/CmsEmptyState.vue'
 import CmsGate from '~/components/cms/CmsGate.vue'
 import CmsPageHeader from '~/components/cms/CmsPageHeader.vue'
 import CmsStatusBadge from '~/components/cms/CmsStatusBadge.vue'
-import { cmsPathPrefix, CMS_PUBLICATION_TYPE_LABELS, formatCmsRelative } from '~/composables/cms/cmsDisplay'
+import { CMS_PUBLICATION_TYPE_LABELS, cmsPathPrefix, formatCmsRelative } from '~/composables/cms/cmsDisplay'
 import { useCmsAccess } from '~/composables/cms/useCmsAccess'
 import { useCmsOverview } from '~/composables/cms/useCmsOverview'
 import { useCmsSites } from '~/composables/cms/useCmsSites'
@@ -156,11 +156,11 @@ function openRecent(id: string) {
             title="Nada por aqui ainda"
             description="Páginas e publicações aparecem nesta lista assim que forem criadas."
           />
-          <ul v-else class="divide-y overflow-hidden border rounded-xl">
+          <ul v-else class="overflow-hidden border rounded-xl divide-y">
             <li v-for="item in overview.recent.value" :key="item.id">
               <button
                 type="button"
-                class="w-full flex items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                class="w-full flex items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
                 @click="openRecent(item.id)"
               >
                 <Icon
