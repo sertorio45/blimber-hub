@@ -24,6 +24,7 @@ export const CMS_TABLES = {
 export const CMS_RPC = {
   publishRevision: 'cms_publish_revision',
   unpublishDocument: 'cms_unpublish_document',
+  migrateLegacyArticles: 'cms_migrate_legacy_articles',
 } as const
 
 export const CMS_LIMITS = {
