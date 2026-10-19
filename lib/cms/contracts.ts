@@ -96,7 +96,8 @@ export interface CmsBlock {
 
 export const cmsBlockSchema: z.ZodType<CmsBlock> = z.lazy(() => z.object({
   id: z.string().min(1).max(64),
-  type: z.string().min(1).max(80).regex(/^[a-z][a-z0-9_.-]*$/),
+  // Registry IDs are camelCase (richText, imageText, latestPublications).
+  type: z.string().min(1).max(80).regex(/^[a-z][a-zA-Z0-9_.-]*$/),
   version: z.number().int().positive(),
   props: z.record(z.unknown()),
   children: z.array(cmsBlockSchema).max(CMS_LIMITS.maxBlocksPerDocument).optional(),
