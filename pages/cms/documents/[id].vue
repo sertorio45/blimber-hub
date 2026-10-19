@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { CmsDocumentPayload, CmsPublicationType } from '~/lib/cms/contracts'
+import type { CmsDocumentPayload, CmsPublicationJob, CmsPublicationType } from '~/lib/cms/contracts'
 
 import { computed, reactive, ref, watch } from 'vue'
 import { toast } from 'vue-sonner'
@@ -8,6 +8,7 @@ import CmsAutosaveIndicator from '~/components/cms/CmsAutosaveIndicator.vue'
 import CmsEmptyState from '~/components/cms/CmsEmptyState.vue'
 import CmsGate from '~/components/cms/CmsGate.vue'
 import CmsRevisionHistorySheet from '~/components/cms/CmsRevisionHistorySheet.vue'
+import CmsSchedulePanel from '~/components/cms/CmsSchedulePanel.vue'
 import CmsSlugField from '~/components/cms/CmsSlugField.vue'
 import CmsStatusBadge from '~/components/cms/CmsStatusBadge.vue'
 import { Button } from '~/components/ui/button'
@@ -382,6 +383,35 @@ async function reloadServer() {
   if (!reloaded && autosave.lastError.value)
     toast.error(autosave.lastError.value.message)
 }
+
+const OPEN_JOB = new Set(['pending', 'processing', 'retrying'])
+
+async function loadSchedule(): Promise<CmsPublicationJob | null> {
+  const page = await editor.listJobs()
+  return page.data.find(item => OPEN_JOB.has(item.status)) ?? null
+}
+
+async function schedulePublication(input: { runAt: string, timezone: string }): Promise<CmsPublicationJob | null> {
+  if (!access.canPublish.value)
+    return null
+  const flushed = await autosave.flush()
+  if (!flushed) {
+    if (autosave.state.value !== 'conflict')
+      actionError.value = 'Não foi possível salvar antes de agendar.'
+    return null
+  }
+  return editor.schedule({
+    runAt: input.runAt,
+    timezone: input.timezone,
+    expectedVersion: editVersion.value,
+  })
+}
+
+async function cancelPublication(): Promise<CmsPublicationJob | null> {
+  if (!access.canPublish.value)
+    return null
+  return editor.cancelSchedule()
+}
 </script>
 
 <template>
@@ -492,6 +522,15 @@ async function reloadServer() {
           <p v-if="actionError" class="text-sm text-destructive" role="alert">
             {{ actionError }}
           </p>
+
+          <CmsSchedulePanel
+            v-if="access.canPublish.value"
+            :timezone="documentSite?.timezone || 'America/Sao_Paulo'"
+            :current-version="editVersion"
+            :load="loadSchedule"
+            :schedule="schedulePublication"
+            :cancel="cancelPublication"
+          />
         </header>
 
         <fieldset class="space-y-6" :disabled="!canEdit">
@@ -675,6 +714,7 @@ async function reloadServer() {
 
     <CmsRevisionHistorySheet
       v-model:open="historyOpen"
+      :document-id="documentId"
       :load="editor.listRevisions"
       :can-restore="canEdit"
       :restoring-id="restoringId"

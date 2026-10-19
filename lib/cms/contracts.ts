@@ -19,11 +19,15 @@ export const CMS_TABLES = {
   assetUsages: 'cms_asset_usages',
   auditEvents: 'cms_audit_events',
   legacyMap: 'cms_legacy_map',
+  publicationJobs: 'cms_publication_jobs',
 } as const
 
 export const CMS_RPC = {
   publishRevision: 'cms_publish_revision',
+  publishPinnedRevision: 'cms_publish_pinned_revision',
   unpublishDocument: 'cms_unpublish_document',
+  upsertRedirect: 'cms_upsert_redirect',
+  deleteRedirect: 'cms_delete_redirect',
 } as const
 
 export const CMS_LIMITS = {
@@ -238,6 +242,108 @@ export const cmsPublishInputSchema = z.object({
   expectedVersion: z.number().int().nonnegative(),
 })
 export type CmsPublishInput = z.infer<typeof cmsPublishInputSchema>
+
+/**
+ * One pin per job: the draft `edit_version` captured at schedule time, or an
+ * existing revision snapshot. `runAt` is an absolute instant (offset/Z) or a
+ * wall-clock `YYYY-MM-DDTHH:mm` interpreted in `timezone`.
+ */
+export const cmsPublicationJobStatusSchema = z.enum([
+  'pending',
+  'processing',
+  'retrying',
+  'published',
+  'failed',
+  'cancelled',
+])
+export type CmsPublicationJobStatus = z.infer<typeof cmsPublicationJobStatusSchema>
+
+export const cmsScheduleInputSchema = z.object({
+  runAt: z.string().trim().min(8).max(40),
+  timezone: z.string().trim().min(1).max(80),
+  expectedVersion: z.number().int().nonnegative().optional(),
+  revisionId: uuid.optional(),
+}).superRefine((value, ctx) => {
+  const hasVersion = value.expectedVersion !== undefined
+  const hasRevision = Boolean(value.revisionId)
+  if (hasVersion === hasRevision) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['expectedVersion'],
+      message: 'Informe a versão do rascunho ou uma revisão, não as duas',
+    })
+  }
+})
+export type CmsScheduleInput = z.infer<typeof cmsScheduleInputSchema>
+
+export const cmsPublicationJobSchema = z.object({
+  id: uuid,
+  tenantId: uuid,
+  siteId: uuid,
+  documentId: uuid,
+  revisionId: uuid.nullable(),
+  editVersion: z.number().int().nonnegative().nullable(),
+  runAt: isoDate,
+  timezone: z.string(),
+  status: cmsPublicationJobStatusSchema,
+  attempts: z.number().int().nonnegative(),
+  lastError: z.string().nullable(),
+  resultRevisionId: uuid.nullable(),
+  actorUserId: uuid.nullable(),
+  createdAt: isoDate,
+  updatedAt: isoDate,
+})
+export type CmsPublicationJob = z.infer<typeof cmsPublicationJobSchema>
+
+export const cmsJobListQuerySchema = z.object({
+  siteId: uuid.optional(),
+  documentId: uuid.optional(),
+  status: cmsPublicationJobStatusSchema.optional(),
+  cursor: z.string().max(200).optional(),
+  limit: z.coerce.number().int().min(1).max(CMS_LIMITS.maxPageSize).default(CMS_LIMITS.defaultPageSize),
+})
+export type CmsJobListQuery = z.infer<typeof cmsJobListQuerySchema>
+
+export const cmsAuditEventSchema = z.object({
+  id: uuid,
+  siteId: uuid.nullable(),
+  actorUserId: uuid.nullable(),
+  action: z.string(),
+  documentId: uuid.nullable(),
+  revisionId: uuid.nullable(),
+  metadata: z.record(z.unknown()),
+  createdAt: isoDate,
+})
+export type CmsAuditEvent = z.infer<typeof cmsAuditEventSchema>
+
+export const cmsAuditListQuerySchema = z.object({
+  siteId: uuid.optional(),
+  documentId: uuid.optional(),
+  cursor: z.string().max(200).optional(),
+  limit: z.coerce.number().int().min(1).max(CMS_LIMITS.maxPageSize).default(CMS_LIMITS.defaultPageSize),
+}).refine(value => Boolean(value.siteId || value.documentId), {
+  message: 'Informe o site ou o conteúdo',
+  path: ['siteId'],
+})
+export type CmsAuditListQuery = z.infer<typeof cmsAuditListQuerySchema>
+
+export const cmsRedirectSchema = z.object({
+  id: uuid,
+  siteId: uuid,
+  locale: z.string(),
+  path: z.string(),
+  documentId: uuid,
+  documentTitle: z.string().nullable(),
+  createdAt: isoDate,
+  updatedAt: isoDate,
+})
+export type CmsRedirect = z.infer<typeof cmsRedirectSchema>
+
+export const cmsRedirectInputSchema = z.object({
+  path: z.string().trim().min(1).max(1024),
+  documentId: uuid,
+})
+export type CmsRedirectInput = z.infer<typeof cmsRedirectInputSchema>
 
 export const cmsListQuerySchema = z.object({
   siteId: uuid.optional(),

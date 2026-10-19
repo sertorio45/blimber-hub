@@ -59,6 +59,7 @@ import {
   SITE_COLUMNS,
 } from '~/server/utils/cms/mappers'
 import { cursorFilter, decodeCmsCursor, escapeLikePattern, paginate } from '~/server/utils/cms/pagination'
+import { cancelOpenPublicationJobs } from '~/server/utils/cms/publication-jobs'
 import { slugify } from '~/utils/slugify'
 
 const uuidSchema = z.string().uuid()
@@ -377,10 +378,11 @@ export async function trashDocument(ctx: CmsDocumentContext): Promise<{ id: stri
   assertCmsCapability(ctx, documentCapability(document.kind, 'delete'))
 
   const wasPublished = document.public_status === 'published'
-  if (wasPublished) {
+  if (wasPublished)
     assertCmsCapability(ctx, 'cms.publish', 'Para excluir um conteúdo publicado é preciso permissão para publicar')
+  await cancelOpenPublicationJobs(ctx, document, 'trash')
+  if (wasPublished)
     await callUnpublish(ctx, document.id)
-  }
 
   const { data, error } = await ctx.client
     .from(CMS_TABLES.documents)
@@ -457,6 +459,7 @@ export async function publishDocument(ctx: CmsDocumentContext, input: CmsPublish
 
 export async function unpublishDocument(ctx: CmsDocumentContext): Promise<CmsDocument> {
   assertCmsCapability(ctx, 'cms.publish', 'Sem permissão para despublicar')
+  await cancelOpenPublicationJobs(ctx, ctx.document, 'unpublish')
   await callUnpublish(ctx, ctx.document.id)
   return mapDocument(await reloadDocument(ctx))
 }

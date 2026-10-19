@@ -65,6 +65,16 @@ export function assertCmsCapability(
     throw cmsForbidden(message)
 }
 
+/** Passes when the member holds any one of the capabilities. */
+export function assertAnyCmsCapability(
+  ctx: Pick<CmsContext, 'ws'>,
+  capabilities: readonly CmsCapability[],
+  message = 'Sem permissão para esta ação',
+): void {
+  if (!capabilities.some(capability => ctx.ws.has(capability)))
+    throw cmsForbidden(message)
+}
+
 /** Loads a site of the context tenant; anything else is indistinguishable from "missing". */
 export async function loadTenantSite(
   ctx: Pick<CmsContext, 'client' | 'tenantId'>,

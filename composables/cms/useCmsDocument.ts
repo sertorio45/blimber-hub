@@ -1,6 +1,6 @@
 import type { MaybeRefOrGetter } from 'vue'
 import type { CmsApiError } from '~/composables/cms/useCmsApi'
-import type { CmsDocument, CmsItem, CmsPage, CmsRevision, CmsSaveDraftInput } from '~/lib/cms/contracts'
+import type { CmsDocument, CmsItem, CmsPage, CmsPublicationJob, CmsRevision, CmsSaveDraftInput, CmsScheduleInput } from '~/lib/cms/contracts'
 
 import { ref, shallowRef, toValue, watch } from 'vue'
 
@@ -108,6 +108,25 @@ export function useCmsDocument(documentId: MaybeRefOrGetter<string>) {
     return api.request<CmsPage<CmsRevisionSummary>>(url('/revisions'), { query: { cursor: cursor ?? undefined } })
   }
 
+  async function listJobs(): Promise<CmsPage<CmsPublicationJob>> {
+    return api.request<CmsPage<CmsPublicationJob>>('/api/cms/jobs', {
+      query: { documentId: toValue(documentId), limit: 10 },
+    })
+  }
+
+  async function schedule(input: CmsScheduleInput): Promise<CmsPublicationJob> {
+    const response = await api.request<CmsItem<CmsPublicationJob>>(url('/schedule'), {
+      method: 'POST',
+      body: input,
+    })
+    return response.data
+  }
+
+  async function cancelSchedule(): Promise<CmsPublicationJob> {
+    const response = await api.request<CmsItem<CmsPublicationJob>>(url('/cancel-schedule'), { method: 'POST' })
+    return response.data
+  }
+
   async function restoreRevision(revisionId: string, expectedVersion: number): Promise<CmsDocument> {
     const tenant = api.tenantId.value
     const response = await api.request<CmsItem<CmsDocument>>(url(`/revisions/${revisionId}/restore`), {
@@ -142,6 +161,9 @@ export function useCmsDocument(documentId: MaybeRefOrGetter<string>) {
     unpublish,
     trash,
     listRevisions,
+    schedule,
+    cancelSchedule,
+    listJobs,
     restoreRevision,
     normalizeError: normalizeCmsError,
   }
