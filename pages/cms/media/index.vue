@@ -10,9 +10,8 @@ import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { normalizeCmsError } from '~/composables/cms/cmsErrors'
 import { useCmsAccess } from '~/composables/cms/useCmsAccess'
-import { useCmsMedia } from '~/composables/cms/useCmsMedia'
-import { useCmsSites } from '~/composables/cms/useCmsSites'
-import { deleteWithConfirm } from '~/composables/useConfirmDelete'
+import { cmsMediaUsageCount, cmsMediaUsagesFromDetails, useCmsMedia } from '~/composables/cms/useCmsMedia'
+import { confirmDelete } from '~/composables/useConfirmDelete'
 
 definePageMeta({
   middleware: ['auth'],
@@ -20,8 +19,13 @@ definePageMeta({
 })
 
 const access = useCmsAccess()
-const sites = useCmsSites()
 const media = useCmsMedia()
+
+const USAGE_KIND_LABEL: Record<string, string> = {
+  draft: 'Rascunho',
+  revision: 'Versão publicada',
+  global: 'Configuração do site',
+}
 const fileInput = ref<HTMLInputElement | null>(null)
 const usageDialog = ref<{ asset: CmsMediaAsset, usages: CmsMediaUsages } | null>(null)
 
@@ -43,30 +47,36 @@ async function onFilesSelected(event: Event) {
 }
 
 async function confirmRemove(asset: CmsMediaAsset) {
-  const deleted = await deleteWithConfirm(
-    async () => {
-      try {
-        await media.remove(asset.id)
-      }
-      catch (error: unknown) {
-        const normalized = normalizeCmsError(error)
-        if (normalized.code === 'asset_in_use') {
-          const usages = (normalized.details as { usages?: CmsMediaUsages } | undefined)?.usages
-            ?? (await media.getAsset(asset.id).then(detail => detail.usages))
-          usageDialog.value = { asset, usages }
+  const confirmed = await confirmDelete({
+    title: 'Excluir arquivo?',
+    description: `"${asset.name}" será removido permanentemente da biblioteca.`,
+    confirmLabel: 'Excluir',
+  })
+  if (!confirmed)
+    return
+  try {
+    await media.remove(asset.id)
+    toast.success('Arquivo excluído.')
+  }
+  catch (error: unknown) {
+    const normalized = normalizeCmsError(error)
+    if (normalized.code === 'aborted')
+      return
+    if (normalized.code === 'asset_in_use') {
+      let usages = cmsMediaUsagesFromDetails(normalized.details)
+      if (!usages) {
+        try {
+          usages = (await media.getAsset(asset.id)).usages
         }
-        throw error
+        catch {
+          usages = { socialPosts: [], cmsDocuments: [] }
+        }
       }
-    },
-    {
-      title: 'Excluir arquivo?',
-      description: `"${asset.name}" será removido permanentemente da biblioteca.`,
-      confirmLabel: 'Excluir',
-      successMessage: 'Arquivo excluído.',
-      errorMessage: 'Não foi possível excluir o arquivo.',
-    },
-  )
-  void deleted
+      usageDialog.value = { asset, usages }
+      return
+    }
+    toast.error(normalized.message || 'Não foi possível excluir o arquivo.')
+  }
 }
 
 async function retry() {
@@ -75,13 +85,10 @@ async function retry() {
 </script>
 
 <template>
-  <div class="mx-auto max-w-6xl p-4 space-y-6 sm:p-6">
+  <div class="mx-auto max-w-6xl space-y-6">
     <CmsPageHeader
       title="Mídia"
       description="Imagens e arquivos usados nas páginas e publicações."
-      :sites="sites.sites.value"
-      :current-site-id="sites.currentSite.value?.id"
-      @select-site="sites.selectSite"
     >
       <template #actions>
         <Button
@@ -192,7 +199,10 @@ async function retry() {
           </li>
         </ul>
 
-        <div v-if="media.hasMore.value" class="flex justify-center pt-2">
+        <div v-if="media.hasMore.value || media.loadMoreError.value" class="flex flex-col items-center gap-2 pt-2">
+          <p v-if="media.loadMoreError.value" role="alert" class="text-xs text-destructive">
+            {{ media.loadMoreError.value }}
+          </p>
           <Button
             variant="outline"
             size="sm"
@@ -219,7 +229,7 @@ async function retry() {
             Onde este arquivo é usado
           </h2>
           <p class="text-sm text-muted-foreground">
-            Remova os vínculos antes de excluir “{{ usageDialog.asset.name }}”.
+            “{{ usageDialog.asset.name }}” aparece em {{ cmsMediaUsageCount(usageDialog.usages) }} vínculo(s). Remova esses usos antes de excluir.
           </p>
         </div>
         <ul class="max-h-60 overflow-auto text-sm space-y-2">
@@ -235,7 +245,7 @@ async function retry() {
             :key="`cms-${doc.documentId ?? index}-${doc.fieldPath}`"
             class="rounded-lg bg-muted/50 px-3 py-2"
           >
-            Site · {{ doc.usageKind }}
+            {{ USAGE_KIND_LABEL[doc.usageKind] ?? 'Conteúdo' }}
             <span v-if="doc.fieldPath" class="text-muted-foreground"> · {{ doc.fieldPath }}</span>
             <NuxtLink
               v-if="doc.documentId"

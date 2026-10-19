@@ -3,6 +3,7 @@ import { storeToRefs } from 'pinia'
 import { computed, watch } from 'vue'
 
 import { CmsRequestError, DEFAULT_CMS_ERROR_MESSAGES, normalizeCmsError } from '~/composables/cms/cmsErrors'
+import { resetCmsSessions } from '~/composables/cms/cmsSession'
 import { invalidateMarketingCache } from '~/composables/marketing/useMarketingFetch'
 import { TENANT_HEADER } from '~/constants/workspace'
 
@@ -37,6 +38,8 @@ export function abortCmsRequests(): void {
   for (const controller of inFlight)
     controller.abort()
   inFlight.clear()
+  // Drop editor state before any route-leave flush can save into the new company.
+  resetCmsSessions()
 }
 
 /**

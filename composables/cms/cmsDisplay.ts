@@ -114,33 +114,86 @@ export function formatCmsRelative(value: string | Date | null | undefined, now =
   return formatCmsDateTime(date.toISOString())
 }
 
+const FIELD_REASON_MESSAGES: Record<string, string> = {
+  taken: 'Este valor já está em uso.',
+  published: 'O tipo de uma publicação já publicada não pode ser alterado.',
+  not_allowed: 'Este campo não pode ser usado aqui.',
+  not_found: 'Registro não encontrado.',
+}
+
+/** Zod's default English messages, replaced so the form stays in Portuguese. */
+const ENGLISH_ZOD = /^(?:String |Number |Expected |Invalid |Required|Too (?:big|small)|Unrecognized)/
+
+const FIELD_HINTS: Record<string, string> = {
+  'title': 'Informe um título.',
+  'slug': 'Use apenas letras minúsculas, números e hífens.',
+  'excerpt': 'Revise o resumo.',
+  'body': 'Revise o conteúdo.',
+  'publicationType': 'Escolha Artigo ou Notícia.',
+  'sourceName': 'Revise o nome da fonte.',
+  'sourceUrl': 'Informe uma URL válida.',
+  'eventDate': 'Informe uma data válida.',
+  'seo': 'Revise os campos de SEO.',
+  'seo.title': 'Revise o título de SEO.',
+  'seo.description': 'Revise a descrição de SEO.',
+  'seo.canonicalUrl': 'Informe uma URL canônica válida.',
+  'canonicalUrl': 'Informe uma URL canônica válida.',
+  'siteKey': 'Use de 3 a 64 caracteres: letras minúsculas, números e hífens.',
+  'name': 'Informe um nome.',
+}
+
+function fieldText(key: string, message: unknown): string | undefined {
+  const text = typeof message === 'string'
+    ? message
+    : Array.isArray(message)
+      ? message.find((item): item is string => typeof item === 'string')
+      : undefined
+  if (!text)
+    return undefined
+  const reason = FIELD_REASON_MESSAGES[text]
+  if (reason)
+    return reason
+  const hint = FIELD_HINTS[key]
+  return hint && ENGLISH_ZOD.test(text) ? hint : text
+}
+
 /**
  * Field errors from a 422 `details`. The server may send a Zod `flatten()`
- * (`fieldErrors`), a list of issues (`issues` / array) or a `fields` map; all
- * are folded into `{ 'seo.title': 'mensagem' }`.
+ * (`fieldErrors`), a list of issues (`issues` / array), a `fields` map or a
+ * single `{ field, reason }`. Paths under `payload.` are unwrapped so the
+ * editor can mark `title` / `seo.title`.
  */
-export function cmsFieldErrors(details: unknown): Record<string, string> {
+export function cmsFieldErrors(details: unknown, fallbackMessage?: string): Record<string, string> {
   const result: Record<string, string> = {}
   if (!details || typeof details !== 'object')
     return result
 
   const assign = (path: unknown, message: unknown) => {
-    const key = Array.isArray(path) ? path.map(String).join('.') : String(path ?? '')
-    if (key && typeof message === 'string' && !result[key])
-      result[key] = message
+    const rawKey = Array.isArray(path) ? path.map(String).join('.') : String(path ?? '')
+    const key = rawKey.replace(/^payload\./, '')
+    const text = fieldText(key, message)
+    if (key && text && !result[key])
+      result[key] = text
   }
 
   const record = details as Record<string, unknown>
   const issues = Array.isArray(details) ? details : Array.isArray(record.issues) ? record.issues : null
   if (issues) {
-    for (const issue of issues as Array<{ path?: unknown, field?: unknown, message?: unknown }>)
-      assign(issue.path ?? issue.field, issue.message)
+    for (const issue of issues as Array<{ path?: unknown, field?: unknown, message?: unknown, reason?: unknown }>)
+      assign(issue.path ?? issue.field, issue.message ?? issue.reason)
   }
 
-  const fieldErrors = (record.fieldErrors ?? record.fields) as Record<string, unknown> | undefined
-  if (fieldErrors && typeof fieldErrors === 'object') {
-    for (const [key, value] of Object.entries(fieldErrors))
-      assign(key, Array.isArray(value) ? value[0] : value)
+  const fieldErrors = record.fieldErrors ?? record.fields
+  if (fieldErrors && typeof fieldErrors === 'object' && !Array.isArray(fieldErrors)) {
+    for (const [key, value] of Object.entries(fieldErrors as Record<string, unknown>))
+      assign(key, value)
+  }
+
+  if (typeof record.field === 'string' && !result[record.field]) {
+    const reason = typeof record.reason === 'string' ? FIELD_REASON_MESSAGES[record.reason] : undefined
+    const message = typeof record.message === 'string' ? record.message : reason ?? fallbackMessage
+    if (message)
+      assign(record.field, message)
   }
 
   return result

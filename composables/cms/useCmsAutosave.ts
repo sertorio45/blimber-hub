@@ -7,6 +7,7 @@ import { computed, onBeforeUnmount, ref, shallowRef, watch } from 'vue'
 import { onBeforeRouteLeave } from 'vue-router'
 
 import { normalizeCmsError } from '~/composables/cms/cmsErrors'
+import { onCmsTenantReset } from '~/composables/cms/cmsSession'
 
 export type CmsAutosaveState = 'idle' | 'saving' | 'saved' | 'error' | 'conflict'
 
@@ -37,12 +38,23 @@ function isRetryable(error: CmsApiError): boolean {
 }
 
 function readConflict(details: unknown): CmsVersionConflictDetails {
-  const value = (details ?? {}) as Partial<CmsVersionConflictDetails>
-  return {
-    currentVersion: typeof value.currentVersion === 'number' ? value.currentVersion : Number.NaN,
-    updatedAt: typeof value.updatedAt === 'string' ? value.updatedAt : '',
-    updatedBy: typeof value.updatedBy === 'string' ? value.updatedBy : null,
+  const found = findConflict(details)
+  return found ?? { currentVersion: Number.NaN, updatedAt: '', updatedBy: null }
+}
+
+/** Accepts the details object or one more wrapping `{ details }` / `{ error }` layer. */
+function findConflict(value: unknown, depth = 0): CmsVersionConflictDetails | null {
+  if (!value || typeof value !== 'object' || depth > 3)
+    return null
+  const record = value as Record<string, unknown>
+  if (typeof record.currentVersion === 'number') {
+    return {
+      currentVersion: record.currentVersion,
+      updatedAt: typeof record.updatedAt === 'string' ? record.updatedAt : '',
+      updatedBy: typeof record.updatedBy === 'string' ? record.updatedBy : null,
+    }
   }
+  return findConflict(record.details, depth + 1) ?? findConflict(record.error, depth + 1)
 }
 
 /**
@@ -68,9 +80,10 @@ export function createCmsAutosave<T>(options: CmsAutosaveOptions<T>) {
   const reloading = ref(false)
   const editCount = ref(0)
   const savedCount = ref(0)
+  let abandoned = false
 
-  const isDirty = computed(() => editCount.value !== savedCount.value)
-  const hasPendingChanges = computed(() => isDirty.value || state.value === 'saving')
+  const isDirty = computed(() => !abandoned && editCount.value !== savedCount.value)
+  const hasPendingChanges = computed(() => !abandoned && (isDirty.value || state.value === 'saving'))
 
   let timer: ReturnType<typeof setTimeout> | null = null
   let inFlight: Promise<boolean> | null = null
@@ -86,7 +99,7 @@ export function createCmsAutosave<T>(options: CmsAutosaveOptions<T>) {
   }
 
   function schedule(delay = delayMs) {
-    if (disposed || !enabled() || state.value === 'conflict')
+    if (disposed || abandoned || !enabled() || state.value === 'conflict')
       return
     clearTimer()
     timer = setTimeout(() => {
@@ -97,7 +110,7 @@ export function createCmsAutosave<T>(options: CmsAutosaveOptions<T>) {
 
   // `flush: 'sync'` lets `withoutTracking` reliably ignore programmatic writes.
   const stopWatch = watch(options.source ?? options.getPayload, () => {
-    if (suppress > 0 || disposed)
+    if (suppress > 0 || disposed || abandoned)
       return
     editCount.value++
     if (state.value === 'saved')
@@ -118,7 +131,7 @@ export function createCmsAutosave<T>(options: CmsAutosaveOptions<T>) {
   }
 
   async function persist(): Promise<boolean> {
-    if (disposed || state.value === 'conflict')
+    if (disposed || abandoned || state.value === 'conflict')
       return false
     if (!enabled())
       return !isDirty.value
@@ -143,7 +156,7 @@ export function createCmsAutosave<T>(options: CmsAutosaveOptions<T>) {
     inFlight = (async () => {
       try {
         const result = await options.save({ expectedVersion: options.version.value, payload })
-        if (disposed)
+        if (disposed || abandoned)
           return false
         options.version.value = result.version
         savedCount.value = target
@@ -159,7 +172,7 @@ export function createCmsAutosave<T>(options: CmsAutosaveOptions<T>) {
         return true
       }
       catch (error: unknown) {
-        if (disposed)
+        if (disposed || abandoned)
           return false
         const normalized = normalize(error)
         if (normalized.code === 'aborted') {
@@ -186,8 +199,23 @@ export function createCmsAutosave<T>(options: CmsAutosaveOptions<T>) {
     return inFlight
   }
 
+  /**
+   * Company switch: forget local edits so route-leave cannot flush them into
+   * the next tenant. The in-flight request is aborted separately.
+   */
+  function abandon() {
+    abandoned = true
+    clearTimer()
+    savedCount.value = editCount.value
+    conflict.value = null
+    lastError.value = null
+    state.value = 'idle'
+  }
+
   /** Save now. Resolves `true` only when nothing is left unsaved. */
   async function flush(): Promise<boolean> {
+    if (abandoned)
+      return true
     clearTimer()
     if (inFlight)
       await inFlight
@@ -228,6 +256,7 @@ export function createCmsAutosave<T>(options: CmsAutosaveOptions<T>) {
 
   /** Replace local state with a server payload and mark it clean (load, reload, restore). */
   function reset(version: number, payload?: T) {
+    abandoned = false
     clearTimer()
     if (payload !== undefined && options.apply) {
       const apply = options.apply
@@ -296,6 +325,7 @@ export function createCmsAutosave<T>(options: CmsAutosaveOptions<T>) {
     markConflict,
     syncVersion,
     withoutTracking,
+    abandon,
     dispose,
   }
 }
@@ -331,7 +361,12 @@ export function useCmsAutosave<T>(options: CmsAutosaveOptions<T>) {
     })
   }
 
-  onBeforeUnmount(() => autosave.dispose())
+  const stopTenantReset = onCmsTenantReset(() => autosave.abandon())
+
+  onBeforeUnmount(() => {
+    stopTenantReset()
+    autosave.dispose()
+  })
 
   return autosave
 }

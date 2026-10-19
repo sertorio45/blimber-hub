@@ -118,7 +118,7 @@ async function submit() {
       errors.value = { slug: 'Já existe um conteúdo com este endereço. Escolha outro.' }
     }
     else if (normalized.code === 'validation_failed') {
-      const fieldErrors = cmsFieldErrors(normalized.details)
+      const fieldErrors = cmsFieldErrors(normalized.details, normalized.message)
       errors.value = Object.keys(fieldErrors).length ? fieldErrors : { form: normalized.message }
     }
     else if (normalized.code !== 'aborted') {

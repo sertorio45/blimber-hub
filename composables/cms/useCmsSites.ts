@@ -22,7 +22,8 @@ export function useCmsSites() {
     enabled: () => api.hasTenant.value,
   })
 
-  const sites = computed(() => data.value.data)
+  // `GET /api/cms/sites` returns `{ data: CmsSite[] }` (no cursor). Guard the array either way.
+  const sites = computed(() => Array.isArray(data.value?.data) ? data.value.data : [])
   const hasMultipleSites = computed(() => sites.value.length > 1)
 
   const currentSite = computed<CmsSite | null>(() => {

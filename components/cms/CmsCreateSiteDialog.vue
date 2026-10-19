@@ -59,7 +59,7 @@ async function submit() {
     const normalized = normalizeCmsError(error)
     if (normalized.code === 'aborted')
       return
-    const fieldErrors = cmsFieldErrors(normalized.details)
+    const fieldErrors = cmsFieldErrors(normalized.details, normalized.message)
     errors.value = Object.keys(fieldErrors).length ? fieldErrors : { form: normalized.message }
   }
   finally {

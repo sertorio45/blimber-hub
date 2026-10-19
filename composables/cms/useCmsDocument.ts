@@ -4,7 +4,7 @@ import type { CmsDocument, CmsItem, CmsPage, CmsRevision, CmsSaveDraftInput } fr
 
 import { ref, shallowRef, toValue, watch } from 'vue'
 
-import { normalizeCmsError, useCmsApi, visibleCmsError } from '~/composables/cms/useCmsApi'
+import { isCmsAbort, normalizeCmsError, useCmsApi, visibleCmsError } from '~/composables/cms/useCmsApi'
 import { useCmsDocumentMutations } from '~/composables/cms/useCmsDocuments'
 
 export type CmsRevisionSummary = Omit<CmsRevision, 'snapshot'>
@@ -69,23 +69,36 @@ export function useCmsDocument(documentId: MaybeRefOrGetter<string>) {
   }
 
   async function saveDraft(input: CmsSaveDraftInput): Promise<CmsDocument> {
+    const tenant = api.tenantId.value
     const response = await api.request<CmsItem<CmsDocument>>(url('/draft'), { method: 'PUT', body: input })
     document.value = response.data
+    mutations.invalidateLists(tenant)
     return response.data
   }
 
   async function publish(expectedVersion: number): Promise<CmsPublishResult> {
+    const tenant = api.tenantId.value
     const response = await api.request<CmsItem<CmsPublishResult>>(url('/publish'), {
       method: 'POST',
       body: { expectedVersion },
     })
-    mutations.invalidateLists(api.tenantId.value)
+    mutations.invalidateLists(tenant)
+    try {
+      document.value = await fetchLatest()
+    }
+    catch (error: unknown) {
+      if (!isCmsAbort(error))
+        loadError.value = visibleCmsError(error)
+    }
     return response.data
   }
 
-  async function unpublish(): Promise<void> {
-    await api.request(url('/unpublish'), { method: 'POST' })
-    mutations.invalidateLists(api.tenantId.value)
+  async function unpublish(): Promise<CmsDocument> {
+    const tenant = api.tenantId.value
+    const response = await api.request<CmsItem<CmsDocument>>(url('/unpublish'), { method: 'POST' })
+    document.value = response.data
+    mutations.invalidateLists(tenant)
+    return response.data
   }
 
   async function trash(): Promise<void> {
@@ -96,13 +109,25 @@ export function useCmsDocument(documentId: MaybeRefOrGetter<string>) {
     return api.request<CmsPage<CmsRevisionSummary>>(url('/revisions'), { query: { cursor: cursor ?? undefined } })
   }
 
-  async function restoreRevision(revisionId: string, expectedVersion: number): Promise<void> {
-    await api.request(url(`/revisions/${revisionId}/restore`), { method: 'POST', body: { expectedVersion } })
-    mutations.invalidateLists(api.tenantId.value)
+  async function restoreRevision(revisionId: string, expectedVersion: number): Promise<CmsDocument> {
+    const tenant = api.tenantId.value
+    const response = await api.request<CmsItem<CmsDocument>>(url(`/revisions/${revisionId}/restore`), {
+      method: 'POST',
+      body: { expectedVersion },
+    })
+    document.value = response.data
+    mutations.invalidateLists(tenant)
+    return response.data
   }
 
   watch(() => toValue(documentId), (next, previous) => {
     if (next !== previous)
+      clear()
+  })
+
+  // Company switch must drop the open document before another save can leave with the new tenant header.
+  watch(api.tenantId, (next, previous) => {
+    if (previous && next !== previous)
       clear()
   })
 
