@@ -83,6 +83,12 @@ const emptyCopy = computed(() => {
 
 const defaultType = computed(() => (documents.type.value === 'all' ? null : documents.type.value))
 
+function onStatusChange(value: unknown) {
+  const next = String(value ?? 'all')
+  if (next === 'all' || next === 'unpublished' || next === 'published' || next === 'withdrawn')
+    documents.status.value = next
+}
+
 function openDocument(item: CmsDocumentSummary) {
   void navigateTo(`/cms/documents/${item.id}`)
 }
@@ -163,7 +169,7 @@ function retry() {
             />
           </div>
 
-          <Select :model-value="documents.status.value" @update:model-value="value => documents.status.value = String(value) as typeof documents.status.value">
+          <Select :model-value="documents.status.value" @update:model-value="onStatusChange">
             <SelectTrigger class="w-full sm:w-48" aria-label="Status">
               <SelectValue placeholder="Status" />
             </SelectTrigger>
