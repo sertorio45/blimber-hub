@@ -36,7 +36,7 @@ const openProxy = computed({
 })
 
 const count = computed(() => props.assets.length)
-const blockedItems = computed(() => props.previewItems.filter(item => item.linkedPostCount > 0))
+const blockedItems = computed(() => props.previewItems.filter(item => item.linkedPostCount > 0 || (item.cmsUsageCount ?? 0) > 0))
 const canDelete = computed(() => !props.loadingPreview && blockedItems.value.length === 0 && count.value > 0)
 
 const title = computed(() => {
@@ -91,12 +91,17 @@ function onOpenChange(value: boolean) {
           class="border border-destructive/30 rounded-lg bg-destructive/5 p-4 text-sm"
         >
           <p class="text-destructive font-medium">
-            Alguns arquivos estão vinculados a publicações
+            Alguns arquivos estão em uso
           </p>
           <ul class="mt-2 text-muted-foreground space-y-2">
             <li v-for="item in blockedItems" :key="item.id">
               <span class="text-foreground font-medium">{{ item.name }}</span>
-              · {{ item.linkedPostCount }} publicação(ões)
+              <template v-if="item.linkedPostCount > 0">
+                · {{ item.linkedPostCount }} post(s) social(is)
+              </template>
+              <template v-if="(item.cmsUsageCount ?? 0) > 0">
+                · {{ item.cmsUsageCount }} uso(s) no site
+              </template>
               <span v-if="item.linkedPosts.length">
                 — ex.: {{ item.linkedPosts.map(post => post.title || 'Sem título').join(', ') }}
               </span>

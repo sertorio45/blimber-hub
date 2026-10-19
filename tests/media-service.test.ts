@@ -384,9 +384,8 @@ describe('deletion usages', () => {
       statusCode: 409,
       data: {
         error: {
-          code: 'validation_failed',
+          code: 'asset_in_use',
           details: {
-            reason: 'asset_in_use',
             usages: { cmsDocuments: [{ documentId: null, usageKind: 'global', fieldPath: 'cover' }] },
           },
         },

@@ -267,6 +267,7 @@ export type CmsErrorCode
     | 'validation_failed'
     | 'version_conflict'
     | 'route_conflict'
+    | 'asset_in_use'
     | 'module_disabled'
     | 'payload_too_large'
     | 'internal_error'

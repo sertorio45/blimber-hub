@@ -24,8 +24,7 @@ export default defineEventHandler(async (event): Promise<CmsItem<DeleteMediaAsse
   catch (error: unknown) {
     if (isError(error) && error.statusCode === 409) {
       const blocked = ((error.data as { blocked?: MediaAssetDeletePreviewItem[] } | undefined)?.blocked) || []
-      throw cmsError(409, 'validation_failed', error.statusMessage || 'Arquivo em uso', {
-        reason: 'asset_in_use',
+      throw cmsError(409, 'asset_in_use', error.statusMessage || 'Arquivo em uso', {
         usages: blocked[0]?.usages ?? { socialPosts: [], cmsDocuments: [] },
       })
     }
