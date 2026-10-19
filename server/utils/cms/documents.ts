@@ -37,6 +37,7 @@ import {
   cmsSaveDraftInputSchema,
   cmsSlugSchema,
 } from '~/lib/cms/contracts'
+import { resolveDraftCover, syncDraftCoverUsage } from '~/server/utils/cms/asset-usages'
 import { recordCmsAudit } from '~/server/utils/cms/audit'
 import { assertCmsCapability, documentCapability, loadTenantDocument, loadTenantSite } from '~/server/utils/cms/context'
 import {
@@ -60,6 +61,7 @@ import {
   SITE_COLUMNS,
 } from '~/server/utils/cms/mappers'
 import { cursorFilter, decodeCmsCursor, escapeLikePattern, paginate } from '~/server/utils/cms/pagination'
+import { assertDraftReferences } from '~/server/utils/cms/references'
 import { slugify } from '~/utils/slugify'
 
 const uuidSchema = z.string().uuid()
@@ -372,7 +374,21 @@ export async function saveDraft(ctx: CmsDocumentContext, input: CmsSaveDraftInpu
     publicationType = input.publicationType
   }
 
-  const row = await writeDraft(ctx, input.payload, input.expectedVersion, { publicationType })
+  const termIds = await assertDraftReferences(ctx, input.payload)
+  let payload: CmsDocumentPayload = { ...input.payload, termIds }
+  let cover = payload.cover
+
+  if (document.kind === 'publication') {
+    const resolved = await resolveDraftCover(ctx, payload.cover)
+    if (resolved !== undefined) {
+      cover = resolved
+      payload = { ...payload, cover: resolved }
+    }
+  }
+
+  const row = await writeDraft(ctx, payload, input.expectedVersion, { publicationType })
+  if (document.kind === 'publication' && cover !== undefined)
+    await syncDraftCoverUsage(ctx, cover)
   await recordCmsAudit(ctx, {
     action: 'document.draft_save',
     siteId: row.site_id,

@@ -65,6 +65,21 @@ export function assertCmsCapability(
     throw cmsForbidden(message)
 }
 
+const EDITORIAL_CAPABILITIES = [
+  'cms.publications.create',
+  'cms.publications.update',
+  'cms.settings.manage',
+] as const satisfies readonly CmsCapability[]
+
+/** Authors and taxonomies are edited while writing, or from site settings. */
+export function assertCmsEditorial(
+  ctx: Pick<CmsContext, 'ws'>,
+  message = 'Sem permissão para editar autores ou taxonomias',
+): void {
+  if (!EDITORIAL_CAPABILITIES.some(capability => ctx.ws.has(capability)))
+    throw cmsForbidden(message)
+}
+
 /** Loads a site of the context tenant; anything else is indistinguishable from "missing". */
 export async function loadTenantSite(
   ctx: Pick<CmsContext, 'client' | 'tenantId'>,

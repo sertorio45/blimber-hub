@@ -119,6 +119,9 @@ const FIELD_REASON_MESSAGES: Record<string, string> = {
   published: 'O tipo de uma publicação já publicada não pode ser alterado.',
   not_allowed: 'Este campo não pode ser usado aqui.',
   not_found: 'Registro não encontrado.',
+  unknown_term: 'Uma das categorias ou tags não pertence a este site.',
+  unknown_author: 'Autor não encontrado neste site.',
+  unknown_asset: 'A imagem de capa não foi encontrada nesta empresa.',
 }
 
 /** Zod's default English messages, replaced so the form stays in Portuguese. */
@@ -140,6 +143,11 @@ const FIELD_HINTS: Record<string, string> = {
   'canonicalUrl': 'Informe uma URL canônica válida.',
   'siteKey': 'Use de 3 a 64 caracteres: letras minúsculas, números e hífens.',
   'name': 'Informe um nome.',
+  'authorId': 'Escolha um autor deste site.',
+  'termIds': 'Revise as categorias e tags.',
+  'cover': 'Escolha uma imagem da biblioteca.',
+  'bio': 'Revise a biografia.',
+  'kind': 'Escolha categoria ou tag.',
 }
 
 function fieldText(key: string, message: unknown): string | undefined {
