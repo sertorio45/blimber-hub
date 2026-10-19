@@ -10,6 +10,7 @@ import { serverSupabaseServiceRole, serverSupabaseUser } from '#supabase/server'
 
 import { createError, getHeader, getQuery } from 'h3'
 
+import { expandModuleAliases } from '~/constants/modules'
 import { isStaffRole } from '~/constants/roles'
 import {
   holdsCapability,
@@ -316,7 +317,7 @@ async function loadTenantModules(
     .eq('tenant_id', tenantId)
     .eq('is_active', true)
 
-  const names = (data || []).map((row: any) => String(row.module_name))
+  const names = expandModuleAliases((data || []).map((row: any) => String(row.module_name)))
   if (names.includes('all'))
     return [...MODULE_NAMES]
 

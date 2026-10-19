@@ -1,6 +1,7 @@
 import type { WorkspaceCapability } from '~/constants/workspace'
 
 import type { WorkspaceClient, WorkspaceModule } from '~/server/utils/workspace-context'
+import { hasModuleEntitlement } from '~/constants/modules'
 import { isStaffRole } from '~/constants/roles'
 import {
   ALL_WORKSPACE_CAPABILITIES,
@@ -22,8 +23,11 @@ export interface ResolveCapabilitiesInput {
   globalRole?: string | null
   isPlatformStaff?: boolean
   /** Modules already resolved for the tenant; empty means "do not filter". */
-  modules?: WorkspaceModule[] | null
-  /** When true and a tenant is present, drop marketing caps if marketing is not contracted. */
+  modules?: ReadonlyArray<WorkspaceModule | 'all'> | null
+  /**
+   * When true and a tenant is present, drop `marketing.social.*` / `cms.*` when
+   * the module is not contracted (`article` counts as `cms`, `all` grants both).
+   */
   enforceModules?: boolean
 }
 
@@ -35,6 +39,7 @@ export interface ResolvedCapabilities {
 }
 
 const MARKETING_PREFIX = 'marketing.social.'
+const CMS_PREFIX = 'cms.'
 
 /**
  * Single source of truth for effective capabilities.
@@ -146,10 +151,15 @@ export async function resolveEffectiveCapabilities(
   }
 
   if (input.enforceModules !== false && input.tenantId && input.modules) {
-    const hasMarketing = input.modules.includes('marketing')
-    if (!hasMarketing) {
+    const gatedPrefixes: string[] = []
+    if (!hasModuleEntitlement(input.modules, 'marketing'))
+      gatedPrefixes.push(MARKETING_PREFIX)
+    if (!hasModuleEntitlement(input.modules, 'cms'))
+      gatedPrefixes.push(CMS_PREFIX)
+
+    if (gatedPrefixes.length) {
       for (const capability of [...granted]) {
-        if (capability.startsWith(MARKETING_PREFIX))
+        if (gatedPrefixes.some(prefix => capability.startsWith(prefix)))
           granted.delete(capability)
       }
     }
