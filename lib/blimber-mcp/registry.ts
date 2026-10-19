@@ -2,11 +2,14 @@
  * Unified tool catalog for Blimber MCP / Custom GPT Actions.
  */
 
+import type { CmsToolName } from './cms'
+import type { BlimberMcpToolDescriptor } from './types'
+
 import { META_TOOL_DESCRIPTIONS, type MetaToolName } from '../meta-ads'
 import { ADS_GOOGLE_TOOL_DESCRIPTORS } from './ads/google'
 import { listAdsMetaAliasDescriptors } from './ads/meta'
+import { CMS_TOOL_DESCRIPTIONS, CMS_TOOL_NAMES } from './cms'
 import { MARKETING_TOOL_DESCRIPTIONS, type MarketingToolName } from './marketing-tools'
-import type { BlimberMcpToolDescriptor } from './types'
 
 export const BLIMBER_MCP_VERSION = '0.1.0'
 
@@ -94,6 +97,26 @@ export function listMarketingToolDescriptors(): BlimberMcpToolDescriptor[] {
   })
 }
 
+export function listCmsToolDescriptors(): BlimberMcpToolDescriptor[] {
+  const http: Record<CmsToolName, { path: string, method: 'GET' | 'POST' }> = {
+    'cms.list_documents': { path: '/api/cms/pages', method: 'GET' },
+    'cms.get_document': { path: '/api/cms/documents/{id}', method: 'GET' },
+    'cms.publish_document': { path: '/api/cms/documents/{id}/publish', method: 'POST' },
+  }
+
+  return CMS_TOOL_NAMES.map(name => ({
+    name,
+    domain: 'cms' as const,
+    description: CMS_TOOL_DESCRIPTIONS[name],
+    status: 'ready' as const,
+    httpPath: http[name].path,
+    httpMethod: http[name].method,
+    notes: name === 'cms.publish_document'
+      ? 'Exige cms.publish. cms.pages.update e cms.publications.update não publicam.'
+      : 'Exige cms.read.',
+  }))
+}
+
 export function listLegacyMetaToolDescriptors(): BlimberMcpToolDescriptor[] {
   return (Object.keys(META_TOOL_DESCRIPTIONS) as MetaToolName[]).map(name => ({
     name,
@@ -117,13 +140,14 @@ export function buildBlimberMcpRegistry(): {
     ...listLegacyMetaToolDescriptors(),
     ...listAdsMetaAliasDescriptors(),
     ...ADS_GOOGLE_TOOL_DESCRIPTORS,
+    ...listCmsToolDescriptors(),
     ...CRM_STUB_TOOLS,
   ]
 
   return {
     server: 'blimber',
     version: BLIMBER_MCP_VERSION,
-    domains: ['platform', 'marketing', 'ads.meta', 'ads.google', 'brand', 'crm'],
+    domains: ['platform', 'marketing', 'ads.meta', 'ads.google', 'cms', 'brand', 'crm'],
     tools,
   }
 }

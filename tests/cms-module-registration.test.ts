@@ -200,6 +200,7 @@ describe('menu do CMS', () => {
       ['Visão geral', '/cms'],
       ['Páginas', '/cms/pages'],
       ['Publicações', '/cms/publications'],
+      ['Coleções', '/cms/collections'],
       ['Mídia', '/cms/media'],
       ['Configurações', '/cms/settings'],
     ])
@@ -229,6 +230,8 @@ describe('presets e defaults de cargos', () => {
     expect(editor!.capabilities).not.toContain('cms.publish')
     expect(editor!.capabilities).toContain('cms.navigation.manage')
     expect(publisher!.capabilities).toContain('cms.publish')
+    expect(publisher!.capabilities).not.toContain('cms.schemas.manage')
+    expect(siteAdmin!.capabilities).toContain('cms.schemas.manage')
     expect([...siteAdmin!.capabilities].sort()).toEqual([...CMS_CAPABILITIES].sort())
   })
 
@@ -255,16 +258,23 @@ describe('presets e defaults de cargos', () => {
   })
 
   it('a migração semeia os mesmos presets e o alias no is_tenant_module_active', () => {
-    const sql = readFileSync(
+    const entitlement = readFileSync(
       fileURLToPath(new URL('../supabase/migrations/20261019110000_cms_module_entitlement.sql', import.meta.url)),
       'utf8',
     )
+    const collections = readFileSync(
+      fileURLToPath(new URL('../supabase/migrations/20261019140000_cms_collections.sql', import.meta.url)),
+      'utf8',
+    )
+    const sql = `${entitlement}\n${collections}`
     for (const preset of CMS_ROLE_PRESETS) {
-      expect(sql).toContain(`'${preset.name}', '${preset.slug}'`)
-      expect(sql).toContain(preset.description)
+      expect(entitlement).toContain(`'${preset.name}', '${preset.slug}'`)
+      expect(entitlement).toContain(preset.description)
     }
     for (const capability of CMS_CAPABILITIES)
       expect(sql).toContain(`'${capability}'`)
+    expect(collections).toContain('\'cms.schemas.manage\'')
+    expect(collections).not.toMatch(/'atendente'[\s\S]{0,200}'cms\.schemas\.manage'/)
     expect(sql).toMatch(/CREATE OR REPLACE FUNCTION public\.is_tenant_module_active/)
     expect(sql).toMatch(/module_name IN \('cms', 'article'\)/)
   })

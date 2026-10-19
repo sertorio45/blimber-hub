@@ -253,6 +253,12 @@ export const navMenu: NavMenu[] = [
             capability: 'cms.read',
           },
           {
+            title: 'Coleções',
+            icon: 'i-lucide-layers',
+            link: '/cms/collections',
+            capability: 'cms.read',
+          },
+          {
             title: 'Mídia',
             icon: 'i-lucide-images',
             link: '/cms/media',

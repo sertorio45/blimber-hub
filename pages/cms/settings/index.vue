@@ -45,6 +45,12 @@ const newsPrefix = ref('noticias')
 const errors = ref<Record<string, string>>({})
 const boundSiteId = ref<string | null>(null)
 
+const headerDescription = computed(() => {
+  if (sites.value.length > 1)
+    return 'Escolha o site no seletor. Nome, idioma e endereços valem só para ele.'
+  return 'Nome, idioma e os endereços de artigos e notícias.'
+})
+
 const LOCALES = [
   { value: 'pt-BR', label: 'Português (Brasil)' },
   { value: 'pt-PT', label: 'Português (Portugal)' },
@@ -168,11 +174,18 @@ async function save() {
     <div class="mx-auto max-w-2xl space-y-6">
       <CmsPageHeader
         title="Configurações"
-        description="Nome, idioma e os endereços de artigos e notícias."
+        :description="headerDescription"
         :sites="sites"
         :current-site-id="currentSite?.id"
         @select-site="selectSite"
-      />
+      >
+        <template v-if="currentSite" #actions>
+          <Button variant="outline" @click="createOpen = true">
+            <Icon name="lucide:plus" class="mr-2 size-4" aria-hidden="true" />
+            Novo site
+          </Button>
+        </template>
+      </CmsPageHeader>
 
       <div v-if="!access.ready.value || showSkeleton" class="space-y-3" aria-busy="true">
         <Skeleton class="h-10 w-full" />
@@ -193,6 +206,9 @@ async function save() {
       </CmsEmptyState>
 
       <form v-else class="border rounded-xl bg-card p-5 space-y-5" novalidate @submit.prevent="save">
+        <p v-if="sites.length === 1" class="text-xs text-muted-foreground">
+          Esta empresa tem um site. Use Novo site para criar outro — o seletor aparece quando houver mais de um.
+        </p>
         <div class="space-y-1.5">
           <Label for="cms-site-name">Nome</Label>
           <Input id="cms-site-name" v-model="name" maxlength="160" autocomplete="off" :aria-invalid="Boolean(errors.name) || undefined" />
