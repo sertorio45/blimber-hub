@@ -18,6 +18,7 @@ export function useCmsAccess() {
   const canRead = computed(() => can('cms.read'))
   const canPublish = computed(() => can('cms.publish'))
   const canManageSettings = computed(() => can('cms.settings.manage'))
+  const canManageSchemas = computed(() => can('cms.schemas.manage'))
   const canReadMedia = computed(() => can('cms.media.read'))
   const canUploadMedia = computed(() => can('cms.media.upload'))
   const canDeleteMedia = computed(() => can('cms.media.delete'))
@@ -39,6 +40,7 @@ export function useCmsAccess() {
     canRead,
     canPublish,
     canManageSettings,
+    canManageSchemas,
     canReadMedia,
     canUploadMedia,
     canDeleteMedia,

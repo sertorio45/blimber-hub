@@ -21,6 +21,8 @@ export const CMS_TABLES = {
   legacyMap: 'cms_legacy_map',
   eventOutbox: 'cms_event_outbox',
   publicationJobs: 'cms_publication_jobs',
+  collectionDefinitions: 'cms_collection_definitions',
+  entries: 'cms_entries',
 } as const
 
 export const CMS_RPC = {
@@ -572,6 +574,112 @@ export const cmsUpdateTermInputSchema = z.object({
   parentId: uuid.nullable().optional(),
 })
 export type CmsUpdateTermInput = z.infer<typeof cmsUpdateTermInputSchema>
+
+// ---- Collections (versioned schema + entries) ----
+
+/** Stable key for a collection or one of its fields. */
+export const cmsCollectionKeySchema = z.string()
+  .trim()
+  .min(1)
+  .max(64)
+  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Use apenas letras minúsculas, números e hífens')
+
+export const cmsCollectionFieldTypeSchema = z.enum(['text', 'number', 'boolean', 'media'])
+export type CmsCollectionFieldType = z.infer<typeof cmsCollectionFieldTypeSchema>
+
+export const CMS_COLLECTION_SCHEMA_VERSION = 1 as const
+export const CMS_COLLECTION_FIELD_LIMIT = 40
+
+export const cmsCollectionFieldSchema = z.object({
+  key: cmsCollectionKeySchema,
+  label: z.string().trim().min(1).max(80),
+  type: cmsCollectionFieldTypeSchema,
+  required: z.boolean().default(false),
+})
+export type CmsCollectionField = z.infer<typeof cmsCollectionFieldSchema>
+
+/**
+ * Versioned collection schema. MVP accepts only version 1, with text, number,
+ * boolean and media-ref fields. Unknown versions fail validation on purpose.
+ */
+export const cmsCollectionSchemaSchema = z.object({
+  version: z.literal(CMS_COLLECTION_SCHEMA_VERSION),
+  fields: z.array(cmsCollectionFieldSchema).min(1).max(CMS_COLLECTION_FIELD_LIMIT),
+}).superRefine((schema, ctx) => {
+  const seen = new Set<string>()
+  for (const [index, field] of schema.fields.entries()) {
+    if (seen.has(field.key)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['fields', index, 'key'],
+        message: 'Esta chave já está em uso',
+      })
+    }
+    seen.add(field.key)
+  }
+})
+export type CmsCollectionSchema = z.infer<typeof cmsCollectionSchemaSchema>
+
+export const cmsCollectionDefinitionSchema = z.object({
+  id: uuid,
+  tenantId: uuid,
+  siteId: uuid,
+  key: cmsCollectionKeySchema,
+  name: z.string().min(1).max(80),
+  schema: cmsCollectionSchemaSchema,
+  createdAt: isoDate,
+  updatedAt: isoDate,
+})
+export type CmsCollectionDefinition = z.infer<typeof cmsCollectionDefinitionSchema>
+
+export const cmsEntryStatusSchema = z.enum(['draft', 'published'])
+export type CmsEntryStatus = z.infer<typeof cmsEntryStatusSchema>
+
+export const cmsEntrySchema = z.object({
+  id: uuid,
+  tenantId: uuid,
+  siteId: uuid,
+  definitionId: uuid,
+  payload: z.record(z.unknown()),
+  status: cmsEntryStatusSchema,
+  createdAt: isoDate,
+  updatedAt: isoDate,
+})
+export type CmsEntry = z.infer<typeof cmsEntrySchema>
+
+export const cmsCreateCollectionInputSchema = z.object({
+  siteId: uuid,
+  key: cmsCollectionKeySchema,
+  name: z.string().trim().min(1).max(80),
+  schema: cmsCollectionSchemaSchema,
+})
+export type CmsCreateCollectionInput = z.infer<typeof cmsCreateCollectionInputSchema>
+
+export const cmsUpdateCollectionInputSchema = z.object({
+  name: z.string().trim().min(1).max(80).optional(),
+  schema: cmsCollectionSchemaSchema.optional(),
+}).refine(value => value.name !== undefined || value.schema !== undefined, {
+  message: 'Nada para salvar',
+})
+export type CmsUpdateCollectionInput = z.infer<typeof cmsUpdateCollectionInputSchema>
+
+export const cmsCollectionListQuerySchema = z.object({
+  siteId: uuid.optional(),
+})
+export type CmsCollectionListQuery = z.infer<typeof cmsCollectionListQuerySchema>
+
+export const cmsSaveEntryInputSchema = z.object({
+  payload: z.record(z.unknown()),
+  status: cmsEntryStatusSchema.optional(),
+})
+export type CmsSaveEntryInput = z.infer<typeof cmsSaveEntryInputSchema>
+
+export const cmsEntryListQuerySchema = z.object({
+  status: cmsEntryStatusSchema.optional(),
+  cursor: z.string().max(200).optional(),
+  limit: z.coerce.number().int().min(1).max(CMS_LIMITS.maxPageSize).default(CMS_LIMITS.defaultPageSize),
+})
+export type CmsEntryListQuery = z.infer<typeof cmsEntryListQuerySchema>
 
 // ---- Response envelopes ----
 

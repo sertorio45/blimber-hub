@@ -107,6 +107,7 @@ export const CMS_CAPABILITIES = [
   'cms.navigation.manage',
   'cms.appearance.manage',
   'cms.settings.manage',
+  'cms.schemas.manage',
 ] as const
 
 export type PlatformCapability = typeof PLATFORM_CAPABILITIES[number]
@@ -277,6 +278,7 @@ export const CAPABILITY_LABELS: Partial<Record<WorkspaceCapability, string>> = {
   'cms.navigation.manage': 'Gerenciar menus do site',
   'cms.appearance.manage': 'Gerenciar aparência do site',
   'cms.settings.manage': 'Gerenciar configurações do site',
+  'cms.schemas.manage': 'Gerenciar coleções',
 }
 
 /** Header carrying the organization the client is asking for. Always revalidated server-side. */

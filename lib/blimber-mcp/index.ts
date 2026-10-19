@@ -38,6 +38,18 @@ export {
   invokeAdsGoogleTool,
 } from './ads/google'
 export {
+  authorizeCmsMcpTool,
+  CMS_TOOL_CAPABILITY,
+  CMS_TOOL_DESCRIPTIONS,
+  CMS_TOOL_NAMES,
+  CMS_TOOL_SCHEMAS,
+  cmsGetDocument,
+  cmsListDocuments,
+  cmsPublishDocument,
+  type CmsToolName,
+  invokeCmsTool,
+} from './cms'
+export {
   listClients,
   listClientsSchema,
 } from './platform/clients'

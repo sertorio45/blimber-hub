@@ -1,4 +1,13 @@
-import type { CmsDocumentKind, CmsPublicationJobStatus, CmsPublicationType, CmsPublicStatus, CmsRevision, CmsSite } from '~/lib/cms/contracts'
+import type {
+  CmsCollectionDefinition,
+  CmsDocumentKind,
+  CmsEntry,
+  CmsPublicationJobStatus,
+  CmsPublicationType,
+  CmsPublicStatus,
+  CmsRevision,
+  CmsSite,
+} from '~/lib/cms/contracts'
 
 import { CMS_LIMITS } from '~/lib/cms/contracts'
 
@@ -10,6 +19,22 @@ export const CMS_PUBLICATION_TYPE_LABELS: Record<CmsPublicationType, string> = {
 export const CMS_PUBLICATION_TYPE_HINTS: Record<CmsPublicationType, string> = {
   article: 'Conteúdo aprofundado e atemporal, como guias, análises e opiniões.',
   news: 'Fato recente com data, ideal para comunicados e novidades.',
+}
+
+export const CMS_COLLECTION_FIELD_LABELS = {
+  text: 'Texto',
+  number: 'Número',
+  boolean: 'Sim/não',
+  media: 'Mídia',
+} as const
+
+/** First text field, otherwise a neutral placeholder. */
+export function cmsEntryLabel(definition: CmsCollectionDefinition, entry: CmsEntry): string {
+  const textField = definition.schema.fields.find(field => field.type === 'text')
+  const value = textField ? entry.payload[textField.key] : null
+  if (typeof value === 'string' && value.trim())
+    return value.trim()
+  return 'Sem título'
 }
 
 export const CMS_KIND_LABELS: Record<CmsDocumentKind, string> = {
