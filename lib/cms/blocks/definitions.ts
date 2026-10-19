@@ -130,7 +130,7 @@ export const imageTextPropsSchema = z.object({
  */
 function collectionLinkProps() {
   return {
-    collectionKey: text('Coleção vinculada (chave)', 64, 'Ex.: depoimentos — vazio = itens manuais'),
+    collectionKey: text('Coleção vinculada', 64, 'Selecione uma coleção no menu'),
     collectionLimit: field(z.number().int().min(1).max(20).default(6), {
       label: 'Quantidade da coleção',
       widget: 'number',
