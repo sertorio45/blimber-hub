@@ -27,6 +27,7 @@ import { Buffer } from 'node:buffer'
 
 import { z } from 'zod'
 
+import { validatePageBlocks } from '~/lib/cms/blocks'
 import {
   CMS_LIMITS,
   CMS_RPC,
@@ -119,6 +120,26 @@ export function assertPayloadLimits(payload: unknown): void {
       maxBlocks: CMS_LIMITS.maxBlocksPerDocument,
     })
   }
+}
+
+/** Page documents may only store blocks from the registry. Unknown types are 422. */
+export function assertPageBlocks(kind: CmsDocumentKind, blocks: unknown): void {
+  if (kind !== 'page')
+    return
+  const issues = validatePageBlocks(blocks)
+  if (!issues.length)
+    return
+  const primary = issues.find(issue => issue.code === 'unknown_block') ?? issues[0]!
+  throw cmsError(422, 'validation_failed', primary.message, {
+    field: 'blocks',
+    reason: primary.code,
+    message: primary.message,
+    issues: issues.map(issue => ({
+      path: ['payload', ...issue.path],
+      code: issue.code,
+      message: issue.message,
+    })),
+  })
 }
 
 /** Limits are checked on the raw body first, then the contract schema runs. */
@@ -336,6 +357,7 @@ export async function saveDraft(ctx: CmsDocumentContext, input: CmsSaveDraftInpu
   const document = ctx.document
   assertCmsCapability(ctx, documentCapability(document.kind, 'update'))
   assertPayloadLimits(input.payload)
+  assertPageBlocks(document.kind, input.payload.blocks)
 
   let publicationType: CmsPublicationType | undefined
   if (input.publicationType && input.publicationType !== document.publication_type) {
@@ -433,6 +455,7 @@ export async function publishDocument(ctx: CmsDocumentContext, input: CmsPublish
   const publishable = schema.safeParse(document.draft_payload ?? {})
   if (!publishable.success)
     throw cmsValidationError(publishable.error, 'Revise os campos obrigatórios antes de publicar')
+  assertPageBlocks(document.kind, publishable.data.blocks)
 
   const { data, error } = await ctx.client.rpc(CMS_RPC.publishRevision, {
     p_document_id: document.id,

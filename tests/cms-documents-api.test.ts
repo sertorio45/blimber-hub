@@ -3,6 +3,7 @@ import type { CmsFakeRow, CmsTestEvent } from './helpers/cms-fake-supabase'
 import type { WorkspaceContext } from '~/server/utils/workspace-context'
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { createBlock } from '~/lib/cms/blocks'
 import { CMS_LIMITS, CMS_RPC } from '~/lib/cms/contracts'
 import deleteDocument from '~/server/api/cms/documents/[id].delete'
 import getDocument from '~/server/api/cms/documents/[id].get'
@@ -354,6 +355,59 @@ describe('documentos CMS — rascunho', () => {
     expect(update?.filters).toContainEqual({ op: 'eq', column: 'tenant_id', value: TENANT_A })
     expect(update?.filters).toContainEqual({ op: 'eq', column: 'edit_version', value: 5 })
   })
+
+  it('bloco desconhecido na página retorna 422 e não grava', async () => {
+    const failure = await failureOf(run(saveDraft, createCmsEvent({
+      params: { id: DOC_A },
+      body: {
+        expectedVersion: 1,
+        payload: {
+          title: 'Página A',
+          slug: 'pagina-a',
+          blocks: [{ id: 'b1', type: 'grapes', version: 1, props: {} }],
+        },
+      },
+    })))
+
+    expect(failure).toMatchObject({
+      status: 422,
+      code: 'validation_failed',
+      details: { field: 'blocks', reason: 'unknown_block' },
+    })
+    expect(fake.callsTo('cms_documents', 'update')).toHaveLength(0)
+  })
+
+  it('persiste os blocos válidos no rascunho', async () => {
+    const hero = createBlock('hero')
+    hero.props = { ...hero.props, title: 'Bem-vindo' }
+    const response = await run(saveDraft, createCmsEvent({
+      params: { id: DOC_A },
+      body: {
+        expectedVersion: 1,
+        payload: { title: 'Página A', slug: 'pagina-a', blocks: [hero] },
+      },
+    }))
+
+    expect(response.data.draftPayload.blocks).toEqual([hero])
+    expect(document().draft_payload).toMatchObject({ blocks: [hero] })
+  })
+
+  it('publicação aceita bloco fora do catálogo de páginas', async () => {
+    Object.assign(document(), { kind: 'publication', publication_type: 'article' })
+    const response = await run(saveDraft, createCmsEvent({
+      params: { id: DOC_A },
+      body: {
+        expectedVersion: 1,
+        payload: {
+          title: 'Artigo',
+          slug: 'artigo',
+          blocks: [{ id: 'b1', type: 'grapes', version: 1, props: {} }],
+        },
+      },
+    }))
+
+    expect(response.data.draftPayload.blocks?.[0]?.type).toBe('grapes')
+  })
 })
 
 describe('documentos CMS — publicação, lixeira e restauração', () => {
@@ -387,6 +441,31 @@ describe('documentos CMS — publicação, lixeira e restauração', () => {
     })))
 
     expect(failure).toMatchObject({ status: 422, code: 'validation_failed' })
+    expect(fake.rpcCalls).toHaveLength(0)
+  })
+
+  it('página com bloco desconhecido retorna 422 antes do RPC', async () => {
+    Object.assign(document(), {
+      edit_version: 2,
+      title: 'Sobre',
+      slug: 'sobre',
+      draft_payload: {
+        title: 'Sobre',
+        slug: 'sobre',
+        blocks: [{ id: 'b1', type: 'grapes', version: 1, props: {} }],
+      },
+    })
+
+    const failure = await failureOf(run(publishDocument, createCmsEvent({
+      params: { id: DOC_A },
+      body: { expectedVersion: 2 },
+    })))
+
+    expect(failure).toMatchObject({
+      status: 422,
+      code: 'validation_failed',
+      details: { reason: 'unknown_block' },
+    })
     expect(fake.rpcCalls).toHaveLength(0)
   })
 

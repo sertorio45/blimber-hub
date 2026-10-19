@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { CmsDocumentPayload, CmsPublicationType } from '~/lib/cms/contracts'
+import type { CmsBlock, CmsDocumentPayload, CmsPublicationType } from '~/lib/cms/contracts'
 
 import { computed, reactive, ref, watch } from 'vue'
 import { toast } from 'vue-sonner'
@@ -10,6 +10,7 @@ import CmsGate from '~/components/cms/CmsGate.vue'
 import CmsRevisionHistorySheet from '~/components/cms/CmsRevisionHistorySheet.vue'
 import CmsSlugField from '~/components/cms/CmsSlugField.vue'
 import CmsStatusBadge from '~/components/cms/CmsStatusBadge.vue'
+import CmsPageBuilder from '~/components/cms/page-builder/CmsPageBuilder.vue'
 import { Button } from '~/components/ui/button'
 import { Input } from '~/components/ui/input'
 import { Label } from '~/components/ui/label'
@@ -67,6 +68,7 @@ const form = reactive({
   canonicalUrl: '',
   noindex: false,
   eventDate: '',
+  blocks: [] as CmsBlock[],
 })
 const editVersion = ref(0)
 const fieldErrors = ref<Record<string, string>>({})
@@ -79,6 +81,13 @@ const displaced = ref(false)
 const loadedTenantId = ref<string | null>(null)
 
 const kind = computed(() => editor.document.value?.kind ?? 'page')
+const blockError = computed(() => {
+  const direct = fieldErrors.value.blocks
+  if (direct)
+    return direct
+  const nested = Object.entries(fieldErrors.value).find(([key]) => key === 'blocks' || key.startsWith('blocks.'))
+  return nested?.[1]
+})
 const canEdit = computed(() => Boolean(editor.document.value) && access.canUpdate(kind.value))
 const isPublished = computed(() => editor.document.value?.publicStatus === 'published')
 const slugLocked = computed(() => {
@@ -125,7 +134,7 @@ function payloadFromForm(): CmsDocumentPayload {
     slug: form.slug || undefined,
     excerpt: form.excerpt || undefined,
     body: form.body,
-    blocks: current?.blocks ?? [],
+    blocks: form.blocks,
     cover: current?.cover ?? null,
     authorId: current?.authorId ?? null,
     termIds: current?.termIds ?? [],
@@ -144,6 +153,7 @@ function applyPayload(payload: CmsDocumentPayload, publicationType?: CmsPublicat
   form.slug = payload.slug ?? ''
   form.excerpt = payload.excerpt ?? ''
   form.body = payload.body ?? ''
+  form.blocks = JSON.parse(JSON.stringify(payload.blocks ?? [])) as CmsBlock[]
   form.seoTitle = payload.seo?.title ?? ''
   form.seoDescription = payload.seo?.description ?? ''
   form.canonicalUrl = payload.seo?.canonicalUrl ?? ''
@@ -221,6 +231,7 @@ function clearEditor() {
     form.slug = ''
     form.excerpt = ''
     form.body = ''
+    form.blocks = []
     form.publicationType = null
     form.sourceName = ''
     form.sourceUrl = ''
@@ -385,7 +396,7 @@ async function reloadServer() {
 </script>
 
 <template>
-  <div class="mx-auto max-w-4xl space-y-6">
+  <div class="mx-auto space-y-6" :class="kind === 'page' && editor.document.value ? 'max-w-[90rem]' : 'max-w-4xl'">
     <CmsGate
       :allowed="access.canRead.value"
       :error="displaced ? null : editor.loadError.value"
@@ -560,7 +571,15 @@ async function reloadServer() {
             </p>
           </div>
 
-          <div class="space-y-2">
+          <div v-if="kind === 'page'" class="space-y-2">
+            <Label>Conteúdo</Label>
+            <CmsPageBuilder v-model="form.blocks" :disabled="!canEdit" />
+            <p v-if="blockError" class="text-xs text-destructive" role="alert">
+              {{ blockError }}
+            </p>
+          </div>
+
+          <div v-else class="space-y-2">
             <Label :for="bodyId">Conteúdo</Label>
             <Textarea
               :id="bodyId"
