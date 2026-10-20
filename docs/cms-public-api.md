@@ -170,7 +170,7 @@ Só entram rotas canônicas de documentos publicados (teto de 5.000 URLs). `loc`
 
 ### 2.6 `GET /sites/:siteKey/media/:assetId`
 
-Entrega a imagem de uma referência de mídia. Responde **302** para uma URL assinada gerada na hora (válida por 1h) — use a própria rota como `src` da imagem:
+Entrega a imagem de uma referência de mídia **diretamente, no domínio do Hub** (streaming interno — a URL do storage nunca aparece para o visitante). Use a própria rota como `src` da imagem:
 
 ```html
 <img src="https://app.blimber.com.br/api/public/cms/v1/sites/horizon-imoveis/media/a1000000-0000-4000-8000-000000000613" alt="...">
@@ -297,11 +297,11 @@ curl "https://app.blimber.com.br/api/public/cms/v1/sites/horizon-imoveis/publica
 | GET | `/sites/:siteKey/collections/:collectionKey?limit=` | Registros publicados de uma coleção |
 | GET | `/sites/:siteKey/sitemap` | Sitemap em JSON |
 | GET | `/sites/:siteKey/sitemap.xml` | Sitemap em XML |
-| GET | `/sites/:siteKey/media/:assetId` | Imagem da referência (302 para URL assinada) |
+| GET | `/sites/:siteKey/media/:assetId` | Imagem da referência (bytes no domínio do Hub) |
 | GET | `/preview?token=` | Preview de uma revisão (token de 10 min) |
 
 ## Changelog
 
-- **2026-10-20** — Rota pública de mídia (`/sites/:siteKey/media/:assetId`, 302 para URL assinada) — imagens de capas, coleções e blocos acessíveis direto pela API.
+- **2026-10-20** — Rota pública de mídia (`/sites/:siteKey/media/:assetId`) servindo os bytes no domínio do Hub — imagens de capas, coleções e blocos acessíveis direto pela API, sem expor a URL do storage.
 - **2026-10-20** — Rotas públicas de coleções (`/collections`, `/collections/:collectionKey`); blocos vinculados expandidos no `resolve`; novo tipo de campo `gallery` (lista de mídias); salvar no Hub publica imediatamente.
 - **2026-10-19** — Contrato inicial: `resolve`, `publications`, `sitemap`, `preview`, mapa de blocos.

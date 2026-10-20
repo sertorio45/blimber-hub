@@ -14,6 +14,8 @@ import type {
 } from '~/lib/cms/contracts'
 import type { WorkspaceClient } from '~/server/utils/workspace-context'
 
+import { Buffer } from 'node:buffer'
+
 import { z } from 'zod'
 
 import {
@@ -673,29 +675,26 @@ async function loadPublishedCollectionEntries(
   }))
 }
 
-export const PUBLIC_MEDIA_COLUMNS = 'id, bucket, object_path, status, lifecycle'
-
-/** Signed URLs are generated per request; 1h comfortably outlives the CDN cache of the redirect. */
-const PUBLIC_MEDIA_SIGNED_SECONDS = 60 * 60
+export const PUBLIC_MEDIA_COLUMNS = 'id, bucket, object_path, mime_type, status, lifecycle'
 
 interface PublicMediaRow {
   id: string
   bucket: string | null
   object_path: string
+  mime_type: string | null
   status: string
   lifecycle: string | null
 }
 
 /**
- * Resolves a media reference (`assetId` from blocks, covers and collection
- * payloads) to a signed URL. The asset must belong to the site's tenant —
- * an id from another tenant is a 404, never a leak.
+ * Loads a media asset that belongs to the site's tenant. An id from another
+ * tenant is a 404, never a leak.
  */
-export async function resolvePublicMediaUrl(
+async function loadPublicMediaAsset(
   client: WorkspaceClient,
   siteKey: string | null | undefined,
   assetId: string | null | undefined,
-): Promise<string> {
+): Promise<PublicMediaRow> {
   const id = z.string().uuid().safeParse(assetId ?? '')
   if (!id.success)
     throw cmsNotFound('Mídia não encontrada')
@@ -712,13 +711,29 @@ export async function resolvePublicMediaUrl(
   const asset = data as PublicMediaRow | null
   if (!asset || asset.status !== 'ready' || asset.lifecycle !== 'active')
     throw cmsNotFound('Mídia não encontrada')
+  return asset
+}
 
-  const { data: signed, error: signError } = await client.storage
+/**
+ * Downloads the bytes of a media reference (`assetId` from blocks, covers and
+ * collection payloads) so the Hub can serve them on its own domain — the
+ * storage URL (signed, expiring) never reaches the visitor.
+ */
+export async function downloadPublicMedia(
+  client: WorkspaceClient,
+  siteKey: string | null | undefined,
+  assetId: string | null | undefined,
+): Promise<{ body: Buffer, mimeType: string }> {
+  const asset = await loadPublicMediaAsset(client, siteKey, assetId)
+  const { data, error } = await client.storage
     .from(asset.bucket || 'marketing-assets')
-    .createSignedUrl(asset.object_path, PUBLIC_MEDIA_SIGNED_SECONDS)
-  if (signError || !signed?.signedUrl)
+    .download(asset.object_path)
+  if (error || !data)
     throw cmsNotFound('Mídia não encontrada')
-  return signed.signedUrl as string
+  return {
+    body: Buffer.from(await data.arrayBuffer()),
+    mimeType: asset.mime_type || data.type || 'application/octet-stream',
+  }
 }
 
 const COLLECTION_BLOCK_TYPES = new Set(['testimonials', 'cards', 'faq'])
