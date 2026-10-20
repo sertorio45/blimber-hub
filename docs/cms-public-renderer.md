@@ -158,7 +158,7 @@ A resposta segue o `resolve`, com `preview: true` e `seo.noindex: true`. Token e
 | `button` | `label`, `href` |
 | `gallery` | `items` (lista de `media`) |
 
-`media` é `{ assetId, objectPath?, alt?, credit? }`. Não é uma URL assinada. O renderer resolve a mídia pelo `assetId` no próprio domínio, sem guardar URL temporária em HTML cacheado.
+`media` é `{ assetId, objectPath?, alt?, credit? }`. Não é uma URL assinada. Para exibir, o renderer usa a rota pública `GET /sites/:siteKey/media/:assetId` como `src` (ela responde 302 para uma URL assinada gerada na hora; asset de outro tenant ou inexistente responde 404), sem guardar URL temporária em HTML cacheado. O mesmo vale para `cover` de publicações e campos `media`/`gallery` de coleções.
 
 Tipo desconhecido: ignorar o bloco e seguir. Não quebrar a página.
 

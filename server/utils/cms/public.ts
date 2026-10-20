@@ -673,6 +673,54 @@ async function loadPublishedCollectionEntries(
   }))
 }
 
+export const PUBLIC_MEDIA_COLUMNS = 'id, bucket, object_path, status, lifecycle'
+
+/** Signed URLs are generated per request; 1h comfortably outlives the CDN cache of the redirect. */
+const PUBLIC_MEDIA_SIGNED_SECONDS = 60 * 60
+
+interface PublicMediaRow {
+  id: string
+  bucket: string | null
+  object_path: string
+  status: string
+  lifecycle: string | null
+}
+
+/**
+ * Resolves a media reference (`assetId` from blocks, covers and collection
+ * payloads) to a signed URL. The asset must belong to the site's tenant —
+ * an id from another tenant is a 404, never a leak.
+ */
+export async function resolvePublicMediaUrl(
+  client: WorkspaceClient,
+  siteKey: string | null | undefined,
+  assetId: string | null | undefined,
+): Promise<string> {
+  const id = z.string().uuid().safeParse(assetId ?? '')
+  if (!id.success)
+    throw cmsNotFound('Mídia não encontrada')
+
+  const site = await loadPublicSite(client, siteKey)
+  const { data, error } = await client
+    .from('media_assets')
+    .select(PUBLIC_MEDIA_COLUMNS)
+    .eq('id', id.data)
+    .eq('tenant_id', site.tenant_id)
+    .maybeSingle()
+  assertNoDbError(error)
+
+  const asset = data as PublicMediaRow | null
+  if (!asset || asset.status !== 'ready' || asset.lifecycle !== 'active')
+    throw cmsNotFound('Mídia não encontrada')
+
+  const { data: signed, error: signError } = await client.storage
+    .from(asset.bucket || 'marketing-assets')
+    .createSignedUrl(asset.object_path, PUBLIC_MEDIA_SIGNED_SECONDS)
+  if (signError || !signed?.signedUrl)
+    throw cmsNotFound('Mídia não encontrada')
+  return signed.signedUrl as string
+}
+
 const COLLECTION_BLOCK_TYPES = new Set(['testimonials', 'cards', 'faq'])
 
 function payloadText(payload: Record<string, unknown>, ...keys: string[]): string {

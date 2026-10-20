@@ -168,7 +168,19 @@ Exemplo real (trecho do `payload` de um imóvel):
 
 Só entram rotas canônicas de documentos publicados (teto de 5.000 URLs). `loc` usa o domínio primário verificado do site quando ele existe; senão repete `path`. O site deve publicar seu `/sitemap.xml` fazendo proxy desta rota (ou montar as URLs a partir de `path`) e cuidar do próprio `/robots.txt`.
 
-### 2.6 Preview
+### 2.6 `GET /sites/:siteKey/media/:assetId`
+
+Entrega a imagem de uma referência de mídia. Responde **302** para uma URL assinada gerada na hora (válida por 1h) — use a própria rota como `src` da imagem:
+
+```html
+<img src="https://app.blimber.com.br/api/public/cms/v1/sites/horizon-imoveis/media/a1000000-0000-4000-8000-000000000613" alt="...">
+```
+
+- O arquivo precisa pertencer à empresa (tenant) do site: `assetId` de outra empresa responde **404**.
+- Arquivo inexistente, ainda processando ou site inativo: **404**.
+- Vale para qualquer referência: capa de artigo, `foto-capa`, `galeria`, imagens de blocos.
+
+### 2.7 Preview
 
 1. No Hub (com sessão): `POST /api/cms/documents/:id/preview-token` → `{ "data": { "token", "expiresAt", "revisionId", "previewPath" } }`
 2. O site chama `GET /api/public/cms/v1/preview?token=`
@@ -198,7 +210,7 @@ Imagem **nunca** sai como URL assinada (ela expira). Sai a referência permanent
 ```
 
 - `assetId` e `objectPath` são obrigatórios na prática (`objectPath` pode vir ausente em registros antigos).
-- O renderer resolve a referência para a URL exibível no próprio domínio. Exemplo de uso: fotos de imóveis (`foto-capa`, `galeria`), foto de corretor, logo de parceiro.
+- Para exibir, o renderer usa a rota pública de mídia com o `assetId`: `GET /sites/:siteKey/media/:assetId` (seção 2.6). Exemplo de uso: fotos de imóveis (`foto-capa`, `galeria`), foto de corretor, logo de parceiro.
 - Campo vazio sai como `null` (mídia) ou `[]` (galeria).
 
 ---
@@ -285,9 +297,11 @@ curl "https://app.blimber.com.br/api/public/cms/v1/sites/horizon-imoveis/publica
 | GET | `/sites/:siteKey/collections/:collectionKey?limit=` | Registros publicados de uma coleção |
 | GET | `/sites/:siteKey/sitemap` | Sitemap em JSON |
 | GET | `/sites/:siteKey/sitemap.xml` | Sitemap em XML |
+| GET | `/sites/:siteKey/media/:assetId` | Imagem da referência (302 para URL assinada) |
 | GET | `/preview?token=` | Preview de uma revisão (token de 10 min) |
 
 ## Changelog
 
+- **2026-10-20** — Rota pública de mídia (`/sites/:siteKey/media/:assetId`, 302 para URL assinada) — imagens de capas, coleções e blocos acessíveis direto pela API.
 - **2026-10-20** — Rotas públicas de coleções (`/collections`, `/collections/:collectionKey`); blocos vinculados expandidos no `resolve`; novo tipo de campo `gallery` (lista de mídias); salvar no Hub publica imediatamente.
 - **2026-10-19** — Contrato inicial: `resolve`, `publications`, `sitemap`, `preview`, mapa de blocos.

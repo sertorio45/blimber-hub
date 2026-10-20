@@ -631,6 +631,49 @@ describe('entrega pública do CMS', () => {
     expect(JSON.stringify(response)).not.toContain('Rascunho secreto')
   })
 
+  it('mídia pública: resolve asset do tenant do site e recusa de outro tenant', async () => {
+    const { resolvePublicMediaUrl } = await import('~/server/utils/cms/public')
+    const assetRow = {
+      id: 'f1000000-0000-4000-8000-000000000001',
+      bucket: 'marketing-assets',
+      object_path: `${TENANT_A}/foto/original.jpg`,
+      status: 'ready',
+      lifecycle: 'active',
+    }
+    const stubWith = (asset: Record<string, unknown> | null) => {
+      const chain = (row: unknown) => ({
+        select: () => ({
+          eq: () => ({
+            eq: () => ({ maybeSingle: async () => ({ data: row, error: null }) }),
+          }),
+        }),
+      })
+      return {
+        from: (table: string) => chain(table === 'cms_sites'
+          ? { id: SITE_A, tenant_id: TENANT_A, site_key: 'empresa-a', name: 'Empresa A', default_locale: 'pt-BR', status: 'active' }
+          : asset),
+        storage: {
+          from: () => ({
+            createSignedUrl: async (path: string) => ({ data: { signedUrl: `https://storage.example/${path}?token=abc` }, error: null }),
+          }),
+        },
+      }
+    }
+
+    await expect(resolvePublicMediaUrl(stubWith(assetRow), 'empresa-a', assetRow.id))
+      .resolves
+      .toBe(`https://storage.example/${assetRow.object_path}?token=abc`)
+    await expect(resolvePublicMediaUrl(stubWith(null), 'empresa-a', assetRow.id))
+      .rejects
+      .toMatchObject({ statusCode: 404 })
+    await expect(resolvePublicMediaUrl(stubWith({ ...assetRow, status: 'processing' }), 'empresa-a', assetRow.id))
+      .rejects
+      .toMatchObject({ statusCode: 404 })
+    await expect(resolvePublicMediaUrl(stubWith(assetRow), 'empresa-a', 'não-uuid'))
+      .rejects
+      .toMatchObject({ statusCode: 404 })
+  })
+
   it('a fila de invalidação não carrega rascunho', async () => {
     await enqueueCmsInvalidation(fake, {
       tenantId: TENANT_A,
