@@ -17,7 +17,7 @@ import { Buffer } from 'node:buffer'
 
 import { z } from 'zod'
 
-import { CMS_TABLES, cmsCollectionSchemaSchema, cmsMediaRefSchema } from '~/lib/cms/contracts'
+import { CMS_COLLECTION_GALLERY_LIMIT, CMS_TABLES, cmsCollectionSchemaSchema, cmsMediaRefSchema } from '~/lib/cms/contracts'
 import { recordCmsAudit } from '~/server/utils/cms/audit'
 import { loadTenantSite } from '~/server/utils/cms/context'
 import { assertNoDbError, cmsDbError, cmsError, cmsNotFound } from '~/server/utils/cms/errors'
@@ -122,6 +122,8 @@ function fieldError(field: CmsCollectionField, message: string): never {
 function emptyField(field: CmsCollectionField): unknown {
   if (field.type === 'boolean')
     return false
+  if (field.type === 'gallery')
+    return []
   return null
 }
 
@@ -170,6 +172,20 @@ export function coerceEntryPayload(
       if (typeof value !== 'boolean')
         fieldError(field, `${field.label} precisa ser sim ou não.`)
       output[field.key] = value
+      continue
+    }
+
+    if (field.type === 'gallery') {
+      if (!Array.isArray(value))
+        fieldError(field, `${field.label} precisa ser uma lista de imagens.`)
+      if (value.length > CMS_COLLECTION_GALLERY_LIMIT)
+        fieldError(field, `${field.label} aceita no máximo ${CMS_COLLECTION_GALLERY_LIMIT} imagens.`)
+      output[field.key] = value.map((item) => {
+        const media = cmsMediaRefSchema.safeParse(item)
+        if (!media.success)
+          fieldError(field, `${field.label} precisa referenciar arquivos da mídia.`)
+        return media.data
+      })
       continue
     }
 

@@ -14,6 +14,7 @@ const schema = cmsCollectionSchemaSchema.parse({
     { key: 'preco', label: 'Preço', type: 'number', required: false },
     { key: 'destaque', label: 'Destaque', type: 'boolean', required: false },
     { key: 'capa', label: 'Capa', type: 'media', required: false },
+    { key: 'fotos', label: 'Fotos', type: 'gallery', required: false },
   ],
 })
 
@@ -28,13 +29,21 @@ describe('coleções', () => {
       preco: 12.5,
       destaque: true,
       capa: { assetId: ASSET_ID, alt: 'Capa' },
+      fotos: [{ assetId: ASSET_ID }, { assetId: ASSET_ID, alt: 'Fachada' }],
       extra: 'ignorado',
     })).toEqual({
       titulo: 'Olá',
       preco: 12.5,
       destaque: true,
       capa: { assetId: ASSET_ID, alt: 'Capa' },
+      fotos: [{ assetId: ASSET_ID }, { assetId: ASSET_ID, alt: 'Fachada' }],
     })
+  })
+
+  it('galeria vazia vira lista vazia e item sem arquivo é recusado', () => {
+    expect(coerceEntryPayload(schema, { titulo: 'Ok' }).fotos).toEqual([])
+    expect(() => coerceEntryPayload(schema, { titulo: 'Ok', fotos: [{ url: 'https://cdn.example/a.jpg' }] })).toThrow()
+    expect(() => coerceEntryPayload(schema, { titulo: 'Ok', fotos: 'não-lista' })).toThrow()
   })
 
   it('recusa campo obrigatório vazio, número inválido e mídia sem arquivo', () => {

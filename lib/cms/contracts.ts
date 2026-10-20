@@ -604,7 +604,10 @@ export const cmsCollectionKeySchema = z.string()
   .max(64)
   .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Use apenas letras minúsculas, números e hífens')
 
-export const cmsCollectionFieldTypeSchema = z.enum(['text', 'number', 'boolean', 'media'])
+export const cmsCollectionFieldTypeSchema = z.enum(['text', 'number', 'boolean', 'media', 'gallery'])
+
+/** A gallery field holds an ordered list of media refs (e.g. property photos). */
+export const CMS_COLLECTION_GALLERY_LIMIT = 24
 export type CmsCollectionFieldType = z.infer<typeof cmsCollectionFieldTypeSchema>
 
 export const CMS_COLLECTION_SCHEMA_VERSION = 1 as const
@@ -620,7 +623,8 @@ export type CmsCollectionField = z.infer<typeof cmsCollectionFieldSchema>
 
 /**
  * Versioned collection schema. MVP accepts only version 1, with text, number,
- * boolean and media-ref fields. Unknown versions fail validation on purpose.
+ * boolean, media-ref and gallery (media-ref list) fields. Unknown versions
+ * fail validation on purpose.
  */
 export const cmsCollectionSchemaSchema = z.object({
   version: z.literal(CMS_COLLECTION_SCHEMA_VERSION),

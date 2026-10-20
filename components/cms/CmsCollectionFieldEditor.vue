@@ -43,7 +43,7 @@ function remove(index: number) {
 }
 
 function setType(index: number, value: unknown) {
-  const type = value === 'number' || value === 'boolean' || value === 'media' ? value : 'text'
+  const type = value === 'number' || value === 'boolean' || value === 'media' || value === 'gallery' ? value : 'text'
   patch(index, { type })
 }
 </script>

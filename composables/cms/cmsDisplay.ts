@@ -26,6 +26,7 @@ export const CMS_COLLECTION_FIELD_LABELS = {
   number: 'Número',
   boolean: 'Sim/não',
   media: 'Mídia',
+  gallery: 'Galeria de imagens',
 } as const
 
 /** First text field, otherwise a neutral placeholder. */

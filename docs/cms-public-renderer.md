@@ -94,6 +94,8 @@ Feed de artigos e notícias **publicados**, do mais novo para o mais antigo. `ty
 
 Só entram registros salvos como **publicados**, do atualizado mais recente para o mais antigo. Registro em rascunho nunca sai por esta rota — salvar um registro como publicado já basta, não há etapa extra. Coleção ou site desconhecido/inativo responde 404.
 
+Campos de imagem saem no `payload` como referência de mídia, nunca como URL assinada: campo `media` → `{ "assetId", "objectPath"?, "alt"? }`; campo `gallery` → uma **lista** dessas referências, na ordem escolhida no Hub (ex.: `foto-capa` e `galeria` em Imóveis). O renderer resolve o `assetId` no próprio domínio, como nos blocos.
+
 Blocos `testimonials`, `cards` e `faq` podem ser **vinculados** a uma coleção (`props.collectionKey`, `props.collectionLimit`): nesse caso o `resolve` substitui `props.items` pelos registros publicados da coleção na leitura — a página guarda só a referência, nunca uma cópia. Registros com campo numérico `ordem` são ordenados por ele; os demais, do atualizado mais recente. Se a coleção não existir, os `items` gravados na página são usados como fallback. O mapeamento é por tipo de bloco: depoimentos (`depoimento`/`nome`/`papel`), FAQ (`pergunta`/`resposta`) e cartões (`titulo`/`nome`, `descricao`/`resumo`/`bio`, `href`/`link`/`url`/`site-url`).
 
 ## Sitemap

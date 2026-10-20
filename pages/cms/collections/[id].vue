@@ -13,7 +13,6 @@ import { cmsEntryLabel, cmsFieldErrors } from '~/composables/cms/cmsDisplay'
 import { useCmsAccess } from '~/composables/cms/useCmsAccess'
 import { normalizeCmsError } from '~/composables/cms/useCmsApi'
 import { useCmsCollection, useCmsCollectionEntries, useCmsCollections } from '~/composables/cms/useCmsCollections'
-import { useCmsMedia } from '~/composables/cms/useCmsMedia'
 import { useCmsSites } from '~/composables/cms/useCmsSites'
 import { confirmDelete } from '~/composables/useConfirmDelete'
 import { useTenantPage } from '~/composables/useTenantPage'
@@ -30,7 +29,6 @@ const route = useRoute()
 const definitionId = computed(() => String(route.params.id || ''))
 const access = useCmsAccess()
 const sites = useCmsSites()
-const media = useCmsMedia()
 const collection = useCmsCollection(definitionId)
 const collections = useCmsCollections(computed(() => collection.definition.value?.siteId ?? sites.currentSite.value?.id ?? null))
 const entries = useCmsCollectionEntries(definitionId)
@@ -54,10 +52,6 @@ const activeEntry = computed(() => entries.entries.value.find(entry => entry.id 
 const gateError = computed(() => collection.loadError.value ?? entries.loadError.value)
 const loading = computed(() => !access.ready.value || collection.showSkeleton.value)
 const canWrite = computed(() => access.canManageSchemas.value)
-const mediaAssets = computed(() => media.assets.value.map(asset => ({
-  id: asset.id,
-  name: typeof asset.name === 'string' ? asset.name : asset.id,
-})))
 
 const editorTitle = computed(() => {
   const definition = collection.definition.value
@@ -333,7 +327,6 @@ function retry() {
               :schema="collection.definition.value.schema"
               :disabled="!canWrite"
               :saving="savingEntry"
-              :media-assets="mediaAssets"
               @submit="saveEntry"
             />
           </template>

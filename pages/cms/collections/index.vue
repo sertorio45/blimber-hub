@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { CmsCollectionFieldType } from '~/lib/cms/contracts'
+
 import { computed, ref } from 'vue'
 
 import CmsCreateCollectionDialog from '~/components/cms/CmsCreateCollectionDialog.vue'
@@ -39,7 +41,7 @@ const createOpen = ref(false)
 const gateError = computed(() => sitesError.value ?? collections.loadError.value)
 const loading = computed(() => !access.ready.value || sitesSkeleton.value || (Boolean(siteId.value) && collections.showSkeleton.value))
 
-function fieldSummary(types: Array<'text' | 'number' | 'boolean' | 'media'>): string {
+function fieldSummary(types: CmsCollectionFieldType[]): string {
   return types.map(type => CMS_COLLECTION_FIELD_LABELS[type]).join(', ')
 }
 
