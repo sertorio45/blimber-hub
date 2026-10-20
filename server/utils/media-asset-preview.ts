@@ -76,28 +76,38 @@ export async function attachMediaAssetPreviews<T extends MediaAssetPreviewRow>(
   _tenantId: string,
   expiresIn = 60 * 60 * 4,
 ): Promise<Array<T & { preview_url: string | null, previewUrl: string | null }>> {
-  const paths = assets.map(asset => mediaAssetObjectPath(asset)).filter(Boolean)
-  const bucket = client.storage.from('marketing-assets')
-  const { data: signedRows, error: signError } = paths.length
-    ? await bucket.createSignedUrls(paths, expiresIn)
-    : { data: [], error: null }
-
-  if (signError)
-    console.warn('[media_assets] batch signed URL generation failed:', signError.message)
+  /** Assets carry their own bucket (`cms-assets` vs `marketing-assets`); sign per bucket. */
+  const bucketOf = (asset: MediaAssetPreviewRow): string =>
+    typeof asset.bucket === 'string' && asset.bucket ? asset.bucket : 'marketing-assets'
 
   const signedByPath = new Map<string, string>()
-  for (const row of signedRows || []) {
-    const url = extractStorageSignedUrl(row)
-    if (row?.path && isAbsoluteHttpUrl(url))
-      signedByPath.set(row.path, url)
+  const bucketNames = [...new Set(assets.map(asset => bucketOf(asset)))]
+  for (const bucketName of bucketNames) {
+    const bucket = client.storage.from(bucketName)
+    const paths = assets
+      .filter(asset => bucketOf(asset) === bucketName)
+      .map(asset => mediaAssetObjectPath(asset))
+      .filter(Boolean)
+    if (!paths.length)
+      continue
+    const { data: signedRows, error: signError } = await bucket.createSignedUrls(paths, expiresIn)
+    if (signError) {
+      console.warn('[media_assets] batch signed URL generation failed:', signError.message)
+      continue
+    }
+    for (const row of signedRows || []) {
+      const url = extractStorageSignedUrl(row)
+      if (row?.path && isAbsoluteHttpUrl(url))
+        signedByPath.set(`${bucketName}:${row.path}`, url)
+    }
   }
 
   const rows: Array<T & { preview_url: string | null, previewUrl: string | null }> = []
 
-  for (const [index, asset] of assets.entries()) {
+  for (const asset of assets) {
     const objectPath = mediaAssetObjectPath(asset)
-    let preview = (objectPath ? signedByPath.get(objectPath) : null)
-      || extractStorageSignedUrl(signedRows?.[index])
+    const bucket = client.storage.from(bucketOf(asset))
+    let preview = (objectPath ? signedByPath.get(`${bucketOf(asset)}:${objectPath}`) : null)
       || null
 
     if (!isAbsoluteHttpUrl(preview) && objectPath && bucket.createSignedUrl) {

@@ -11,6 +11,8 @@ import { BlimberMcpError } from '~/lib/blimber-mcp/errors'
 import type { BlimberMcpSupabaseLike } from '~/lib/blimber-mcp/types'
 
 export const MARKETING_ASSETS_BUCKET = 'marketing-assets'
+/** CMS media lives in its own bucket; marketing never touches it. */
+export const CMS_ASSETS_BUCKET = 'cms-assets'
 /** Same cap as Hub library / Storage (100MB). */
 export const LIBRARY_UPLOAD_MAX_BYTES = 104_857_600
 /** ChatGPT JSON payloads cannot carry full 100MB; keep base64 smaller. */
@@ -137,6 +139,8 @@ export interface PersistLibraryAssetInput {
   createdBy: string
   filename: string
   buffer: Buffer
+  /** Storage bucket; defaults to marketing. CMS passes `CMS_ASSETS_BUCKET`. */
+  bucket?: string
   inputMime: string | undefined
   purpose: LibraryAssetPurpose
   category?: string | null
@@ -223,7 +227,8 @@ export async function persistLibraryAsset(
   const ext = extensionForUpload(kindInfo.kind, format, input.filename)
   const objectPath = `${input.tenantId}/${randomUUID()}/${compressed ? 'optimized' : 'original'}.${ext}`
 
-  const bucket = storage.from(MARKETING_ASSETS_BUCKET)
+  const bucketName = input.bucket || MARKETING_ASSETS_BUCKET
+  const bucket = storage.from(bucketName)
   if (typeof bucket.upload !== 'function')
     throwLibraryUpload('STORAGE_UNAVAILABLE', 'Storage upload não disponível.', 503)
 
@@ -238,6 +243,7 @@ export async function persistLibraryAsset(
   const insertPayload: Record<string, unknown> = {
     tenant_id: input.tenantId,
     name: input.filename.slice(0, 255) || 'upload.bin',
+    bucket: bucketName,
     object_path: objectPath,
     mime_type: processedMime,
     size_bytes: compressedSize,

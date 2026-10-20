@@ -307,7 +307,7 @@ export async function deleteMediaAsset(
   const paths = [asset.object_path]
   paths.push(...(derivatives || []).map((item: { object_path?: string | null }) => item.object_path).filter(Boolean) as string[])
   if (paths.length)
-    await client.storage.from('marketing-assets').remove(paths)
+    await client.storage.from(typeof asset.bucket === 'string' && asset.bucket ? asset.bucket : 'marketing-assets').remove(paths)
 
   return {
     assetId,

@@ -22,6 +22,7 @@ import {
 } from '~/server/utils/media-asset-deletion'
 import { attachMediaAssetPreviews, extractStorageSignedUrl } from '~/server/utils/media-asset-preview'
 import {
+  CMS_ASSETS_BUCKET,
   LIBRARY_UPLOAD_MAX_BYTES,
 
   MARKETING_ASSETS_BUCKET,
@@ -56,6 +57,16 @@ export interface MediaAccessContext {
 }
 
 export const MEDIA_BUCKET = MARKETING_ASSETS_BUCKET
+
+/** Each module owns a bucket: CMS uploads never land in marketing storage. */
+export function mediaBucketForModule(module: MediaModule): string {
+  return module === 'cms' ? CMS_ASSETS_BUCKET : MARKETING_ASSETS_BUCKET
+}
+
+/** Existing rows know their bucket; only brand-new writes use the module default. */
+function assetBucket(asset: { bucket?: string | null } | null | undefined, fallback: string): string {
+  return typeof asset?.bucket === 'string' && asset.bucket ? asset.bucket : fallback
+}
 export const MEDIA_PREVIEW_SECONDS = 60 * 60 * 4
 
 export const MEDIA_PURPOSES = ['reference', 'publication'] as const
@@ -155,6 +166,7 @@ export async function listAssets(
     .from('media_assets')
     .select('*')
     .eq('tenant_id', ctx.tenantId)
+    .eq('bucket', mediaBucketForModule(ctx.module))
     .neq('status', 'archived')
     .order('created_at', { ascending: false })
 
@@ -255,7 +267,7 @@ export async function getAssetUsages(ctx: MediaAccessContext, assetId: string): 
 }
 
 export interface MediaAssetFile {
-  asset: { id: string, name: string, mime_type: string | null, object_path: string, tenant_id: string }
+  asset: { id: string, name: string, mime_type: string | null, object_path: string, tenant_id: string, bucket?: string | null }
   buffer: Buffer
 }
 
@@ -263,13 +275,13 @@ export async function getAssetFile(ctx: MediaAccessContext, assetId: string): Pr
   const asset = await findAssetRow<MediaAssetFile['asset']>(
     ctx,
     assetId,
-    'id, name, mime_type, object_path, tenant_id',
+    'id, name, mime_type, object_path, tenant_id, bucket',
   )
   if (!asset?.object_path)
     throw createError({ statusCode: 404, statusMessage: 'Arquivo não encontrado' })
 
   const { data: file, error: downloadError } = await ctx.client.storage
-    .from(MEDIA_BUCKET)
+    .from(assetBucket(asset, mediaBucketForModule(ctx.module)))
     .download(asset.object_path)
 
   if (downloadError || !file) {
@@ -314,8 +326,9 @@ export async function registerUploadedAsset(
   if (!input.objectPath.startsWith(`${ctx.tenantId}/`))
     throw createError({ statusCode: 400, statusMessage: 'Caminho do arquivo inválido' })
 
+  const bucket = mediaBucketForModule(ctx.module)
   const { data: objects } = await ctx.client.storage
-    .from(MEDIA_BUCKET)
+    .from(bucket)
     .list(input.objectPath.slice(0, input.objectPath.lastIndexOf('/')), {
       search: input.objectPath.slice(input.objectPath.lastIndexOf('/') + 1),
       limit: 1,
@@ -329,6 +342,7 @@ export async function registerUploadedAsset(
     .insert({
       tenant_id: ctx.tenantId,
       name: input.name,
+      bucket,
       object_path: input.objectPath,
       mime_type: input.mimeType,
       size_bytes: input.sizeBytes,
@@ -357,7 +371,7 @@ export async function registerUploadedAsset(
   })
 
   const { data: signed, error: signError } = await ctx.client.storage
-    .from(MEDIA_BUCKET)
+    .from(bucket)
     .createSignedUrl(data.object_path, MEDIA_PREVIEW_SECONDS)
 
   if (signError)
@@ -455,6 +469,7 @@ export async function uploadAsset(
       createdBy: ctx.userId,
       filename: file.filename || 'upload.bin',
       buffer: file.data,
+      bucket: mediaBucketForModule(ctx.module),
       inputMime,
       purpose: meta.purpose || 'reference',
       category: meta.category ?? null,
@@ -515,22 +530,29 @@ export async function previewAssetDeletion(
 
   const { data: assets } = await ctx.client
     .from('media_assets')
-    .select('object_path')
+    .select('object_path, bucket')
     .eq('tenant_id', ctx.tenantId)
     .in('id', assetIds)
 
-  const rows = (assets || []) as Array<{ object_path: string }>
-  const paths = rows.map(row => row.object_path).filter(Boolean)
-  const { data: signedRows } = paths.length
-    ? await ctx.client.storage.from(MEDIA_BUCKET).createSignedUrls(paths, 60 * 10)
-    : { data: [] }
+  const rows = (assets || []) as Array<{ object_path: string, bucket?: string | null }>
+  const signedByBucketPath = new Map<string, string | null>()
+  for (const bucketName of [...new Set(rows.map(row => assetBucket(row, mediaBucketForModule(ctx.module))))]) {
+    const paths = rows
+      .filter(row => assetBucket(row, mediaBucketForModule(ctx.module)) === bucketName)
+      .map(row => row.object_path)
+      .filter(Boolean)
+    if (!paths.length)
+      continue
+    const { data: signedRows } = await ctx.client.storage.from(bucketName).createSignedUrls(paths, 60 * 10)
+    for (const item of (signedRows || []) as Array<{ path?: string | null, signedUrl?: string | null }>) {
+      if (item.path)
+        signedByBucketPath.set(`${bucketName}:${item.path}`, item.signedUrl || null)
+    }
+  }
 
   const previewUrls = new Map<string, string | null>()
-  for (const row of rows) {
-    const signed = ((signedRows || []) as Array<{ path?: string | null, signedUrl?: string | null }>)
-      .find(item => item.path === row.object_path)
-    previewUrls.set(row.object_path, signed?.signedUrl || null)
-  }
+  for (const row of rows)
+    previewUrls.set(row.object_path, signedByBucketPath.get(`${assetBucket(row, mediaBucketForModule(ctx.module))}:${row.object_path}`) ?? null)
 
   return previewMediaAssetDeletion(ctx.client, ctx.tenantId, assetIds, previewUrls)
 }
