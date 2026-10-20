@@ -122,6 +122,34 @@ describe('library upload helpers', () => {
     expect(result.meta.kind).toBe('image')
   })
 
+  it('persists CMS uploads in the cms-assets bucket', async () => {
+    const { client, upload, remove, createSignedUrl, insert } = createUploadClient()
+    const buckets: string[] = []
+    const cmsClient = {
+      ...client,
+      storage: {
+        from: (bucket: string) => {
+          buckets.push(bucket)
+          return { upload, remove, createSignedUrl }
+        },
+      },
+    }
+    await persistLibraryAsset({
+      client: cmsClient as any,
+      tenantId: TENANT_ID,
+      createdBy: ACTOR_ID,
+      filename: 'pixel.png',
+      buffer: PNG_BUFFER,
+      inputMime: 'image/png',
+      purpose: 'reference',
+      bucket: 'cms-assets',
+    })
+
+    expect(buckets).toContain('cms-assets')
+    expect(buckets).not.toContain('marketing-assets')
+    expect(insert.mock.calls[0]![0]).toMatchObject({ bucket: 'cms-assets' })
+  })
+
   it('uploads video without going through image compression path', async () => {
     const { client, upload } = createUploadClient()
     const video = Buffer.from('fake-mp4-bytes')
