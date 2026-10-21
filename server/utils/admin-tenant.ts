@@ -60,7 +60,12 @@ export async function seedTenantAllModules(
 
 /**
  * Hard-delete a tenant and tenant-scoped data. Platform staff only.
- * Blocks when the tenant is still the anchor of an organization row.
+ *
+ * Every tenant gets an auto-created `direct` organization anchored on it
+ * (trigger `sync_tenant_organization`), so that shadow org must be removed
+ * together with the tenant — otherwise no tenant could ever be deleted.
+ * Blocks only when the tenant anchors a real organization (e.g. `agency`)
+ * or when its direct organization links other tenants.
  */
 export async function deleteAdminTenant(
   client: { from: (table: string) => any },
@@ -77,17 +82,53 @@ export async function deleteAdminTenant(
   if (!tenant)
     throw createError({ statusCode: 404, statusMessage: 'Empresa não encontrada' })
 
-  const { data: anchorOrgs } = await client
+  const { data: anchorOrgs, error: anchorError } = await client
     .from('organizations')
-    .select('id, name')
+    .select('id, name, type')
     .eq('tenant_id', tenantId)
 
-  if ((anchorOrgs || []).length > 0) {
-    const names = (anchorOrgs || []).map((row: { name: string }) => row.name).join(', ')
+  if (anchorError)
+    throw createError({ statusCode: 400, statusMessage: anchorError.message })
+
+  const anchors = (anchorOrgs || []) as Array<{ id: string, name: string, type: string }>
+  const blockingOrgs = anchors.filter(org => org.type !== 'direct')
+
+  if (blockingOrgs.length > 0) {
+    const names = blockingOrgs.map(row => row.name).join(', ')
     throw createError({
       statusCode: 409,
       statusMessage: `Esta empresa é a base da organização: ${names}. Remova a organização antes de excluir o tenant.`,
     })
+  }
+
+  for (const org of anchors) {
+    const { data: otherLinks, error: linksError } = await client
+      .from('organization_tenants')
+      .select('id')
+      .eq('organization_id', org.id)
+      .neq('tenant_id', tenantId)
+
+    if (linksError)
+      throw createError({ statusCode: 400, statusMessage: linksError.message })
+
+    if ((otherLinks || []).length > 0) {
+      throw createError({
+        statusCode: 409,
+        statusMessage: `A organização "${org.name}" possui outras empresas vinculadas. Desvincule-as antes de excluir este tenant.`,
+      })
+    }
+
+    // ON DELETE CASCADE clears organization_tenants/memberships/roles/invites.
+    const { error: orgDeleteError } = await client
+      .from('organizations')
+      .delete()
+      .eq('id', org.id)
+
+    if (orgDeleteError)
+      throw createError({
+        statusCode: 400,
+        statusMessage: `Falha ao remover a organização "${org.name}": ${orgDeleteError.message}`,
+      })
   }
 
   // Tables with ON DELETE NO ACTION on tenant_id must be cleared first.

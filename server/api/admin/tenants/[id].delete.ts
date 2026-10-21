@@ -23,7 +23,9 @@ export default defineEventHandler(async (event) => {
   const deleted = await deleteAdminTenant(client, tenantId)
 
   await recordAuditEvent(event, client, {
-    tenantId: deleted.id,
+    // Tenant is gone: audit_events.tenant_id references tenant(id), so a
+    // deleted tenant id would violate the FK and silently drop the event.
+    tenantId: null,
     actorId: user.id,
     action: 'tenant.deleted',
     entityType: 'tenant',
