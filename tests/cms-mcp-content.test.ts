@@ -75,34 +75,63 @@ function client(capabilities: string[], moduleName: string | null = 'cms') {
 }
 
 const WRITE_ONLY = ['cms.read', 'cms.pages.update', 'cms.publications.update']
+const AUTHOR = ['cms.read', 'cms.publications.create', 'cms.publications.update']
 
 describe('tools mcp de conteúdo do cms', () => {
-  it('separa leitura e publicação: editar não publica', () => {
+  it('separa leitura, criação/edição e publicação', () => {
     expect(CMS_TOOL_NAMES).toEqual([
       'cms.list_documents',
       'cms.get_document',
+      'cms.create_document',
+      'cms.save_draft',
       'cms.publish_document',
     ])
-    expect(CMS_TOOL_CAPABILITY['cms.list_documents']).toBe('cms.read')
-    expect(CMS_TOOL_CAPABILITY['cms.get_document']).toBe('cms.read')
-    expect(CMS_TOOL_CAPABILITY['cms.publish_document']).toBe('cms.publish')
-    expect(Object.values(CMS_TOOL_CAPABILITY)).not.toContain('cms.pages.update')
-    expect(Object.values(CMS_TOOL_CAPABILITY)).not.toContain('cms.publications.update')
+    expect(CMS_TOOL_CAPABILITY['cms.list_documents']).toEqual(['cms.read'])
+    expect(CMS_TOOL_CAPABILITY['cms.get_document']).toEqual(['cms.read'])
+    expect(CMS_TOOL_CAPABILITY['cms.create_document']).toEqual([
+      'cms.pages.create',
+      'cms.publications.create',
+    ])
+    expect(CMS_TOOL_CAPABILITY['cms.save_draft']).toEqual([
+      'cms.pages.update',
+      'cms.publications.update',
+    ])
+    expect(CMS_TOOL_CAPABILITY['cms.publish_document']).toEqual(['cms.publish'])
+    expect(CMS_TOOL_CAPABILITY['cms.publish_document']).not.toContain('cms.pages.update')
+    expect(CMS_TOOL_CAPABILITY['cms.publish_document']).not.toContain('cms.publications.update')
   })
 
   it('resolve o nome com prefixo do conector sem cortar cms.', () => {
     const known = new Set<string>(CMS_TOOL_NAMES)
     expect(resolveBlimberMcpToolName('cms.list_documents', known)).toBe('cms.list_documents')
     expect(resolveBlimberMcpToolName('Blimber_Hub.cms.publish_document', known)).toBe('cms.publish_document')
+    expect(resolveBlimberMcpToolName('Blimber_Hub.cms.create_document', known)).toBe('cms.create_document')
+    expect(resolveBlimberMcpToolName('Blimber_Hub.cms.save_draft', known)).toBe('cms.save_draft')
     expect(resolveBlimberMcpToolName('Blimber_Hub.meta_create_ad', known)).toBeNull()
   })
 
   it('cms.read lista; cms.pages.update não publica', async () => {
     const ctx = { client: client(WRITE_ONLY), actorUserId: USER }
     await expect(authorizeCmsMcpTool(ctx, TENANT, 'cms.list_documents')).resolves.toMatchObject({ userId: USER })
+    await expect(authorizeCmsMcpTool(ctx, TENANT, 'cms.save_draft')).resolves.toMatchObject({ userId: USER })
     await expect(authorizeCmsMcpTool(ctx, TENANT, 'cms.publish_document')).rejects.toMatchObject({
       code: 'FORBIDDEN',
       statusCode: 403,
+    })
+  })
+
+  it('autor cria e salva publicação; sem create não cria', async () => {
+    const author = { client: client(AUTHOR), actorUserId: USER }
+    await expect(authorizeCmsMcpTool(author, TENANT, 'cms.create_document')).resolves.toMatchObject({
+      userId: USER,
+    })
+    await expect(authorizeCmsMcpTool(author, TENANT, 'cms.save_draft')).resolves.toMatchObject({
+      userId: USER,
+    })
+
+    const reader = { client: client(['cms.read']), actorUserId: USER }
+    await expect(authorizeCmsMcpTool(reader, TENANT, 'cms.create_document')).rejects.toMatchObject({
+      code: 'FORBIDDEN',
     })
   })
 

@@ -43,9 +43,11 @@ export {
   CMS_TOOL_DESCRIPTIONS,
   CMS_TOOL_NAMES,
   CMS_TOOL_SCHEMAS,
+  cmsCreateDocument,
   cmsGetDocument,
   cmsListDocuments,
   cmsPublishDocument,
+  cmsSaveDraft,
   type CmsToolName,
   invokeCmsTool,
 } from './cms'

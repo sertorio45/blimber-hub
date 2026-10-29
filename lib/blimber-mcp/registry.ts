@@ -98,10 +98,20 @@ export function listMarketingToolDescriptors(): BlimberMcpToolDescriptor[] {
 }
 
 export function listCmsToolDescriptors(): BlimberMcpToolDescriptor[] {
-  const http: Record<CmsToolName, { path: string, method: 'GET' | 'POST' }> = {
+  const http: Record<CmsToolName, { path: string, method: 'GET' | 'POST' | 'PUT' }> = {
     'cms.list_documents': { path: '/api/cms/pages', method: 'GET' },
     'cms.get_document': { path: '/api/cms/documents/{id}', method: 'GET' },
+    'cms.create_document': { path: '/api/cms/documents', method: 'POST' },
+    'cms.save_draft': { path: '/api/cms/documents/{id}/draft', method: 'PUT' },
     'cms.publish_document': { path: '/api/cms/documents/{id}/publish', method: 'POST' },
+  }
+
+  const notes: Record<CmsToolName, string> = {
+    'cms.list_documents': 'Exige cms.read.',
+    'cms.get_document': 'Exige cms.read.',
+    'cms.create_document': 'Exige cms.pages.create ou cms.publications.create (conforme kind). dryRun default true.',
+    'cms.save_draft': 'Exige cms.pages.update ou cms.publications.update. No Hub o save também publica a revisão.',
+    'cms.publish_document': 'Exige cms.publish. cms.pages.update e cms.publications.update não publicam.',
   }
 
   return CMS_TOOL_NAMES.map(name => ({
@@ -111,9 +121,7 @@ export function listCmsToolDescriptors(): BlimberMcpToolDescriptor[] {
     status: 'ready' as const,
     httpPath: http[name].path,
     httpMethod: http[name].method,
-    notes: name === 'cms.publish_document'
-      ? 'Exige cms.publish. cms.pages.update e cms.publications.update não publicam.'
-      : 'Exige cms.read.',
+    notes: notes[name],
   }))
 }
 

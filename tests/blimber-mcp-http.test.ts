@@ -22,6 +22,8 @@ describe('blimber MCP remote server tools', () => {
     expect(names).toEqual(expect.arrayContaining([
       'cms.list_documents',
       'cms.get_document',
+      'cms.create_document',
+      'cms.save_draft',
       'cms.publish_document',
     ]))
 
@@ -36,7 +38,7 @@ describe('blimber MCP remote server tools', () => {
     expect(marketingCount).toBe(Object.keys(MARKETING_TOOL_DESCRIPTIONS).length)
     expect(metaCount).toBe(Object.keys(META_TOOL_DESCRIPTIONS).length)
     expect(googleCount).toBe(Object.keys(GOOGLE_ADS_TOOL_DESCRIPTIONS).length)
-    expect(cmsCount).toBe(3)
+    expect(cmsCount).toBe(5)
     expect(names.length).toBe(platformCount + cmsCount + marketingCount + metaCount + googleCount)
     expect(new Set(names).size).toBe(names.length)
   })
