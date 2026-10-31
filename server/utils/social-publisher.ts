@@ -21,9 +21,24 @@ function retryDelay(attempt: number) {
 
 function errorDetails(error: unknown) {
   const candidate = error as any
+  const data = candidate?.data
+  const nested = data && typeof data === 'object' ? data : null
   return {
-    code: String(candidate?.data?.error?.code || candidate?.statusCode || candidate?.code || 'publish_error'),
-    message: String(candidate?.data?.error?.message || candidate?.statusMessage || candidate?.message || 'Falha ao publicar'),
+    code: String(
+      nested?.code
+      || nested?.error?.code
+      || candidate?.statusCode
+      || candidate?.code
+      || 'publish_error',
+    ),
+    message: String(
+      nested?.message
+      || nested?.error?.message
+      || nested?.errorDetails
+      || candidate?.statusMessage
+      || candidate?.message
+      || 'Falha ao publicar',
+    ).slice(0, 400),
   }
 }
 

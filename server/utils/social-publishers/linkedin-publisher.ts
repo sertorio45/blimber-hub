@@ -13,6 +13,75 @@ interface LinkedinPublishInput {
   assets: any[]
 }
 
+function sleep(ms: number) {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+/** Surface LinkedIn REST error body instead of opaque "Unprocessable Entity". */
+function linkedinFetchError(err: unknown, fallback: string) {
+  const candidate = err as {
+    statusCode?: number
+    statusMessage?: string
+    message?: string
+    data?: Record<string, unknown> | string
+  }
+  const data = candidate?.data
+  const payload = typeof data === 'object' && data ? data : null
+  const detail = String(
+    payload?.message
+    || payload?.errorDetails
+    || payload?.code
+    || candidate?.statusMessage
+    || candidate?.message
+    || '',
+  ).trim()
+  const statusCode = Number(candidate?.statusCode || 502)
+  return createError({
+    statusCode: statusCode >= 400 && statusCode < 600 ? statusCode : 502,
+    statusMessage: detail
+      ? `LinkedIn: ${detail}`.slice(0, 400)
+      : fallback,
+    data: payload || undefined,
+  })
+}
+
+function mediaAltText(asset: any, caption: string) {
+  const fromName = String(asset?.name || '')
+    .replace(/\.[a-z0-9]+$/i, '')
+    .trim()
+  const text = (fromName || caption || 'Imagem').replace(/\s+/g, ' ').trim()
+  return text.slice(0, 120)
+}
+
+async function waitForImageAvailable(
+  imageUrn: string,
+  headers: Record<string, string>,
+) {
+  const url = `https://api.linkedin.com/rest/images/${encodeURIComponent(imageUrn)}`
+  for (let attempt = 0; attempt < 24; attempt++) {
+    const image = await $fetch<{ status?: string }>(url, { headers }).catch((err: unknown) => {
+      // Read may lag briefly after PUT; retry a few times before failing hard.
+      if (attempt < 5)
+        return null
+      throw linkedinFetchError(err, 'Falha ao verificar status da imagem no LinkedIn')
+    })
+    const status = String(image?.status || '')
+    if (status === 'AVAILABLE')
+      return
+    if (status === 'PROCESSING_FAILED') {
+      throw createError({
+        statusCode: 502,
+        statusMessage: 'LinkedIn falhou ao processar a imagem enviada',
+      })
+    }
+    await sleep(400 + attempt * 200)
+  }
+  throw createError({
+    statusCode: 504,
+    statusMessage: 'Timeout aguardando a imagem ficar disponível no LinkedIn',
+  })
+}
+
 async function uploadImage(
   client: any,
   asset: any,
@@ -32,6 +101,8 @@ async function uploadImage(
     body: {
       initializeUploadRequest: { owner },
     },
+  }).catch((err: unknown) => {
+    throw linkedinFetchError(err, 'LinkedIn não iniciou o upload da imagem')
   })
   const value = initialization?.value
   if (!value?.uploadUrl || !value?.image)
@@ -45,9 +116,14 @@ async function uploadImage(
       'Content-Type': asset.mime_type || 'application/octet-stream',
     },
     body: binary,
+  }).catch((err: unknown) => {
+    throw linkedinFetchError(err, 'Falha ao enviar bytes da imagem ao LinkedIn')
   })
 
-  return value.image as string
+  const imageUrn = value.image as string
+  // Images API is async — posting before AVAILABLE yields 422 Unprocessable Entity.
+  await waitForImageAvailable(imageUrn, headers)
+  return imageUrn
 }
 
 export async function publishToLinkedin(input: LinkedinPublishInput) {
@@ -95,15 +171,32 @@ export async function publishToLinkedin(input: LinkedinPublishInput) {
     lifecycleState: 'PUBLISHED',
     isReshareDisabledByAuthor: false,
   }
-  if (images.length === 1)
-    body.content = { media: { id: images[0], title: input.variant.caption || '' } }
-  if (images.length > 1)
-    body.content = { multiImage: { images: images.map(id => ({ id })) } }
+  if (images.length === 1) {
+    // Image posts use altText (accessibility). `title` is for video/document media.
+    body.content = {
+      media: {
+        id: images[0],
+        altText: mediaAltText(input.assets[0], commentary),
+      },
+    }
+  }
+  if (images.length > 1) {
+    body.content = {
+      multiImage: {
+        images: images.map((id, index) => ({
+          id,
+          altText: mediaAltText(input.assets[index], commentary),
+        })),
+      },
+    }
+  }
 
   const response = await $fetch.raw('https://api.linkedin.com/rest/posts', {
     method: 'POST',
     headers: { ...headers, 'Content-Type': 'application/json' },
     body,
+  }).catch((err: unknown) => {
+    throw linkedinFetchError(err, 'Falha ao criar publicação no LinkedIn')
   })
   const externalPostId = response.headers.get('x-restli-id')
   if (!externalPostId)
