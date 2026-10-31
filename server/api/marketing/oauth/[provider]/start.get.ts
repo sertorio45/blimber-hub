@@ -90,7 +90,10 @@ export default defineEventHandler(async (event) => {
     url.searchParams.set('client_id', clientId)
     url.searchParams.set('redirect_uri', callbackUrl)
     url.searchParams.set('state', state)
-    url.searchParams.set('scope', 'openid profile w_organization_social rw_organization_admin')
+    // Community Management API only — do not request openid/profile/email
+    // (Sign In with LinkedIn OpenID). Those scopes fail authorize if that
+    // product is not on the app, even when Community Management is approved.
+    url.searchParams.set('scope', 'w_organization_social rw_organization_admin')
     return { redirectTo: url.toString() }
   }
 
