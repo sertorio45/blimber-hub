@@ -59,11 +59,15 @@ export default defineConfig({
       scale: 1.2,
     }),
     presetTypography(),
+    // Do not fetch Google Fonts at build time — Vercel CI often times out
+    // (`[unocss] Fetch web fonts timeout`) and fails the whole Nuxt build.
+    // Runtime @import keeps Chivo without a build-time network dependency.
     presetWebFonts({
       fonts: {
         sans: 'Chivo',
         mono: 'Chivo Mono',
       },
+      inlineImports: false,
     }),
     presetAnimations(),
     presetShadcn(builtinColors.map(c => ({ color: c }))),
