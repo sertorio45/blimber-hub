@@ -32,15 +32,17 @@ async function waitForInstagramContainer(
   containerId: string,
   accessToken: string,
 ) {
-  for (let attempt = 0; attempt < 20; attempt++) {
+  // Cap ~15s so workers stay under Vercel maxDuration / pg_net timeout.
+  for (let attempt = 0; attempt < 8; attempt++) {
     const response = await $fetch<any>(`${graphBase}/${containerId}`, {
       query: { fields: 'status_code,status', access_token: accessToken },
+      timeout: 8_000,
     })
     if (response.status_code === 'FINISHED')
       return
     if (response.status_code === 'ERROR' || response.status_code === 'EXPIRED')
       throw createError({ statusCode: 502, statusMessage: response.status || 'Falha ao preparar mídia no Instagram' })
-    await new Promise(resolve => setTimeout(resolve, 3000))
+    await new Promise(resolve => setTimeout(resolve, 1_500))
   }
   throw createError({ statusCode: 504, statusMessage: 'Instagram não terminou de processar a mídia' })
 }

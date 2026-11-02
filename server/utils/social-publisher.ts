@@ -349,6 +349,8 @@ export async function processDuePublicationJobs(
   workerId: string,
   limit = 10,
 ) {
+  // Stay under pg_net's 25s client timeout and Vercel maxDuration (60s).
+  const deadline = Date.now() + 20_000
   const now = new Date().toISOString()
   const { data: jobs, error } = await client
     .from('publication_jobs')
@@ -364,7 +366,10 @@ export async function processDuePublicationJobs(
     throw new Error(error.message)
 
   const results = []
-  for (const job of jobs || [])
+  for (const job of jobs || []) {
+    if (Date.now() >= deadline)
+      break
     results.push({ jobId: job.id, ...(await processPublicationJob(client, job, workerId)) })
+  }
   return results
 }

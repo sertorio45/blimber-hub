@@ -715,9 +715,31 @@ async function loadPublicMediaAsset(
 }
 
 /**
- * Downloads the bytes of a media reference (`assetId` from blocks, covers and
- * collection payloads) so the Hub can serve them on its own domain — the
- * storage URL (signed, expiring) never reaches the visitor.
+ * Short-lived signed URL for public CMS media.
+ * Prefer redirect over proxying bytes through Nitro — streaming on Vercel
+ * burned Active CPU / Fast Origin Transfer and risked 300s hangs on Hobby.
+ */
+export async function resolvePublicMediaSignedUrl(
+  client: WorkspaceClient,
+  siteKey: string | null | undefined,
+  assetId: string | null | undefined,
+  expiresInSeconds = 60 * 60,
+): Promise<{ url: string, mimeType: string }> {
+  const asset = await loadPublicMediaAsset(client, siteKey, assetId)
+  const { data, error } = await client.storage
+    .from(asset.bucket || 'marketing-assets')
+    .createSignedUrl(asset.object_path, expiresInSeconds)
+  if (error || !data?.signedUrl)
+    throw cmsNotFound('Mídia não encontrada')
+  return {
+    url: data.signedUrl,
+    mimeType: asset.mime_type || 'application/octet-stream',
+  }
+}
+
+/**
+ * @deprecated Prefer resolvePublicMediaSignedUrl + HTTP redirect on the public route.
+ * Kept for tests / callers that still need bytes in-process.
  */
 export async function downloadPublicMedia(
   client: WorkspaceClient,

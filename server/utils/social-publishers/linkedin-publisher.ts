@@ -58,8 +58,12 @@ async function waitForImageAvailable(
   headers: Record<string, string>,
 ) {
   const url = `https://api.linkedin.com/rest/images/${encodeURIComponent(imageUrn)}`
-  for (let attempt = 0; attempt < 24; attempt++) {
-    const image = await $fetch<{ status?: string }>(url, { headers }).catch((err: unknown) => {
+  // Cap ~12s total so publication workers fit under Vercel maxDuration / pg_net.
+  for (let attempt = 0; attempt < 10; attempt++) {
+    const image = await $fetch<{ status?: string }>(url, {
+      headers,
+      timeout: 8_000,
+    }).catch((err: unknown) => {
       // Read may lag briefly after PUT; retry a few times before failing hard.
       if (attempt < 5)
         return null
@@ -74,7 +78,7 @@ async function waitForImageAvailable(
         statusMessage: 'LinkedIn falhou ao processar a imagem enviada',
       })
     }
-    await sleep(400 + attempt * 200)
+    await sleep(400 + attempt * 150)
   }
   throw createError({
     statusCode: 504,
@@ -98,6 +102,7 @@ async function uploadImage(
   const initialization = await $fetch<any>('https://api.linkedin.com/rest/images?action=initializeUpload', {
     method: 'POST',
     headers: { ...headers, 'Content-Type': 'application/json' },
+    timeout: 15_000,
     body: {
       initializeUploadRequest: { owner },
     },
@@ -108,13 +113,17 @@ async function uploadImage(
   if (!value?.uploadUrl || !value?.image)
     throw createError({ statusCode: 502, statusMessage: 'LinkedIn não iniciou o upload da imagem' })
 
-  const binary = await $fetch<ArrayBuffer>(signed.signedUrl, { responseType: 'arrayBuffer' })
+  const binary = await $fetch<ArrayBuffer>(signed.signedUrl, {
+    responseType: 'arrayBuffer',
+    timeout: 20_000,
+  })
   await $fetch(value.uploadUrl, {
     method: 'PUT',
     headers: {
       'Authorization': `Bearer ${token}`,
       'Content-Type': asset.mime_type || 'application/octet-stream',
     },
+    timeout: 30_000,
     body: binary,
   }).catch((err: unknown) => {
     throw linkedinFetchError(err, 'Falha ao enviar bytes da imagem ao LinkedIn')

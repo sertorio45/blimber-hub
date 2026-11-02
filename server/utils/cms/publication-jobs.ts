@@ -398,8 +398,11 @@ export async function processDueCmsPublicationJobs(
       break
   }
 
+  const deadline = Date.now() + 20_000
   const results: Array<CmsJobProcessResult & { jobId: string }> = []
   for (const job of jobs) {
+    if (Date.now() >= deadline)
+      break
     try {
       results.push({ jobId: job.id, ...(await processCmsPublicationJob(client, job, workerId)) })
     }

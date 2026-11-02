@@ -5,6 +5,20 @@ import { sendWhatsAppTextMessage } from '~/server/utils/whatsapp/message-sender'
 import { broadcastWhatsAppEvent } from '~/server/utils/whatsapp/realtime-broadcast'
 
 const SEND_DELAY_MS = 2500
+/** Keep each invocation well under Vercel maxDuration (60s) and Hobby Active CPU. */
+const DEFAULT_CAMPAIGN_MAX_MS = 20_000
+const DEFAULT_CAMPAIGN_MAX_RECIPIENTS = 8
+
+export interface ProcessCampaignSendOptions {
+  maxMs?: number
+  maxRecipients?: number
+}
+
+export interface ProcessCampaignSendResult {
+  processed: number
+  hasPending: boolean
+  status: string | null
+}
 
 interface AudienceContact {
   id: string
@@ -230,7 +244,19 @@ export async function processCampaignSend(
   client: SupabaseClient,
   campaignId: string,
   tenantId: string,
-) {
+  options: ProcessCampaignSendOptions = {},
+): Promise<ProcessCampaignSendResult> {
+  const maxMs = options.maxMs ?? DEFAULT_CAMPAIGN_MAX_MS
+  const maxRecipients = options.maxRecipients ?? DEFAULT_CAMPAIGN_MAX_RECIPIENTS
+  const deadline = Date.now() + Math.max(1_000, maxMs)
+  let processed = 0
+
+  const empty = (status: string | null = null): ProcessCampaignSendResult => ({
+    processed: 0,
+    hasPending: false,
+    status,
+  })
+
   const { data: campaign, error: campaignError } = await client
     .from('whatsapp_campaign')
     .select('*')
@@ -239,15 +265,15 @@ export async function processCampaignSend(
     .maybeSingle()
 
   if (campaignError || !campaign)
-    return
+    return empty()
 
   const filter = (campaign.audience_filter || {}) as WhatsAppCampaignAudienceFilter
   const messageTemplate = filter.message?.trim()
   if (!messageTemplate)
-    return
+    return empty(campaign.status)
 
   if (!campaign.instance_id)
-    return
+    return empty(campaign.status)
 
   const { data: instance, error: instanceError } = await client
     .from('whatsapp_instance')
@@ -257,7 +283,7 @@ export async function processCampaignSend(
     .maybeSingle()
 
   if (instanceError || !instance)
-    return
+    return empty(campaign.status)
 
   const { data: integration } = await client
     .from('whatsapp_integration')
@@ -266,7 +292,7 @@ export async function processCampaignSend(
     .maybeSingle()
 
   if (!integration)
-    return
+    return empty(campaign.status)
 
   if (instance.provider !== 'evolution' || instance.status !== 'connected') {
     await client
@@ -277,10 +303,10 @@ export async function processCampaignSend(
         updated_at: new Date().toISOString(),
       })
       .eq('id', campaignId)
-    return
+    return { processed: 0, hasPending: false, status: 'failed' }
   }
 
-  while (true) {
+  while (processed < maxRecipients && Date.now() < deadline) {
     const status = await getCampaignStatus(client, campaignId, tenantId)
     if (status === 'paused')
       break
@@ -332,22 +358,31 @@ export async function processCampaignSend(
         .eq('id', recipient.id)
     }
 
+    processed += 1
     await refreshCampaignStats(client, campaignId, tenantId)
-    await sleep(SEND_DELAY_MS)
+
+    // Skip delay when the next iteration would miss the deadline.
+    if (processed < maxRecipients && Date.now() + SEND_DELAY_MS < deadline)
+      await sleep(SEND_DELAY_MS)
   }
 
   const finalStatus = await getCampaignStatus(client, campaignId, tenantId)
-  if (finalStatus === 'running') {
-    const stats = await refreshCampaignStats(client, campaignId, tenantId)
-    const hasPending = (stats.pending || 0) > 0
+  const stats = await refreshCampaignStats(client, campaignId, tenantId)
+  const hasPending = (stats.pending || 0) > 0
+
+  // Budget exhausted with work left: keep `running` so the UI tick continues.
+  if (finalStatus === 'running' && !hasPending) {
     await client
       .from('whatsapp_campaign')
       .update({
-        status: hasPending ? 'paused' : 'completed',
-        completed_at: hasPending ? null : new Date().toISOString(),
+        status: 'completed',
+        completed_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })
       .eq('id', campaignId)
       .eq('tenant_id', tenantId)
+    return { processed, hasPending: false, status: 'completed' }
   }
+
+  return { processed, hasPending, status: finalStatus }
 }

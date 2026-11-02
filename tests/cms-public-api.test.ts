@@ -631,8 +631,8 @@ describe('entrega pública do CMS', () => {
     expect(JSON.stringify(response)).not.toContain('Rascunho secreto')
   })
 
-  it('mídia pública: baixa asset do tenant do site e recusa de outro tenant', async () => {
-    const { downloadPublicMedia } = await import('~/server/utils/cms/public')
+  it('mídia pública: resolve signed URL do tenant e recusa de outro tenant', async () => {
+    const { resolvePublicMediaSignedUrl } = await import('~/server/utils/cms/public')
     const assetRow = {
       id: 'f1000000-0000-4000-8000-000000000001',
       bucket: 'marketing-assets',
@@ -655,8 +655,8 @@ describe('entrega pública do CMS', () => {
           : asset),
         storage: {
           from: () => ({
-            download: async () => ({
-              data: new Blob(['jpeg-bytes'], { type: 'image/jpeg' }),
+            createSignedUrl: async () => ({
+              data: { signedUrl: 'https://storage.example/signed.jpg' },
               error: null,
             }),
           }),
@@ -664,16 +664,16 @@ describe('entrega pública do CMS', () => {
       }
     }
 
-    const downloaded = await downloadPublicMedia(stubWith(assetRow), 'empresa-a', assetRow.id)
-    expect(downloaded.mimeType).toBe('image/jpeg')
-    expect(downloaded.body.toString()).toBe('jpeg-bytes')
-    await expect(downloadPublicMedia(stubWith(null), 'empresa-a', assetRow.id))
+    const resolved = await resolvePublicMediaSignedUrl(stubWith(assetRow), 'empresa-a', assetRow.id)
+    expect(resolved.mimeType).toBe('image/jpeg')
+    expect(resolved.url).toBe('https://storage.example/signed.jpg')
+    await expect(resolvePublicMediaSignedUrl(stubWith(null), 'empresa-a', assetRow.id))
       .rejects
       .toMatchObject({ statusCode: 404 })
-    await expect(downloadPublicMedia(stubWith({ ...assetRow, status: 'processing' }), 'empresa-a', assetRow.id))
+    await expect(resolvePublicMediaSignedUrl(stubWith({ ...assetRow, status: 'processing' }), 'empresa-a', assetRow.id))
       .rejects
       .toMatchObject({ statusCode: 404 })
-    await expect(downloadPublicMedia(stubWith(assetRow), 'empresa-a', 'não-uuid'))
+    await expect(resolvePublicMediaSignedUrl(stubWith(assetRow), 'empresa-a', 'não-uuid'))
       .rejects
       .toMatchObject({ statusCode: 404 })
   })

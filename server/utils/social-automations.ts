@@ -661,8 +661,10 @@ export async function upsertAutomationRule(
 
 /** Cron/worker: overdue approvals + stalled production cards. */
 export async function processDueAutomations(client: any, limit = 40) {
+  const deadline = Date.now() + 20_000
   const now = new Date().toISOString()
   const results: Array<{ trigger: string, status: string, message: string }> = []
+  const capped = Math.min(20, Math.max(1, Number(limit) || 40))
 
   const { data: overdueApprovals } = await client
     .from('approval_requests')
@@ -670,9 +672,11 @@ export async function processDueAutomations(client: any, limit = 40) {
     .eq('run_status', 'pending')
     .lt('due_at', now)
     .order('due_at')
-    .limit(limit)
+    .limit(capped)
 
   for (const row of overdueApprovals || []) {
+    if (Date.now() >= deadline)
+      break
     const result = await emitSocialAutomation(client, {
       tenantId: row.tenant_id,
       trigger: 'approval.overdue',
@@ -691,9 +695,11 @@ export async function processDueAutomations(client: any, limit = 40) {
     .lt('production_due_at', now)
     .not('production_status', 'in', '("approved","scheduled","published")')
     .order('production_due_at')
-    .limit(limit)
+    .limit(capped)
 
   for (const row of stalled || []) {
+    if (Date.now() >= deadline)
+      break
     const result = await emitSocialAutomation(client, {
       tenantId: row.tenant_id,
       trigger: 'content.stalled',

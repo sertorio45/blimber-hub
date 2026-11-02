@@ -108,12 +108,24 @@ export default defineEventHandler(async (event) => {
   if (updateError || !updated)
     throw createError({ statusCode: 400, statusMessage: updateError?.message || 'Failed to start' })
 
-  processCampaignSend(client, id, tenantId).catch((err) => {
-    console.error('[WhatsApp] Campaign send failed:', err)
-  })
+  // Bounded batch in-request — never fire-and-forget a while(true) on Vercel
+  // (that burned Hobby Active CPU with 300s timeouts). UI tick continues the rest.
+  try {
+    await processCampaignSend(client, id, tenantId)
+  }
+  catch (err) {
+    console.error('[WhatsApp] Campaign send batch failed:', err)
+  }
+
+  const { data: afterBatch } = await client
+    .from('whatsapp_campaign')
+    .select(CAMPAIGN_SELECT)
+    .eq('id', id)
+    .eq('tenant_id', tenantId)
+    .maybeSingle()
 
   return {
-    data: mapCampaignRow(updated as any),
+    data: mapCampaignRow((afterBatch || updated) as any),
     audienceSize: preview.length,
   }
 })

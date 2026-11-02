@@ -12,6 +12,13 @@ const redirectRouteRules = Object.fromEntries(
 )
 
 export default defineNuxtConfig({
+  // Avoid Vite/esbuild dependency crawl spawn EBADF under Cursor agent shells (macOS FD limits).
+  vite: {
+    optimizeDeps: {
+      noDiscovery: true,
+      holdUntilCrawlEnd: false,
+    },
+  },
   devtools: { enabled: false },
   ssr: true,
 
@@ -63,6 +70,13 @@ export default defineNuxtConfig({
   },
 
   nitro: {
+    // Cap Vercel Fluid duration: Hobby includes only 4 Active CPU-hrs/mo.
+    // Default 300s hangs (Nitro) exhausted fair use; 60s is enough for workers.
+    vercel: {
+      functions: {
+        maxDuration: 60,
+      },
+    },
     // Native modules must stay external; trace platform binaries for Vercel linux-x64.
     serverExternalPackages: ['sharp', '@img/sharp-linux-x64', '@img/sharp-libvips-linux-x64', '@modelcontextprotocol/sdk'],
     externals: {

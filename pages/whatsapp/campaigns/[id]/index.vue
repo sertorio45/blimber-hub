@@ -18,7 +18,7 @@ definePageMeta({
 const route = useRoute()
 const campaignId = computed(() => route.params.id as string)
 const { tenantId } = useTenant()
-const { startCampaign, pauseCampaign, fetchCampaign, fetchRecipients } = useWhatsAppCampaigns()
+const { startCampaign, pauseCampaign, tickCampaign, fetchCampaign, fetchRecipients } = useWhatsAppCampaigns()
 
 const actionLoading = ref(false)
 const recipients = ref<WhatsAppCampaignRecipient[]>([])
@@ -62,6 +62,15 @@ async function loadRecipients() {
 function startPolling() {
   stopPolling()
   pollTimer = setInterval(async () => {
+    // Drive the next bounded send batch while the detail page is open.
+    if (campaign.value?.status === 'running') {
+      try {
+        await tickCampaign(campaignId.value)
+      }
+      catch {
+        // Keep polling UI even if one tick fails (network/auth blip).
+      }
+    }
     await refresh()
     await loadRecipients()
     if (campaign.value && !['running', 'scheduled'].includes(campaign.value.status))

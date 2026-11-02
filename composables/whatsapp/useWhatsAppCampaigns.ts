@@ -91,6 +91,16 @@ export function useWhatsAppCampaigns() {
     return response.data
   }
 
+  async function tickCampaign(id: string) {
+    return $fetch<{ data: WhatsAppCampaign, processed: number, hasPending: boolean }>(
+      `/api/whatsapp/campaigns/${id}/tick`,
+      {
+        method: 'POST',
+        query: { tenant_id: tenantId.value },
+      },
+    )
+  }
+
   async function fetchCampaign(id: string) {
     return $fetch<{ data: WhatsAppCampaign }>(`/api/whatsapp/campaigns/${id}`, {
       query: { tenant_id: tenantId.value },
@@ -127,6 +137,7 @@ export function useWhatsAppCampaigns() {
     deleteCampaign,
     startCampaign,
     pauseCampaign,
+    tickCampaign,
     fetchCampaign,
     fetchRecipients,
   }
