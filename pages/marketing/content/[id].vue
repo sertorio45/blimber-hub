@@ -22,7 +22,7 @@ definePageMeta({
 
 const route = useRoute()
 const social = useMarketingSocial()
-const { can } = useWorkspace()
+const { can, isPlatformStaff } = useWorkspace()
 const { isClientExperience } = useMarketingAudience()
 const postId = computed(() => String(route.params.id))
 const saving = ref(false)
@@ -144,26 +144,51 @@ const isBypassed = computed(() => Boolean((post.value as any)?.approval_bypassed
 const canBypass = computed(() =>
   !isClientExperience.value
   && can('marketing.social.approval.bypass')
-  && ['internal_review', 'client_review', 'changes_requested'].includes(editorialStatus.value),
+  && ['draft', 'internal_review', 'client_review', 'changes_requested'].includes(editorialStatus.value),
 )
 const selectableWorkflows = computed(() => (workflows.value || []) as any[])
+const ACTIVE_SCHEDULE_STATUSES = new Set(['planned', 'queued', 'processing', 'failed'])
 const scheduledAtValue = computed(() => {
-  const schedules = ((post.value as any)?.marketing_post_schedules || []) as Array<{ scheduled_at: string }>
-  if (schedules.length) {
-    const sorted = [...schedules].sort((a, b) => String(a.scheduled_at).localeCompare(String(b.scheduled_at)))
+  const schedules = ((post.value as any)?.marketing_post_schedules || []) as Array<{
+    scheduled_at: string
+    status?: string
+  }>
+  const active = schedules.filter(slot =>
+    !slot.status || ACTIVE_SCHEDULE_STATUSES.has(String(slot.status)),
+  )
+  if (active.length) {
+    const sorted = [...active].sort((a, b) =>
+      new Date(a.scheduled_at).getTime() - new Date(b.scheduled_at).getTime(),
+    )
     return String(sorted[0]?.scheduled_at || '')
   }
   const value = (post.value as any)?.scheduled_at
   return value ? String(value) : null
 })
-const scheduleCount = computed(() =>
-  (((post.value as any)?.marketing_post_schedules || []) as unknown[]).length,
-)
+const scheduleCount = computed(() => {
+  const schedules = ((post.value as any)?.marketing_post_schedules || []) as Array<{ status?: string }>
+  if (!schedules.length)
+    return (post.value as any)?.scheduled_at ? 1 : 0
+  return schedules.filter(slot =>
+    !slot.status || ACTIVE_SCHEDULE_STATUSES.has(String(slot.status)),
+  ).length
+})
 const hasApprovedVersion = computed(() => Boolean((post.value as any)?.approved_version_id))
 const isSchedulePast = computed(() => {
   if (!scheduledAtValue.value)
     return false
   return new Date(scheduledAtValue.value).getTime() <= Date.now()
+})
+const isScheduleToday = computed(() => {
+  if (!scheduledAtValue.value)
+    return false
+  const scheduled = new Date(scheduledAtValue.value)
+  if (Number.isNaN(scheduled.getTime()))
+    return false
+  const now = new Date()
+  return scheduled.getFullYear() === now.getFullYear()
+    && scheduled.getMonth() === now.getMonth()
+    && scheduled.getDate() === now.getDate()
 })
 const needsScheduleChoice = computed(() => {
   if (isClientExperience.value)
@@ -174,6 +199,13 @@ const needsScheduleChoice = computed(() => {
 })
 
 const releasableStatuses = ['draft', 'changes_requested', 'approved', 'scheduled', 'failed'] as const
+const canStaffFastRelease = computed(() =>
+  !isClientExperience.value
+  && (
+    isPlatformStaff.value
+    || (can('marketing.social.publish') && can('marketing.social.approval.bypass'))
+  ),
+)
 
 const canSubmit = computed(() =>
   !isClientExperience.value
@@ -181,6 +213,10 @@ const canSubmit = computed(() =>
 )
 const canPublishNow = computed(() => {
   if (isClientExperience.value) {
+    return can('marketing.social.publish')
+      && releasableStatuses.includes(postStatus.value as typeof releasableStatuses[number])
+  }
+  if (canStaffFastRelease.value) {
     return can('marketing.social.publish')
       && releasableStatuses.includes(postStatus.value as typeof releasableStatuses[number])
   }
@@ -192,9 +228,29 @@ const canReschedule = computed(() => {
     return (can('marketing.social.schedule') || can('marketing.social.publish'))
       && releasableStatuses.includes(postStatus.value as typeof releasableStatuses[number])
   }
+  if (canStaffFastRelease.value) {
+    return (can('marketing.social.schedule') || can('marketing.social.publish'))
+      && releasableStatuses.includes(postStatus.value as typeof releasableStatuses[number])
+  }
   return hasApprovedVersion.value
     && ['approved', 'scheduled', 'failed'].includes(postStatus.value)
 })
+const showDraftTodayAlert = computed(() =>
+  canStaffFastRelease.value
+  && canPublishNow.value
+  && ['draft', 'changes_requested'].includes(postStatus.value)
+  && Boolean(scheduledAtValue.value)
+  && (isScheduleToday.value || isSchedulePast.value),
+)
+
+/** Prefill picker with wall clock in the browser local zone (not UTC digits). */
+function toLocalWallDateTime(iso: string): string {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime()))
+    return ''
+  const pad = (value: number) => String(value).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
 const canShareStories = computed(() => {
   if (!['published', 'approved', 'scheduled'].includes(postStatus.value))
     return false
@@ -236,7 +292,7 @@ function toggleApprover(userId: string) {
 
 function openScheduleDialog(prefill = true) {
   if (prefill && scheduledAtValue.value && !isSchedulePast.value)
-    scheduleAt.value = scheduledAtValue.value.slice(0, 16)
+    scheduleAt.value = toLocalWallDateTime(scheduledAtValue.value)
   else
     scheduleAt.value = ''
   pastScheduleDialogOpen.value = false
@@ -291,7 +347,7 @@ async function confirmBypass() {
     await social.bypassApproval(postId.value, bypassJustification.value.trim())
     bypassDialogOpen.value = false
     bypassJustification.value = ''
-    toast.success('Aprovação ignorada — publicação liberada')
+    toast.success('Aprovação ignorada — peça liberada')
     await refresh()
   }
   catch (error: any) {
@@ -325,11 +381,26 @@ async function schedule() {
 async function publishNow() {
   saving.value = true
   try {
-    await social.schedulePost(postId.value, null, { publishNow: true })
+    const response = await social.schedulePost(postId.value, null, { publishNow: true })
     pastScheduleDialogOpen.value = false
     scheduleDialogOpen.value = false
     pastPromptDismissed.value = true
-    toast.success('Publicação enfileirada para agora')
+    const results = response.processResults || []
+    const failed = results.filter(result => result.success === false)
+    const succeeded = results.filter(result => result.success === true)
+    if (failed.length && !succeeded.length) {
+      const firstError = String(failed[0]?.last_error_message || failed[0]?.message || 'Falha ao publicar nos canais')
+      toast.error(firstError)
+    }
+    else if (failed.length) {
+      toast.message(`Publicado em ${succeeded.length} canal(is); ${failed.length} com falha`)
+    }
+    else if (succeeded.length) {
+      toast.success('Publicado agora')
+    }
+    else {
+      toast.success('Publicação enfileirada')
+    }
     await refresh()
   }
   catch (error: any) {
@@ -414,23 +485,24 @@ function onDeleted() {
           <span v-if="isSchedulePast && postStatus === 'approved'"> · horário já passou</span>
         </p>
       </div>
-      <div class="flex flex-wrap gap-2">
+      <div class="flex flex-wrap items-center justify-end gap-2">
         <Button
           v-if="post && (can('marketing.social.delete.local') || can('marketing.social.delete.remote'))"
           variant="ghost"
+          size="sm"
           class="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
           @click="deleteDialogOpen = true"
         >
           <Icon name="lucide:trash-2" class="mr-2 h-4 w-4" />
-          Excluir conteúdo
+          Excluir
+        </Button>
+        <Button v-if="canBypass" variant="ghost" size="sm" @click="bypassDialogOpen = true">
+          <Icon name="lucide:fast-forward" class="mr-2 h-4 w-4" />
+          Ignorar aprovação
         </Button>
         <Button v-if="canSubmit" variant="outline" @click="approvalDialogOpen = true">
           <Icon name="lucide:send" class="mr-2 h-4 w-4" />
           Enviar para aprovação
-        </Button>
-        <Button v-if="canBypass" variant="outline" @click="bypassDialogOpen = true">
-          <Icon name="lucide:fast-forward" class="mr-2 h-4 w-4" />
-          Ignorar aprovação
         </Button>
         <Button v-if="canReschedule" variant="outline" @click="openScheduleDialog()">
           <Icon name="lucide:calendar-clock" class="mr-2 h-4 w-4" />
@@ -440,12 +512,27 @@ function onDeleted() {
           <Icon name="lucide:circle-fading-plus" class="mr-2 h-4 w-4" />
           Também nos Stories
         </Button>
-        <Button v-if="canPublishNow" @click="publishNow">
+        <Button v-if="canPublishNow" :disabled="saving" @click="publishNow">
           <Icon name="lucide:zap" class="mr-2 h-4 w-4" />
           Publicar agora
         </Button>
       </div>
     </div>
+
+    <Alert v-if="showDraftTodayAlert">
+      <Icon name="lucide:zap" class="h-4 w-4" />
+      <AlertTitle>
+        {{ isSchedulePast ? 'Horário de hoje já passou' : 'Peça programada para hoje' }}
+      </AlertTitle>
+      <AlertDescription class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <span>
+          Esta peça está para {{ formatDate(scheduledAtValue) }}. Você pode publicar agora sem passar pela inbox de aprovações.
+        </span>
+        <Button size="sm" :disabled="saving" @click="publishNow">
+          Publicar agora
+        </Button>
+      </AlertDescription>
+    </Alert>
 
     <Alert v-if="isAwaitingApproval">
       <Icon name="lucide:clipboard-check" class="h-4 w-4" />

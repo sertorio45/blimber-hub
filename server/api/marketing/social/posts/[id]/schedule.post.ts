@@ -1,5 +1,6 @@
 import { createError, getRouterParam, readBody } from 'h3'
 import { z } from 'zod'
+import { serverSupabaseServiceRole } from '#supabase/server'
 
 import { holdsCapability } from '~/constants/workspace'
 import {
@@ -8,6 +9,7 @@ import {
 } from '~/server/utils/social-approval-domain'
 import { recordSocialAudit } from '~/server/utils/social-audit'
 import { requireSocialContext } from '~/server/utils/social-context'
+import { processPublicationJob } from '~/server/utils/social-publisher'
 
 const schema = z.object({
   scheduledAt: z.string().datetime({ offset: true }).nullable().optional(),
@@ -46,6 +48,20 @@ export default defineEventHandler(async (event) => {
     userId: context.user.id,
   })
 
+  // Publish-now must not wait for pg_cron → production worker. Process inline
+  // with the service role so local/dev and paused deploys still ship.
+  let processResults: Array<Record<string, unknown>> = []
+  if (publishNow && jobs.length) {
+    const service = await serverSupabaseServiceRole(event)
+    const workerId = `publish-now:${context.user.id}`
+    for (const job of jobs) {
+      processResults.push({
+        jobId: job.id,
+        ...(await processPublicationJob(service, job, workerId)),
+      })
+    }
+  }
+
   await recordSocialAudit(event, context.client, {
     tenantId: context.tenantId,
     actorId: context.user.id,
@@ -56,8 +72,9 @@ export default defineEventHandler(async (event) => {
       jobIds: jobs.map((job: any) => job.id),
       scheduledAt: publishNow ? new Date().toISOString() : input.scheduledAt,
       publishNow,
+      processResults,
     },
   })
 
-  return { data: jobs }
+  return { data: jobs, processResults }
 })

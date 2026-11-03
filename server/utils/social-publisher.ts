@@ -215,11 +215,13 @@ export async function processPublicationJob(
       userAgent: `worker:${workerId}`,
     })
 
+    // Ignore cancelled/superseded jobs from older versions — they must not
+    // block the post from flipping to published.
     const { count: remaining } = await client
       .from('publication_jobs')
       .select('id', { count: 'exact', head: true })
       .eq('post_id', claimed.post_id)
-      .neq('status', 'published')
+      .in('status', ['pending', 'retrying', 'processing', 'failed'])
     if (!remaining) {
       await client.from('social_posts').update({
         publication_status: 'published',

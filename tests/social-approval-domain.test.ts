@@ -562,6 +562,38 @@ describe('social approval domain', () => {
     expect(db.content_versions!.length).toBe(1)
   })
 
+  it('12b. platform staff can publish a draft in one step', async () => {
+    const { ensureReleaseApproved } = await import('~/server/utils/social-approval-domain')
+
+    expect(post(db).editorial_status).toBe('draft')
+    expect(post(db).approved_version_id).toBeNull()
+
+    const jobs = await enqueueApprovedPost(client, {
+      tenantId: ids.tenant,
+      postId: ids.post,
+      publishNow: true,
+      isPlatformStaff: true,
+      userId: ids.author,
+      capabilities: [],
+    })
+
+    expect(post(db).editorial_status).toBe('approved')
+    expect(post(db).approved_version_id).toBeTruthy()
+    expect(post(db).approval_bypassed).toBe(false)
+    expect(post(db).workflow_id).toBe(SYSTEM_WORKFLOW_IDS.noApproval)
+    expect(jobs.length).toBe(1)
+    expect(jobs[0].version_id).toBe(post(db).approved_version_id)
+    expect(post(db).publication_status).toBe('scheduled')
+
+    // Idempotent release approval when version already matches
+    await ensureReleaseApproved(client, {
+      tenantId: ids.tenant,
+      postId: ids.post,
+      userId: ids.author,
+    })
+    expect(db.content_versions!.length).toBe(1)
+  })
+
   it('cancelApprovalRun returns the post to draft', async () => {
     const started = await startApprovalWorkflow(client, {
       tenantId: ids.tenant,

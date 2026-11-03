@@ -96,7 +96,8 @@ export const navMenu: NavMenu[] = [
             title: 'Aprovações',
             icon: 'i-lucide-badge-check',
             link: '/marketing/approvals',
-            capability: 'marketing.social.approval.client',
+            // Legacy approve aliases to internal + client — visible to either approver role.
+            capability: 'marketing.social.approve',
           },
           {
             title: 'Biblioteca',

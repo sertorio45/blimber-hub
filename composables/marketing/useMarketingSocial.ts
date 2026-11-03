@@ -151,7 +151,10 @@ export function useMarketingSocial() {
   }
 
   async function schedulePost(id: string, scheduledAt?: string | null, options?: { publishNow?: boolean }) {
-    return $fetch(`/api/marketing/social/posts/${id}/schedule`, {
+    return $fetch<{
+      data: any[]
+      processResults?: Array<Record<string, unknown>>
+    }>(`/api/marketing/social/posts/${id}/schedule`, {
       method: 'POST',
       body: {
         tenant_id: tenantId.value || undefined,

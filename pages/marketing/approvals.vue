@@ -291,6 +291,36 @@ function nextAction(item: any) {
   return '—'
 }
 
+function primaryActionLabel(item: any) {
+  if (item.status === 'pending' && item.can_decide !== false)
+    return 'Revisar'
+  if (item.status === 'approved' && !isClientPortal.value)
+    return 'Abrir peça'
+  if (item.post_id || item.raw?.post_id)
+    return 'Abrir peça'
+  return 'Abrir'
+}
+
+function isDueToday(item: any) {
+  if (!item?.due_at)
+    return false
+  const due = new Date(item.due_at)
+  if (Number.isNaN(due.getTime()))
+    return false
+  const now = new Date()
+  return due.getFullYear() === now.getFullYear()
+    && due.getMonth() === now.getMonth()
+    && due.getDate() === now.getDate()
+}
+
+function openPost(item: any, event?: Event) {
+  event?.stopPropagation()
+  const postId = item.post_id || item.raw?.post_id
+  if (!postId)
+    return openItem(item)
+  return navigateTo(`/marketing/content/${postId}`)
+}
+
 const emptyCopy = computed(() => {
   const bucket = filters.bucket
   if (isClientPortal.value) {
@@ -628,7 +658,10 @@ const showBulkBar = computed(() => pendingSelectable.value.length > 0)
             v-for="item in items"
             :key="item.id"
             class="relative overflow-hidden rounded-xl border border-l-4 bg-card text-left transition hover:border-primary/30 hover:shadow-sm focus-within:ring-2 focus-within:ring-ring"
-            :class="approvalStatusAccentClass(item.status, item.overdue)"
+            :class="[
+              approvalStatusAccentClass(item.status, item.overdue),
+              item.overdue ? 'ring-1 ring-destructive/20' : isDueToday(item) ? 'ring-1 ring-amber-500/25' : '',
+            ]"
           >
             <div
               v-if="item.status === 'pending' && item.can_decide !== false"
@@ -662,11 +695,26 @@ const showBulkBar = computed(() => pendingSelectable.value.length > 0)
                       {{ item.title }}
                     </h3>
                   </div>
-                  <ApprovalStatusBadge
-                    :status="item.status"
-                    :overdue="Boolean(item.overdue)"
-                    class="shrink-0"
-                  />
+                  <div class="flex shrink-0 flex-col items-end gap-1">
+                    <ApprovalStatusBadge
+                      :status="item.status"
+                      :overdue="Boolean(item.overdue)"
+                    />
+                    <Badge
+                      v-if="item.overdue"
+                      variant="destructive"
+                      class="text-[10px]"
+                    >
+                      Atrasado
+                    </Badge>
+                    <Badge
+                      v-else-if="isDueToday(item) && item.status === 'pending'"
+                      variant="secondary"
+                      class="border-amber-500/40 bg-amber-500/10 text-[10px] text-amber-800 dark:text-amber-200"
+                    >
+                      Prazo hoje
+                    </Badge>
+                  </div>
                 </div>
 
                 <div class="flex flex-wrap gap-1.5">
@@ -690,7 +738,13 @@ const showBulkBar = computed(() => pendingSelectable.value.length > 0)
                 <dl class="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
                   <div>
                     <dt>Prazo</dt>
-                    <dd class="font-medium text-foreground" :class="{ 'text-destructive': item.overdue }">
+                    <dd
+                      class="font-medium text-foreground"
+                      :class="{
+                        'text-destructive': item.overdue,
+                        'text-amber-700 dark:text-amber-300': !item.overdue && isDueToday(item),
+                      }"
+                    >
                       {{ item.due_at ? new Date(item.due_at).toLocaleDateString('pt-BR') : '—' }}
                     </dd>
                   </div>
@@ -702,11 +756,30 @@ const showBulkBar = computed(() => pendingSelectable.value.length > 0)
                   </div>
                 </dl>
 
-                <p class="text-xs font-medium text-primary">
+                <p class="text-xs text-muted-foreground">
                   {{ nextAction(item) }}
                 </p>
               </div>
             </button>
+            <div class="border-t px-4 py-3">
+              <Button
+                v-if="item.status === 'pending' && item.can_decide !== false"
+                class="w-full"
+                size="sm"
+                @click="openItem(item)"
+              >
+                {{ primaryActionLabel(item) }}
+              </Button>
+              <Button
+                v-else
+                variant="outline"
+                class="w-full"
+                size="sm"
+                @click="openPost(item)"
+              >
+                {{ primaryActionLabel(item) }}
+              </Button>
+            </div>
           </div>
         </div>
       </template>

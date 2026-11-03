@@ -439,6 +439,18 @@ const canDecideNow = computed(() =>
   && detail.value?.status === 'pending'
   && !saving.value,
 )
+
+const readOnlyReason = computed(() => {
+  if (!detail.value || detail.value.status !== 'pending')
+    return null
+  if (canDecideNow.value)
+    return null
+  if (!canApprove.value)
+    return 'Você não tem permissão para decidir nesta etapa.'
+  if (detail.value.can_decide === false)
+    return 'Você não é aprovador desta rodada — a peça está em modo somente leitura.'
+  return null
+})
 </script>
 
 <template>
@@ -881,74 +893,86 @@ const canDecideNow = computed(() =>
         v-if="showStickyActions && detail?.error_state !== 'forbidden'"
         class="shrink-0 border-t bg-background/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:px-6"
       >
-        <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-          <Button
-            v-if="canDecideNow"
-            class="min-h-11 w-full sm:order-1 sm:w-auto sm:min-w-32"
-            :disabled="saving"
-            @click="startDecision('approved')"
+        <p
+          v-if="readOnlyReason"
+          class="mb-2 text-sm text-muted-foreground"
+        >
+          {{ readOnlyReason }}
+        </p>
+        <div class="flex flex-col gap-2">
+          <div
+            v-if="canDecideNow || (canSchedule && detail.post?.editorial_status === 'approved')"
+            class="flex flex-col gap-2 sm:flex-row sm:flex-wrap"
           >
-            <Icon name="lucide:check" class="mr-1.5 h-4 w-4" />
-            Aprovar
-          </Button>
-          <Button
-            v-if="canDecideNow"
-            variant="outline"
-            class="min-h-11 w-full sm:order-2 sm:w-auto"
-            :disabled="saving"
-            @click="startDecision('changes_requested')"
-          >
-            <Icon name="lucide:message-square-warning" class="mr-1.5 h-4 w-4" />
-            Pedir alterações
-          </Button>
-          <Button
-            v-if="canDecideNow"
-            variant="ghost"
-            class="min-h-11 w-full text-destructive hover:bg-destructive/10 hover:text-destructive sm:order-3 sm:w-auto"
-            :disabled="saving"
-            @click="startDecision('rejected')"
-          >
-            <Icon name="lucide:x" class="mr-1.5 h-4 w-4" />
-            Reprovar
-          </Button>
-          <Button
-            v-if="canEdit && (detail.status === 'changes_requested' || detail.status === 'pending')"
-            variant="secondary"
-            class="min-h-11 w-full sm:order-4 sm:w-auto"
-            :disabled="saving"
-            @click="openEditor"
-          >
-            <Icon name="lucide:pencil" class="mr-1.5 h-4 w-4" />
-            {{ detail.status === 'changes_requested' ? 'Editar e nova versão' : 'Editar peça' }}
-          </Button>
-          <Button
-            v-if="canSchedule && detail.post?.editorial_status === 'approved'"
-            variant="secondary"
-            class="min-h-11 w-full sm:order-5 sm:w-auto"
-            :disabled="saving"
-            @click="scheduleApproved"
-          >
-            <Icon name="lucide:calendar-clock" class="mr-1.5 h-4 w-4" />
-            Agendar
-          </Button>
-          <Button
-            v-if="canCancel"
-            variant="ghost"
-            class="min-h-11 w-full sm:order-6 sm:w-auto"
-            :disabled="saving"
-            @click="confirmCancelOpen = true"
-          >
-            Cancelar solicitação
-          </Button>
-          <Button
-            v-if="canBypass && detail.status === 'pending'"
-            variant="ghost"
-            class="min-h-11 w-full sm:order-7 sm:w-auto"
-            :disabled="saving"
-            @click="openBypassDialog"
-          >
-            Avançar (bypass)
-          </Button>
+            <Button
+              v-if="canDecideNow"
+              class="min-h-11 w-full sm:w-auto sm:min-w-32"
+              :disabled="saving"
+              @click="startDecision('approved')"
+            >
+              <Icon name="lucide:check" class="mr-1.5 h-4 w-4" />
+              Aprovar
+            </Button>
+            <Button
+              v-if="canDecideNow"
+              variant="outline"
+              class="min-h-11 w-full sm:w-auto"
+              :disabled="saving"
+              @click="startDecision('changes_requested')"
+            >
+              <Icon name="lucide:message-square-warning" class="mr-1.5 h-4 w-4" />
+              Pedir alterações
+            </Button>
+            <Button
+              v-if="canSchedule && detail.post?.editorial_status === 'approved'"
+              class="min-h-11 w-full sm:w-auto"
+              :disabled="saving"
+              @click="scheduleApproved"
+            >
+              <Icon name="lucide:calendar-clock" class="mr-1.5 h-4 w-4" />
+              Agendar
+            </Button>
+          </div>
+          <div class="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+            <Button
+              v-if="canDecideNow"
+              variant="ghost"
+              class="min-h-11 w-full text-destructive hover:bg-destructive/10 hover:text-destructive sm:w-auto"
+              :disabled="saving"
+              @click="startDecision('rejected')"
+            >
+              <Icon name="lucide:x" class="mr-1.5 h-4 w-4" />
+              Reprovar
+            </Button>
+            <Button
+              v-if="canEdit && (detail.status === 'changes_requested' || detail.status === 'pending')"
+              variant="secondary"
+              class="min-h-11 w-full sm:w-auto"
+              :disabled="saving"
+              @click="openEditor"
+            >
+              <Icon name="lucide:pencil" class="mr-1.5 h-4 w-4" />
+              {{ detail.status === 'changes_requested' ? 'Editar e nova versão' : 'Editar peça' }}
+            </Button>
+            <Button
+              v-if="canCancel"
+              variant="ghost"
+              class="min-h-11 w-full sm:w-auto"
+              :disabled="saving"
+              @click="confirmCancelOpen = true"
+            >
+              Cancelar solicitação
+            </Button>
+            <Button
+              v-if="canBypass && detail.status === 'pending'"
+              variant="ghost"
+              class="min-h-11 w-full sm:w-auto"
+              :disabled="saving"
+              @click="openBypassDialog"
+            >
+              Ignorar aprovação
+            </Button>
+          </div>
         </div>
       </div>
     </SheetContent>

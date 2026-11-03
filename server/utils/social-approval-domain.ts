@@ -1273,9 +1273,9 @@ export function isSelfServeSocialRelease(input: {
 
 /**
  * Snapshots the current draft and marks it approved so schedule/publish can proceed
- * without an approval workflow. Agency-managed tenants never take this path.
+ * without an approval workflow. Used by self-serve clients and platform staff.
  */
-export async function ensureSelfServeApproved(
+export async function ensureReleaseApproved(
   client: any,
   input: { tenantId: string, postId: string, userId: string },
 ) {
@@ -1328,6 +1328,14 @@ export async function ensureSelfServeApproved(
     })
     .eq('tenant_id', input.tenantId)
     .eq('id', input.postId)
+}
+
+/** @deprecated Prefer ensureReleaseApproved — kept for call-site compatibility. */
+export async function ensureSelfServeApproved(
+  client: any,
+  input: { tenantId: string, postId: string, userId: string },
+) {
+  return ensureReleaseApproved(client, input)
 }
 
 interface AssertScheduleInput {
@@ -1412,14 +1420,19 @@ export async function enqueueApprovedPost(
     userId?: string
   },
 ) {
-  if (input.selfServe) {
+  // Self-serve clients, platform staff, and actors with explicit bypass may
+  // release a draft in one step (no approval inbox round).
+  const canFastRelease = Boolean(input.selfServe)
+    || Boolean(input.isPlatformStaff)
+    || holdsAny(input.capabilities, ['marketing.social.approval.bypass'])
+  if (canFastRelease) {
     if (!input.userId) {
       throw createError({
         statusCode: 400,
         statusMessage: 'Usuário obrigatório para publicação sem aprovação',
       })
     }
-    await ensureSelfServeApproved(client, {
+    await ensureReleaseApproved(client, {
       tenantId: input.tenantId,
       postId: input.postId,
       userId: input.userId,

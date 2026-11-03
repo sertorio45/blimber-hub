@@ -93,6 +93,11 @@ export default defineEventHandler(async (event) => {
     .eq('post_id', postId)
     .in('status', ['pending', 'retrying'])
 
+  // Editing supersedes approval and cancels pending jobs — clear legacy
+  // publication_status so the UI can offer submit/publish again.
+  const previousPublication = String(existing.publication_status || 'not_scheduled')
+  const shouldResetPublication = ['scheduled', 'failed', 'publishing'].includes(previousPublication)
+
   const sharedHashtags = input.hashtags || []
   const sharedArtText = input.artText?.trim() || ''
   const sharedCta = input.cta?.trim() || ''
@@ -134,6 +139,7 @@ export default defineEventHandler(async (event) => {
       editorial_status: 'draft',
       approval_bypassed: false,
       approved_version_id: null,
+      ...(shouldResetPublication ? { publication_status: 'not_scheduled' } : {}),
       ...productionPatch,
       metadata: {
         ...existingMetadata,
