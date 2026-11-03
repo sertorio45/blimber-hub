@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import type { Contact } from '~/types/crm'
 
-import { useSupabaseClient } from '#imports'
 import { columns } from '~/components/crm/contacts/columns'
 import ContactForm from '~/components/crm/contacts/ContactForm.vue'
 import CrmPageHeader from '~/components/crm/shared/CrmPageHeader.vue'
@@ -21,49 +20,48 @@ definePageMeta({
   description: 'Gerencie seus contatos de negócios',
 })
 
-const supabase = useSupabaseClient()
-const { tenantId } = useTenantPage()
+const { tenantId, whenTenantReady } = useTenantPage()
 
 const selectedContact = ref<Contact | null>(null)
 const isDialogOpen = ref(false)
-const selectedItems = ref<number[]>([])
+const selectedItems = ref<Contact[]>([])
+const contactsData = ref<Contact[]>([])
+const isLoading = ref(false)
+const page = ref(1)
+const limit = ref(50)
 
-const {
-  data: contactsData,
-  pending,
-  refresh,
-  showSkeleton,
-} = await useCachedAsyncData<Contact[]>(
-  computed(() => `crm-contacts-${tenantId.value ?? 'none'}`),
-  async () => {
-    if (!tenantId.value)
-      return []
+async function fetchContacts() {
+  if (!tenantId.value)
+    return
 
-    const { data, error } = await supabase
-      .from('crm_contact')
-      .select('*, company:crm_company(name)')
-      .eq('tenant_id', tenantId.value)
-      .order('created_at', { ascending: false })
+  isLoading.value = true
+  try {
+    const response = await $fetch<{
+      data: Contact[]
+      total: number
+      page: number
+      limit: number
+    }>('/api/crm/contacts', {
+      query: {
+        tenant_id: tenantId.value,
+        page: page.value,
+        limit: limit.value,
+      },
+    })
+    contactsData.value = response.data || []
+  }
+  catch (error) {
+    console.error('Failed to fetch contacts:', error)
+    contactsData.value = []
+  }
+  finally {
+    isLoading.value = false
+  }
+}
 
-    if (error) {
-      console.error('Failed to fetch contacts:', error)
-      return []
-    }
+const contacts = computed(() => contactsData.value)
 
-    return (data || []).map((c: any) => ({
-      ...c,
-      company_name: c.company?.name || '',
-    }))
-  },
-  {
-    default: () => null,
-    watch: [tenantId],
-  },
-)
-
-const contacts = computed(() => contactsData.value ?? [])
-
-function updateSelectedItems(items: number[]) {
+function updateSelectedItems(items: Contact[]) {
   selectedItems.value = items
 }
 
@@ -71,13 +69,8 @@ async function handleMultiDelete() {
   if (!tenantId.value || !selectedItems.value.length)
     return
 
-  const toDelete = selectedItems.value
-    .map(idx => contacts.value[idx])
-    .filter((contact): contact is Contact => Boolean(contact))
+  const toDelete = [...selectedItems.value]
   const count = toDelete.length
-
-  if (!count)
-    return
 
   const deleted = await deleteWithConfirm(
     () => Promise.all(toDelete.map(contact =>
@@ -93,7 +86,7 @@ async function handleMultiDelete() {
 
   if (deleted) {
     selectedItems.value = []
-    await refresh()
+    await fetchContacts()
   }
 }
 
@@ -112,7 +105,7 @@ async function handleDelete(contact: Contact) {
   )
 
   if (deleted)
-    await refresh()
+    await fetchContacts()
 }
 
 function handleEdit(contact: Contact) {
@@ -132,9 +125,19 @@ function closeDialog() {
 
 function handleContactSaved() {
   closeDialog()
-  // Use refresh from useLazyAsyncData
-  refresh()
+  fetchContacts()
 }
+
+whenTenantReady(() => {
+  fetchContacts()
+})
+
+watch(tenantId, (val) => {
+  if (!val)
+    return
+  page.value = 1
+  fetchContacts()
+})
 </script>
 
 <template>
@@ -155,8 +158,7 @@ function handleContactSaved() {
       </template>
     </CrmPageHeader>
 
-    <!-- DataTable with Skeleton -->
-    <div v-if="showSkeleton" class="space-y-4">
+    <div v-if="isLoading" class="space-y-4">
       <Card class="border shadow-sm">
         <CardContent class="p-4">
           <div class="space-y-2">
@@ -169,7 +171,6 @@ function handleContactSaved() {
       </Card>
     </div>
     <template v-else>
-      <!-- DataTable -->
       <DataTable
         :data="contacts"
         :columns="columns"
@@ -195,7 +196,6 @@ function handleContactSaved() {
       :on-delete="handleMultiDelete"
     />
 
-    <!-- Contact Dialog -->
     <Dialog v-model:open="isDialogOpen">
       <DialogContent class="mx-auto w-full overflow-hidden p-0 lg:max-w-3xl md:max-w-2xl sm:max-w-lg">
         <DialogHeader class="border-b p-4 md:p-6">

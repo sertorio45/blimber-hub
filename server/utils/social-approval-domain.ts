@@ -256,10 +256,38 @@ export function isMaterialContentChange(
 // Workflow resolution
 // ---------------------------------------------------------------------------
 
+const WORKFLOW_STAGE_COLUMNS = [
+  'id',
+  'workflow_id',
+  'position',
+  'name',
+  'stage_type',
+  'mode',
+  'minimum_approvals',
+  'due_hours',
+  'required_capability',
+  'allow_self_approval',
+  'auto_advance',
+  'require_comment_on_reject',
+  'allow_rejection',
+].join(', ')
+
+const WORKFLOW_COLUMNS = [
+  'id',
+  'organization_id',
+  'tenant_id',
+  'name',
+  'slug',
+  'description',
+  'is_system',
+  'is_default',
+  'is_active',
+].join(', ')
+
 async function loadWorkflowStages(client: any, workflowId: string): Promise<WorkflowStageRow[]> {
   const { data } = await client
     .from('social_approval_workflow_stages')
-    .select('*')
+    .select(WORKFLOW_STAGE_COLUMNS)
     .eq('workflow_id', workflowId)
     .order('position', { ascending: true })
   return ((data || []) as WorkflowStageRow[]).slice().sort((a, b) => a.position - b.position)
@@ -305,7 +333,7 @@ export async function resolveWorkflowForTenant(
 
   const { data: workflow } = await client
     .from('social_approval_workflows')
-    .select('*')
+    .select(WORKFLOW_COLUMNS)
     .eq('id', workflowId)
     .maybeSingle()
 
@@ -965,7 +993,7 @@ export async function submitApprovalDecision(client: any, input: SubmitDecisionI
   if (request.workflow_stage_id) {
     const { data: stageRow } = await client
       .from('social_approval_workflow_stages')
-      .select('*')
+      .select(WORKFLOW_STAGE_COLUMNS)
       .eq('id', request.workflow_stage_id)
       .maybeSingle()
     stage = (stageRow as WorkflowStageRow) || null

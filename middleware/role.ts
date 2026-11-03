@@ -32,7 +32,7 @@ export default defineNuxtRouteMiddleware(async (to, _from) => {
     catch {}
 
     const { resolveRoleFromSession } = await import('~/utils/resolve-user-role')
-    const userRole = await resolveRoleFromSession(client, tenantId)
+    const userRole = await resolveRoleFromSession(client, tenantId, session)
 
     const requiredRoles = Array.isArray(to.meta.requiredRoles) ? to.meta.requiredRoles : [to.meta.requiredRoles]
 

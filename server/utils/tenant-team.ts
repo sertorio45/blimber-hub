@@ -1,8 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { createClient } from '@supabase/supabase-js'
 import { createError } from 'h3'
 
 import { resendClientAccessEmail } from '~/server/utils/auth-invite'
+import { createBlimberServiceRoleClient } from '~/server/utils/blimber-service-client'
 import { resolveMarketingTenantContext } from '~/server/utils/marketing'
 import { isStaffUser, resolveStaffRole } from '~/server/utils/tenant-role'
 
@@ -26,9 +26,10 @@ const CLIENT_ASSIGNABLE_ROLES: TenantTeamRole[] = ['atendente']
 const STAFF_ASSIGNABLE_ROLES: TenantTeamRole[] = ['atendente', 'cliente']
 
 function getAdminClient() {
-  return createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_KEY!, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  })
+  const client = createBlimberServiceRoleClient()
+  if (!client)
+    throw createError({ statusCode: 500, statusMessage: 'Supabase service role não configurado' })
+  return client
 }
 
 export async function assertCanManageTenantTeam(event: any, tenantId: string) {

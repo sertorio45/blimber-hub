@@ -1,5 +1,40 @@
 import { z } from 'zod'
 import { fetchBrandContextForTenant } from '~/server/utils/brand-context'
+
+/** Lean columns for MCP post/campaign reads — avoid shipping full row payloads. */
+const SOCIAL_POST_READ_COLUMNS = [
+  'id',
+  'tenant_id',
+  'title',
+  'content',
+  'status',
+  'editorial_status',
+  'publication_status',
+  'production_status',
+  'campaign_id',
+  'assigned_to',
+  'scheduled_at',
+  'timezone',
+  'metadata',
+  'approval_bypassed',
+  'created_at',
+  'updated_at',
+  'deleted_at',
+].join(', ')
+
+const SOCIAL_CAMPAIGN_READ_COLUMNS = [
+  'id',
+  'tenant_id',
+  'name',
+  'objective',
+  'status',
+  'starts_at',
+  'ends_at',
+  'owner_id',
+  'briefing_summary',
+  'created_at',
+  'updated_at',
+].join(', ')
 import { LINKED_POSTS_EMBED_SELECT } from '~/server/utils/media-asset-deletion'
 import {
   assertLibraryUploadKind,
@@ -777,7 +812,7 @@ export async function marketingListPosts(
 
   let request = ctx.client
     .from('social_posts')
-    .select('*', { count: 'exact' })
+    .select(SOCIAL_POST_READ_COLUMNS, { count: 'exact' })
     .eq('tenant_id', input.tenantId)
     .is('deleted_at', null)
     .order('created_at', { ascending: false })
@@ -1206,7 +1241,7 @@ async function refetchMappedPost(
 ) {
   const { data } = await ctx.client
     .from('social_posts')
-    .select('*')
+    .select(SOCIAL_POST_READ_COLUMNS)
     .eq('tenant_id', tenantId)
     .eq('id', postId)
     .maybeSingle()
@@ -1293,7 +1328,7 @@ export async function marketingUpdatePost(
 
   const { data: existing } = await ctx.client
     .from('social_posts')
-    .select('*')
+    .select(SOCIAL_POST_READ_COLUMNS)
     .eq('tenant_id', input.tenantId)
     .eq('id', input.postId)
     .maybeSingle()
@@ -2074,7 +2109,7 @@ export async function marketingListCampaigns(
 
   let request = ctx.client
     .from('social_campaigns')
-    .select('*', { count: 'exact' })
+    .select(SOCIAL_CAMPAIGN_READ_COLUMNS, { count: 'exact' })
     .eq('tenant_id', input.tenantId)
     .order('created_at', { ascending: false })
     .limit(limit)
@@ -2123,7 +2158,7 @@ export async function marketingGetCampaign(
   const input = marketingGetCampaignSchema.parse(raw)
   const { data: campaign, error } = await ctx.client
     .from('social_campaigns')
-    .select('*')
+    .select(SOCIAL_CAMPAIGN_READ_COLUMNS)
     .eq('id', input.campaignId)
     .eq('tenant_id', input.tenantId)
     .maybeSingle()
@@ -2222,7 +2257,7 @@ export async function marketingUpdateCampaign(
 
   const { data: existing } = await ctx.client
     .from('social_campaigns')
-    .select('*')
+    .select(SOCIAL_CAMPAIGN_READ_COLUMNS)
     .eq('id', input.campaignId)
     .eq('tenant_id', input.tenantId)
     .maybeSingle()
@@ -2288,7 +2323,7 @@ export async function marketingDeleteCampaign(
 
   const { data: existing } = await ctx.client
     .from('social_campaigns')
-    .select('*')
+    .select(SOCIAL_CAMPAIGN_READ_COLUMNS)
     .eq('id', input.campaignId)
     .eq('tenant_id', input.tenantId)
     .maybeSingle()

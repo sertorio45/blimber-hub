@@ -57,17 +57,29 @@ export async function findTenantRow<T extends TenantScopedRecord = TenantScopedR
   return data as T
 }
 
+const ARTICLE_LIST_COLUMNS: Record<ArticleTable, string> = {
+  articles: 'id, tenant_id, title, slug, publish_status, category_id, thumb_url, created_at, update_at',
+  articles_category: 'id, tenant_id, title, slug, publish_status, description, created_at',
+  articles_tag: 'id, tenant_id, title, slug, publish_status, description, created_at',
+  articles_tag_relations: 'id, tenant_id, article_id, tag_id, created_at',
+}
+
+const DEFAULT_LIST_LIMIT = 100
+
 export async function listTenantRows<T extends TenantScopedRecord = TenantScopedRecord>(
   client: WorkspaceClient,
   table: ArticleTable,
   tenantId: string,
   filters: Record<string, string | number> = {},
+  options: { columns?: string, limit?: number } = {},
 ): Promise<T[]> {
-  let query = client.from(table).select('*').eq('tenant_id', tenantId)
+  const columns = options.columns || ARTICLE_LIST_COLUMNS[table] || '*'
+  const limit = Math.min(500, Math.max(1, options.limit ?? DEFAULT_LIST_LIMIT))
+  let query = client.from(table).select(columns).eq('tenant_id', tenantId)
   for (const [column, value] of Object.entries(filters))
     query = query.eq(column, value)
 
-  const { data, error } = await query.order('created_at', { ascending: false })
+  const { data, error } = await query.order('created_at', { ascending: false }).limit(limit)
   if (error)
     throw databaseError(error, 'Erro ao listar registros')
   return (data || []) as T[]

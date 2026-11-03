@@ -14,28 +14,30 @@ export default defineEventHandler(async (event) => {
   const { tenantId } = await resolveWhatsAppTenantContext(event, query.tenant_id as string | undefined)
   const client = serverSupabaseServiceRole(event)
 
-  const { data: flow, error } = await client
-    .from('whatsapp_flow')
-    .select('*')
-    .eq('id', id)
-    .eq('tenant_id', tenantId)
-    .maybeSingle()
+  const [flowResult, executionsResult] = await Promise.all([
+    client
+      .from('whatsapp_flow')
+      .select('id, tenant_id, name, description, status, trigger_type, trigger_config, viewport, version, created_at, updated_at')
+      .eq('id', id)
+      .eq('tenant_id', tenantId)
+      .maybeSingle(),
+    client
+      .from('whatsapp_flow_execution')
+      .select('id, flow_id, conversation_id, contact_id, status, current_node_id, context, started_at, completed_at, created_at')
+      .eq('flow_id', id)
+      .order('started_at', { ascending: false })
+      .limit(10),
+  ])
 
-  if (error || !flow)
+  const flow = flowResult.data
+  if (flowResult.error || !flow)
     throw createError({ statusCode: 404, statusMessage: 'Flow not found' })
-
-  const { data: recentExecutions } = await client
-    .from('whatsapp_flow_execution')
-    .select('*')
-    .eq('flow_id', id)
-    .order('started_at', { ascending: false })
-    .limit(10)
 
   const canvas = getCanvasFromViewport(flow.viewport as Record<string, unknown>)
 
   return {
     data: mapFlowRow(flow as any),
     canvas,
-    recentExecutions: (recentExecutions || []).map(mapFlowExecutionRow),
+    recentExecutions: (executionsResult.data || []).map(mapFlowExecutionRow),
   }
 })

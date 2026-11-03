@@ -1,20 +1,15 @@
-import process from 'node:process'
-
-import { createClient } from '@supabase/supabase-js'
 import { createError, readBody } from 'h3'
 
 import { requireStaffUser } from '~/server/utils/admin-auth'
+import { createBlimberServiceRoleClient } from '~/server/utils/blimber-service-client'
 
 export default defineEventHandler(async (event) => {
   await requireStaffUser(event)
 
   try {
-    const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_KEY!, {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false,
-      },
-    })
+    const supabase = createBlimberServiceRoleClient()
+    if (!supabase)
+      throw createError({ statusCode: 500, statusMessage: 'Supabase service role não configurado' })
 
     const id = event.context.params?.id
     if (!id)

@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import type { CrmCompanyLookupResult, CrmLeadLookupResult, Lead } from '~/types/crm'
 import { Icon } from '#components'
-import { useSupabaseClient } from '#imports'
 import { computed, ref, watch } from 'vue'
 import {
   Select,
@@ -56,7 +55,6 @@ const emit = defineEmits<{
 const displayLead = ref<Lead>({ ...props.lead })
 
 const { tenantId } = useTenant()
-const supabase = useSupabaseClient()
 
 // Estados de loading
 const loading = ref(false)
@@ -201,61 +199,86 @@ async function loadLeadContacts(leadId: string) {
   if (!tenantId.value)
     return
 
-  const { data, error } = await supabase
-    .from('crm_contact')
-    .select('id, name, email, phone, position, notes, company_id, company:crm_company(id, name, website, address, address_number, address_complement, cep, city, country, notes)')
-    .eq('lead_id', leadId)
-    .eq('tenant_id', tenantId.value)
-    .order('created_at', { ascending: true })
-
-  if (error) {
-    console.warn('Falha ao carregar contatos do lead:', error)
-  }
-
   removedContactIds.value = []
 
-  if (data?.length) {
-    contacts.value = data.map(row => ({
-      key: String(row.id),
-      id: row.id,
-      name: row.name || '',
-      email: row.email || '',
-      phone: row.phone || '',
-      position: row.position || '',
-      notes: row.notes || '',
-    }))
+  try {
+    const response = await $fetch<{
+      data: Array<{
+        id: string
+        name?: string
+        email?: string
+        phone?: string
+        position?: string
+        notes?: string
+        company_id?: string | null
+        company?: Record<string, any> | Record<string, any>[] | null
+      }>
+    }>('/api/crm/contacts', {
+      query: {
+        tenant_id: tenantId.value,
+        lead_id: leadId,
+        page: 1,
+        limit: 100,
+      },
+    })
 
-    const withCompany = data.find(row => row.company_id || row.company)
-    const company = withCompany
-      ? (Array.isArray(withCompany.company) ? withCompany.company[0] : withCompany.company)
-      : null
+    const data = response.data || []
 
-    companyId.value = company?.id || withCompany?.company_id || null
-    companyForm.value = company
-      ? {
-          name: company.name || '',
-          website: company.website || '',
-          address: company.address || '',
-          address_number: company.address_number || '',
-          address_complement: company.address_complement || '',
-          cep: company.cep || '',
-          city: company.city || '',
-          country: company.country || '',
-          notes: company.notes || '',
-        }
-      : emptyCompanyForm()
-    return
+    if (data.length) {
+      contacts.value = data.map(row => ({
+        key: String(row.id),
+        id: row.id,
+        name: row.name || '',
+        email: row.email || '',
+        phone: row.phone || '',
+        position: row.position || '',
+        notes: row.notes || '',
+      }))
+
+      const withCompany = data.find(row => row.company_id || row.company)
+      const company = withCompany
+        ? (Array.isArray(withCompany.company) ? withCompany.company[0] : withCompany.company)
+        : null
+
+      companyId.value = company?.id || withCompany?.company_id || null
+      companyForm.value = company
+        ? {
+            name: company.name || '',
+            website: company.website || '',
+            address: company.address || '',
+            address_number: company.address_number || '',
+            address_complement: company.address_complement || '',
+            cep: company.cep || '',
+            city: company.city || '',
+            country: company.country || '',
+            notes: company.notes || '',
+          }
+        : emptyCompanyForm()
+      return
+    }
+
+    companyId.value = null
+    contacts.value = [{
+      ...createEmptyContact(),
+      name: props.lead?.contact_name || '',
+      email: props.lead?.email || '',
+      phone: props.lead?.phone || '',
+      position: props.lead?.contact_position || '',
+    }]
+    companyForm.value = emptyCompanyForm()
   }
-
-  companyId.value = null
-  contacts.value = [{
-    ...createEmptyContact(),
-    name: props.lead?.contact_name || '',
-    email: props.lead?.email || '',
-    phone: props.lead?.phone || '',
-    position: props.lead?.contact_position || '',
-  }]
-  companyForm.value = emptyCompanyForm()
+  catch (error) {
+    console.warn('Falha ao carregar contatos do lead:', error)
+    companyId.value = null
+    contacts.value = [{
+      ...createEmptyContact(),
+      name: props.lead?.contact_name || '',
+      email: props.lead?.email || '',
+      phone: props.lead?.phone || '',
+      position: props.lead?.contact_position || '',
+    }]
+    companyForm.value = emptyCompanyForm()
+  }
 }
 
 function addContact() {

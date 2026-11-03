@@ -25,7 +25,7 @@ export function useRole() {
     }
     catch {}
 
-    userRole.value = await resolveRoleFromSession(client, tenantId)
+    userRole.value = await resolveRoleFromSession(client, tenantId, session)
   }
 
   const isAdmin = computed(() => userRole.value === 'admin')

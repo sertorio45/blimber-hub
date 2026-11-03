@@ -38,7 +38,7 @@ export function useAuth() {
         }
         catch {}
 
-        const role = await resolveRoleFromSession(client, tenantId)
+        const role = await resolveRoleFromSession(client, tenantId, session)
         if (role) {
           userRole.value = role
         }

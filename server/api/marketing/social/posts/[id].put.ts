@@ -175,13 +175,13 @@ export default defineEventHandler(async (event) => {
       .in('id', removedIds)
   }
 
-  for (const variant of input.variants) {
+  function buildVariantPayload(variant: (typeof input.variants)[number]) {
     const platformConfig = {
       ...(variant.platformConfig || {}),
       artText: String((variant.platformConfig as any)?.artText || sharedArtText || ''),
       cta: String((variant.platformConfig as any)?.cta || sharedCta || ''),
     }
-    const payload = {
+    return {
       tenant_id: tenantId,
       post_id: postId,
       account_id: variant.accountId,
@@ -192,32 +192,64 @@ export default defineEventHandler(async (event) => {
       hashtags: (variant.hashtags?.length ? variant.hashtags : sharedHashtags),
       platform_config: platformConfig,
     }
-    const variantQuery = variant.id
-      ? client.from('social_post_variants').update(payload).eq('id', variant.id)
-      : client.from('social_post_variants').insert(payload)
-    const { data: savedVariant, error: variantError } = await variantQuery.select('id').single()
+  }
+
+  const variantsToUpdate = input.variants.filter(variant => Boolean(variant.id))
+  const variantsToInsert = input.variants.filter(variant => !variant.id)
+
+  const updatedPairs = await Promise.all(variantsToUpdate.map(async (variant) => {
+    const { data: savedVariant, error: variantError } = await client
+      .from('social_post_variants')
+      .update(buildVariantPayload(variant))
+      .eq('id', variant.id!)
+      .eq('tenant_id', tenantId)
+      .select('id')
+      .single()
     if (variantError)
       throw createError({ statusCode: 400, statusMessage: variantError.message })
+    return { id: String(savedVariant.id), assetIds: variant.assetIds }
+  }))
 
-    await client
+  let insertedPairs: Array<{ id: string, assetIds: string[] }> = []
+  if (variantsToInsert.length) {
+    const { data: inserted, error: insertError } = await client
+      .from('social_post_variants')
+      .insert(variantsToInsert.map(buildVariantPayload))
+      .select('id')
+    if (insertError)
+      throw createError({ statusCode: 400, statusMessage: insertError.message })
+    insertedPairs = (inserted || []).map((row: { id: string }, index: number) => ({
+      id: String(row.id),
+      assetIds: variantsToInsert[index]?.assetIds || [],
+    }))
+  }
+
+  const savedVariants = [...updatedPairs, ...insertedPairs]
+  const savedVariantIds = savedVariants.map(variant => variant.id)
+
+  if (savedVariantIds.length) {
+    const { error: deleteAssetsError } = await client
       .from('social_post_assets')
       .delete()
       .eq('tenant_id', tenantId)
-      .eq('variant_id', savedVariant.id)
+      .in('variant_id', savedVariantIds)
+    if (deleteAssetsError)
+      throw createError({ statusCode: 400, statusMessage: deleteAssetsError.message })
+  }
 
-    if (variant.assetIds.length) {
-      const { error: assetsError } = await client.from('social_post_assets').insert(
-        variant.assetIds.map((assetId, position) => ({
-          tenant_id: tenantId,
-          post_id: postId,
-          variant_id: savedVariant.id,
-          asset_id: assetId,
-          position,
-        })),
-      )
-      if (assetsError)
-        throw createError({ statusCode: 400, statusMessage: assetsError.message })
-    }
+  const assetRows = savedVariants.flatMap(variant =>
+    variant.assetIds.map((assetId, position) => ({
+      tenant_id: tenantId,
+      post_id: postId,
+      variant_id: variant.id,
+      asset_id: assetId,
+      position,
+    })),
+  )
+  if (assetRows.length) {
+    const { error: assetsError } = await client.from('social_post_assets').insert(assetRows)
+    if (assetsError)
+      throw createError({ statusCode: 400, statusMessage: assetsError.message })
   }
 
   await client

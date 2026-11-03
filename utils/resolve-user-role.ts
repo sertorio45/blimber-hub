@@ -54,11 +54,24 @@ export function resolveRoleFromJwtPayload(
   return globalRole || null
 }
 
+type SupabaseBrowserClient = ReturnType<typeof import('#imports').useSupabaseClient>
+
+type SessionLike = {
+  access_token?: string | null
+} | null | undefined
+
+/**
+ * Resolves role from an existing session when provided, avoiding a second
+ * auth.getSession() round-trip (common in middleware / useAuth / useRole).
+ */
 export async function resolveRoleFromSession(
-  supabase: ReturnType<typeof import('#imports').useSupabaseClient>,
+  supabase: SupabaseBrowserClient,
   tenantId?: string | null,
+  existingSession?: SessionLike,
 ) {
-  const { data: { session } } = await supabase.auth.getSession()
+  const session = existingSession === undefined
+    ? (await supabase.auth.getSession()).data.session
+    : existingSession
   if (!session?.access_token)
     return null
 

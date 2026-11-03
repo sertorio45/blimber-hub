@@ -1,6 +1,3 @@
-import process from 'node:process'
-
-import { createClient } from '@supabase/supabase-js'
 import { createError, readBody } from 'h3'
 
 import {
@@ -9,6 +6,7 @@ import {
   resolveActorStaffRole,
 } from '~/server/utils/admin-auth'
 import { createAdminTenant, seedTenantAllModules } from '~/server/utils/admin-tenant'
+import { createBlimberServiceRoleClient } from '~/server/utils/blimber-service-client'
 import { syncUserTenantRolesMetadata } from '~/server/utils/tenant-team'
 import { serverSupabaseServiceRole } from '#supabase/server'
 
@@ -25,9 +23,10 @@ interface CreateAdminUserBody {
 }
 
 function getAdminClient() {
-  return createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_KEY!, {
-    auth: { autoRefreshToken: false, persistSession: false },
-  })
+  const client = createBlimberServiceRoleClient()
+  if (!client)
+    throw createError({ statusCode: 500, statusMessage: 'Supabase service role não configurado' })
+  return client
 }
 
 function roleRequiresTenant(role: AdminUserRole) {

@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import type { CrmCompanyLookupResult, CrmLeadLookupResult } from '~/types/crm'
-import { useSupabaseClient } from '#imports'
 import { Check, Circle, Dot } from 'lucide-vue-next'
 import { computed, nextTick, ref, watch } from 'vue'
 import {
@@ -56,7 +55,6 @@ const emit = defineEmits<{
 }>()
 
 const { tenantId } = useTenant()
-const supabase = useSupabaseClient()
 
 // Estados de loading
 const isLoadingData = ref(true)
@@ -365,19 +363,23 @@ async function submitLead() {
       tags: [] as string[],
     }
 
-    const { data: lead, error: leadError } = await supabase
-      .from('crm_lead')
-      .insert([leadData])
-      .select()
-      .single()
-
-    if (leadError) {
-      console.error('Erro ao criar lead:', leadError)
-      throw new Error(`Falha ao criar lead: ${leadError.message}`)
+    let lead: { id: string }
+    try {
+      const leadResponse = await $fetch<{ body: { id: string } }>('/api/crm/lead', {
+        method: 'POST',
+        body: leadData,
+      })
+      if (!leadResponse?.body?.id)
+        throw new Error('Falha ao criar lead: nenhum dado retornado')
+      lead = leadResponse.body
     }
-
-    if (!lead) {
-      throw new Error('Falha ao criar lead: nenhum dado retornado')
+    catch (leadErr: any) {
+      console.error('Erro ao criar lead:', leadErr)
+      throw new Error(
+        leadErr?.data?.message
+        || leadErr?.message
+        || 'Falha ao criar lead',
+      )
     }
 
     // 2. Resolve company via API (enforces unique name + address fields)
@@ -421,29 +423,31 @@ async function submitLead() {
       }
     }
 
-    // 3. Cria o Contact vinculado ao lead
-    const { data: contact, error: contactError } = await supabase
-      .from('crm_contact')
-      .insert([{
-        name: contactForm.value.name,
-        email: contactForm.value.email,
-        phone: contactForm.value.phone || '',
-        position: contactForm.value.position,
-        notes: contactForm.value.notes,
-        tenant_id: tenantId.value,
-        lead_id: lead.id,
-        company_id: resolvedCompanyId,
-      }])
-      .select()
-      .single()
-
-    if (contactError) {
-      console.error('Erro ao criar contato:', contactError)
-      throw new Error(`Falha ao criar contato: ${contactError.message}`)
+    // 3. Cria o Contact vinculado ao lead via API Nitro
+    try {
+      const contactResponse = await $fetch<{ data: { id: string } }>('/api/crm/contacts', {
+        method: 'POST',
+        body: {
+          name: contactForm.value.name,
+          email: contactForm.value.email,
+          phone: contactForm.value.phone || '',
+          position: contactForm.value.position,
+          notes: contactForm.value.notes,
+          tenant_id: tenantId.value,
+          lead_id: lead.id,
+          company_id: resolvedCompanyId,
+        },
+      })
+      if (!contactResponse?.data?.id)
+        throw new Error('Falha ao criar contato: nenhum dado retornado')
     }
-
-    if (!contact) {
-      throw new Error('Falha ao criar contato: nenhum dado retornado')
+    catch (contactErr: any) {
+      console.error('Erro ao criar contato:', contactErr)
+      throw new Error(
+        contactErr?.data?.statusMessage
+        || contactErr?.message
+        || 'Falha ao criar contato',
+      )
     }
 
     // Resetar formulário

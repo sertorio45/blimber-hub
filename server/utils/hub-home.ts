@@ -32,22 +32,15 @@ async function sumWhatsAppUnread(
   tenantId: string,
   assignedTo?: string | null,
 ): Promise<number> {
-  let query = client
-    .from('whatsapp_conversation')
-    .select('unread_count')
-    .eq('tenant_id', tenantId)
-    .gt('unread_count', 0)
-
-  if (assignedTo)
-    query = query.eq('assigned_to', assignedTo)
-
-  const { data, error } = await query
+  const { data, error } = await client.rpc('whatsapp_sum_unread', {
+    p_tenant_id: tenantId,
+    p_assigned_to: assignedTo || null,
+  })
   if (error) {
     console.error('[hub-home] unread sum failed', error.message)
     return 0
   }
-  return (data || []).reduce((sum: number, row: { unread_count?: number | null }) =>
-    sum + Number(row.unread_count || 0), 0)
+  return Number(data || 0)
 }
 
 function hasModule(modules: string[], slug: string): boolean {
