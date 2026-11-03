@@ -144,9 +144,9 @@ export default defineNuxtConfig({
     '/whatsapp/conversations': { ssr: false },
     '/whatsapp/conversations/**': { ssr: false },
     '/whatsapp/flows/**': { ssr: false },
-    // Auth pages can be prerendered shells.
-    '/login': { prerender: true },
-    '/forgot-password': { prerender: true },
+    // Keep auth pages on SSR only — Nitro prerender OOM'd the Coolify Docker build.
+    '/login': { headers: { 'Cache-Control': 'private, no-store' } },
+    '/forgot-password': { headers: { 'Cache-Control': 'private, no-store' } },
     '/confirm': { headers: { 'Cache-Control': 'private, no-store' } },
     '/invite': { headers: { 'Cache-Control': 'private, no-store' } },
   },
