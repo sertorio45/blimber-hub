@@ -17,7 +17,7 @@ export async function validateSocialPostAssets(
 
   const { data: assets, error } = await client
     .from('media_assets')
-    .select('id, purpose, mime_type')
+    .select('id, purpose, mime_type, size_bytes')
     .eq('tenant_id', tenantId)
     .in('id', allAssetIds)
 
@@ -33,12 +33,6 @@ export async function validateSocialPostAssets(
     throw createError({ statusCode: 400, statusMessage: 'Referências devem usar arquivos de referência' })
 
   for (const variant of variants) {
-    if (variant.platform === 'linkedin' && variant.format === 'video') {
-      throw createError({
-        statusCode: 400,
-        statusMessage: 'O publicador atual do LinkedIn não aceita vídeos',
-      })
-    }
     const selectedAssets: any[] = variant.assetIds.map(id => assetsById.get(id)).filter(Boolean)
     if (variant.format === 'carousel' && selectedAssets.length > 10)
       throw createError({ statusCode: 400, statusMessage: 'Carrosséis aceitam no máximo 10 peças' })
@@ -48,5 +42,22 @@ export async function validateSocialPostAssets(
       throw createError({ statusCode: 400, statusMessage: 'O formato vídeo exige um arquivo de vídeo' })
     if (variant.format !== 'video' && selectedAssets.some(asset => asset.mime_type?.startsWith('video/')))
       throw createError({ statusCode: 400, statusMessage: 'Use o formato vídeo para publicar este arquivo' })
+    if (variant.platform === 'linkedin' && variant.format === 'video') {
+      const video = selectedAssets[0]
+      const mime = String(video?.mime_type || '').toLowerCase()
+      if (mime && mime !== 'video/mp4' && !mime.includes('mp4')) {
+        throw createError({
+          statusCode: 400,
+          statusMessage: 'O LinkedIn aceita apenas vídeo MP4',
+        })
+      }
+      const sizeBytes = Number(video?.size_bytes)
+      if (Number.isFinite(sizeBytes) && sizeBytes > 0 && sizeBytes > 100 * 1024 * 1024) {
+        throw createError({
+          statusCode: 400,
+          statusMessage: 'Vídeo LinkedIn limitado a 100 MB por publicação automática',
+        })
+      }
+    }
   }
 }

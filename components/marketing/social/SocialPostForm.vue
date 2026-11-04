@@ -204,8 +204,7 @@ const referenceAssets = computed(() =>
   (assets.value || []).filter(asset => asset.purpose === 'reference' || (asset as any).purpose === 'reference'),
 )
 const hasFormatConflict = computed(() => {
-  if (publicationFormat.value === 'video' && variants.value.some(variant => variant.platform === 'linkedin'))
-    return true
+  // LinkedIn has no Stories; video/static/carousel are supported by the publisher.
   if (publicationFormat.value === 'story' && variants.value.some(variant => variant.platform === 'linkedin'))
     return true
   return false
@@ -995,12 +994,10 @@ function submit() {
           <Alert v-if="hasFormatConflict" variant="destructive">
             <Icon name="lucide:triangle-alert" class="h-4 w-4" />
             <AlertTitle>
-              {{ publicationFormat === 'story' ? 'Stories indisponível no LinkedIn' : 'Formato indisponível no LinkedIn' }}
+              Stories indisponível no LinkedIn
             </AlertTitle>
             <AlertDescription>
-              {{ publicationFormat === 'story'
-                ? 'Stories funciona só no Facebook e Instagram. Desmarque o LinkedIn.'
-                : 'Escolha post estático ou carrossel, ou desmarque o LinkedIn.' }}
+              Stories funciona só no Facebook e Instagram. Desmarque o LinkedIn.
             </AlertDescription>
           </Alert>
           <Alert v-else-if="publicationFormat === 'story'">
