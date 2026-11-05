@@ -10,21 +10,21 @@ import type {
   SocialProductionPriority,
 } from '~/types/marketing-social'
 
+import { toast } from 'vue-sonner'
 import ProductionMetaFields from '~/components/marketing/content/ProductionMetaFields.vue'
 import ScheduleSlotsEditor from '~/components/marketing/content/ScheduleSlotsEditor.vue'
 import SocialPostComposer from '~/components/marketing/social/SocialPostComposer.vue'
 import SocialPostPreviewPanel from '~/components/marketing/social/SocialPostPreviewPanel.vue'
-import { toast } from 'vue-sonner'
-import {
-  buildCaptionWithHashtags,
-  formatHashtagsInline,
-  parseHashtags,
-} from '~/utils/social-hashtags'
 import {
   isAcceptedMediaFile,
   mediaFileAcceptAttr,
   mediaFileRejectMessage,
 } from '~/utils/file-drop'
+import {
+  buildCaptionWithHashtags,
+  formatHashtagsInline,
+  parseHashtags,
+} from '~/utils/social-hashtags'
 
 const props = defineProps<{
   initialValue?: SocialPostInput
@@ -112,8 +112,6 @@ const steps = [
   { step: 4, title: 'Revisão', description: 'Conferir e salvar', icon: 'lucide:check-circle-2' },
 ]
 
-const stepProgress = computed(() => ((currentStep.value - 1) / (steps.length - 1)) * 100)
-
 const { data: accounts, pending: accountsPending, refresh: refreshAccounts } = useMarketingFetch({
   key: () => `marketing-social-form-accounts-${social.tenantId.value}`,
   handler: () => social.listAccounts(),
@@ -171,16 +169,40 @@ const previewAccount = computed(() => {
 
 const previewMedia = computed(() => {
   const assetId = publicationAssetIds.value[0]
-  if (!assetId)
-    return { url: null, type: null as 'image' | 'video' | null }
+  if (!assetId) {
+    return {
+      url: null,
+      type: null as 'image' | 'video' | null,
+      width: null as number | null,
+      height: null as number | null,
+    }
+  }
   const asset = publicationAssetById(assetId)
   const mime = asset?.mimeType || asset?.mime_type || ''
   const url = asset?.previewUrl || asset?.preview_url || null
   return {
     url,
     type: mime.startsWith('video/') ? 'video' as const : mime.startsWith('image/') ? 'image' as const : null,
+    width: Number((asset as any)?.width) || null,
+    height: Number((asset as any)?.height) || null,
   }
 })
+
+const hasLivePreview = computed(() =>
+  Boolean(content.value.trim() || hashtags.value.length || publicationLink.value || previewMedia.value.url),
+)
+
+function assetThumbStyle(asset: MediaAsset | Record<string, unknown> | undefined | null) {
+  if (!asset)
+    return publicationFormat.value === 'story' ? { aspectRatio: '9 / 16' } : { aspectRatio: '1 / 1' }
+  const width = Number((asset as any).width ?? null)
+  const height = Number((asset as any).height ?? null)
+  if (width > 0 && height > 0)
+    return { aspectRatio: `${width} / ${height}` }
+  if (publicationFormat.value === 'story')
+    return { aspectRatio: '9 / 16' }
+  return { aspectRatio: '1 / 1' }
+}
 
 const composedCaptionPreview = computed(() =>
   buildCaptionWithHashtags(content.value, hashtags.value),
@@ -650,59 +672,66 @@ function submit() {
     <Skeleton class="h-10 w-2/3" />
   </div>
   <form v-else class="space-y-8" @submit.prevent="submit">
-    <!-- Premium stepper with icons and progress bar -->
-    <div class="relative">
-      <div class="absolute left-0 right-0 top-5 z-0 mx-auto h-0.5 bg-muted" style="width: calc(100% - 8rem);">
-        <div
-          class="h-full bg-primary transition-all duration-500 ease-out"
-          :style="{ width: `${stepProgress}%` }"
-        />
-      </div>
-      <div class="relative z-10 flex items-start justify-between">
-        <button
-          v-for="item in steps"
-          :key="item.step"
-          type="button"
-          class="group flex flex-col items-center gap-2"
-          :class="item.step <= currentStep ? 'cursor-pointer' : 'cursor-default'"
-          @click="goToStep(item.step)"
-        >
-          <div
-            class="h-10 w-10 flex items-center justify-center rounded-full border-2 transition-all duration-300"
-            :class="[
-              currentStep === item.step
-                ? 'border-primary bg-primary text-primary-foreground shadow-md shadow-primary/25 scale-110'
-                : currentStep > item.step
-                  ? 'border-primary bg-primary/10 text-primary'
-                  : 'border-muted bg-background text-muted-foreground',
-              item.step < currentStep ? 'group-hover:border-primary/70' : '',
-            ]"
-          >
-            <Icon v-if="currentStep > item.step" name="lucide:check" class="h-4.5 w-4.5" />
-            <Icon v-else :name="item.icon" class="h-4.5 w-4.5" />
-          </div>
-          <div class="text-center">
-            <p
-              class="text-xs font-medium transition-colors sm:text-sm"
-              :class="currentStep >= item.step ? 'text-foreground' : 'text-muted-foreground'"
+    <!-- Stepper: flex connectors aligned to icon center (h-10 → mt-5) -->
+    <nav aria-label="Etapas do conteúdo" class="w-full">
+      <ol class="w-full flex items-start">
+        <template v-for="(item, index) in steps" :key="item.step">
+          <li class="flex shrink-0 flex-col items-center gap-2">
+            <button
+              type="button"
+              class="group flex flex-col items-center gap-2"
+              :class="item.step <= currentStep ? 'cursor-pointer' : 'cursor-default'"
+              :aria-current="currentStep === item.step ? 'step' : undefined"
+              @click="goToStep(item.step)"
             >
-              {{ item.title }}
-            </p>
-            <p class="hidden text-xs text-muted-foreground lg:block">
-              {{ item.description }}
-            </p>
-          </div>
-        </button>
-      </div>
-    </div>
+              <span
+                class="h-10 w-10 flex shrink-0 items-center justify-center border-2 rounded-full transition-all duration-300"
+                :class="[
+                  currentStep === item.step
+                    ? 'border-primary bg-primary text-primary-foreground shadow-md shadow-primary/20'
+                    : currentStep > item.step
+                      ? 'border-primary bg-primary text-primary-foreground'
+                      : 'border-muted-foreground/25 bg-background text-muted-foreground',
+                ]"
+              >
+                <Icon v-if="currentStep > item.step" name="lucide:check" class="h-4 w-4" />
+                <Icon v-else :name="item.icon" class="h-4 w-4" />
+              </span>
+              <span class="max-w-24 text-center sm:max-w-28">
+                <span
+                  class="block text-xs font-medium transition-colors sm:text-sm"
+                  :class="currentStep >= item.step ? 'text-foreground' : 'text-muted-foreground'"
+                >
+                  {{ item.title }}
+                </span>
+                <span class="mt-0.5 hidden text-xs text-muted-foreground lg:block">
+                  {{ item.description }}
+                </span>
+              </span>
+            </button>
+          </li>
+          <li
+            v-if="index < steps.length - 1"
+            class="mx-1 mt-5 h-0.5 min-w-3 flex-1 rounded-full sm:mx-3"
+            :class="currentStep > item.step ? 'bg-primary' : 'bg-muted'"
+            aria-hidden="true"
+          />
+        </template>
+      </ol>
+    </nav>
 
     <!-- Step content with transitions -->
     <Transition
       :name="slideDirection === 'left' ? 'slide-left' : 'slide-right'"
       mode="out-in"
     >
-      <!-- Step 1: Content -->
-      <div v-if="currentStep === 1" :key="1" class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
+      <!-- Step 1: Content (form first; preview only when there is something to show) -->
+      <div
+        v-if="currentStep === 1"
+        :key="1"
+        class="grid gap-6"
+        :class="hasLivePreview ? 'lg:grid-cols-[minmax(0,1fr)_320px]' : ''"
+      >
         <div class="space-y-6">
           <Card class="border-border/60 shadow-sm">
             <CardHeader class="pb-4">
@@ -865,7 +894,10 @@ function submit() {
           </Card>
         </div>
 
-        <div class="lg:sticky lg:top-6 lg:self-start space-y-4">
+        <aside
+          v-if="hasLivePreview"
+          class="order-last lg:sticky lg:top-6 lg:order-none lg:self-start space-y-3"
+        >
           <SocialPostPreviewPanel
             :caption="content"
             :hashtags="hashtags"
@@ -873,9 +905,12 @@ function submit() {
             :account-name="previewAccount.name"
             :media-url="previewMedia.url"
             :media-type="previewMedia.type"
+            :media-width="previewMedia.width"
+            :media-height="previewMedia.height"
+            :format="publicationFormat"
             :link-url="publicationLink || null"
           />
-        </div>
+        </aside>
       </div>
 
       <!-- Step 2: Networks -->
@@ -968,7 +1003,9 @@ function submit() {
             <div class="space-y-2">
               <Label>Formato da publicação</Label>
               <Select :model-value="publicationFormat" @update:model-value="changeFormat">
-                <SelectTrigger class="h-11"><SelectValue /></SelectTrigger>
+                <SelectTrigger class="h-11">
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="static">
                     Post estático
@@ -1149,27 +1186,28 @@ function submit() {
                 @change="uploadFromInput($event, 'publication')"
               >
             </div>
-            <div class="grid grid-cols-2 gap-3 lg:grid-cols-6 sm:grid-cols-3">
+            <div class="grid grid-cols-2 items-start gap-3 lg:grid-cols-6 sm:grid-cols-3">
               <button
                 v-for="asset in compatiblePublicationAssets()"
                 :key="asset.id"
                 type="button"
-                class="group relative aspect-square overflow-hidden border rounded-xl bg-muted transition-all duration-200 hover:shadow-md"
+                class="group relative max-h-48 w-full overflow-hidden border rounded-xl bg-muted transition-all duration-200 hover:shadow-md"
                 :class="publicationAssetIds.includes(asset.id)
                   ? 'ring-2 ring-primary ring-offset-2 ring-offset-background'
                   : 'hover:ring-1 hover:ring-border'"
+                :style="assetThumbStyle(asset)"
                 @click="toggleAsset(asset.id)"
               >
                 <img
                   v-if="asset.mimeType?.startsWith('image/') || (asset as any).mime_type?.startsWith('image/')"
                   :src="asset.previewUrl || (asset as any).preview_url || ''"
                   :alt="asset.name"
-                  class="h-full w-full object-cover transition-transform duration-200 group-hover:scale-105"
+                  class="h-full w-full object-contain transition-transform duration-200 group-hover:scale-105"
                 >
-                <div v-else class="h-full flex items-center justify-center">
+                <div v-else class="h-full min-h-24 flex items-center justify-center">
                   <Icon name="lucide:file-video" class="h-8 w-8 text-muted-foreground" />
                 </div>
-                <span class="absolute inset-x-0 bottom-0 truncate bg-gradient-to-t from-black/60 to-transparent px-2 pb-1.5 pt-4 text-xs text-white">
+                <span class="absolute inset-x-0 bottom-0 truncate from-black/60 to-transparent bg-gradient-to-t px-2 pb-1.5 pt-4 text-xs text-white">
                   {{ asset.name }}
                 </span>
                 <span
@@ -1297,7 +1335,9 @@ function submit() {
             <div v-if="!isClientExperience" class="space-y-2">
               <Label>Política de aprovação</Label>
               <Select v-model="approvalPolicy">
-                <SelectTrigger class="h-11"><SelectValue /></SelectTrigger>
+                <SelectTrigger class="h-11">
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="any">
                     Uma aprovação
@@ -1327,107 +1367,128 @@ function submit() {
       </div>
 
       <!-- Step 4: Review -->
-      <Card v-else :key="4" class="border-border/60 shadow-sm">
-        <CardHeader>
-          <div class="flex items-center gap-2">
-            <div class="h-8 w-8 flex items-center justify-center rounded-lg bg-green-500/10">
-              <Icon name="lucide:check-circle-2" class="h-4 w-4 text-green-500" />
+      <div v-else :key="4" class="grid gap-6" :class="hasLivePreview ? 'lg:grid-cols-[minmax(0,1fr)_320px]' : ''">
+        <Card class="border-border/60 shadow-sm">
+          <CardHeader>
+            <div class="flex items-center gap-2">
+              <div class="h-8 w-8 flex items-center justify-center rounded-lg bg-green-500/10">
+                <Icon name="lucide:check-circle-2" class="h-4 w-4 text-green-500" />
+              </div>
+              <div>
+                <CardTitle>Revise antes de salvar</CardTitle>
+                <CardDescription>
+                  Confira canais, mídia e planejamento. O conteúdo será salvo inicialmente como rascunho.
+                </CardDescription>
+              </div>
             </div>
-            <div>
-              <CardTitle>Revise antes de salvar</CardTitle>
-              <CardDescription>
-                Confira canais, mídia e planejamento. O conteúdo será salvo inicialmente como rascunho.
-              </CardDescription>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent class="space-y-6">
-          <div class="border rounded-xl bg-muted/20 p-5">
-            <p class="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-              Título interno
-            </p>
-            <p class="mt-1.5 text-lg font-semibold">
-              {{ title }}
-            </p>
-            <p class="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">
-              {{ composedCaptionPreview || 'Sem legenda' }}
-            </p>
-            <p v-if="artText" class="mt-2 text-sm">
-              <span class="text-muted-foreground">Arte:</span> {{ artText }}
-            </p>
-            <p v-if="cta" class="mt-1 text-sm">
-              <span class="text-muted-foreground">CTA:</span> {{ cta }}
-            </p>
-            <div class="mt-4 flex flex-wrap gap-2 text-xs text-muted-foreground">
-              <Badge variant="outline">
-                {{ selectedCampaignName }}
-              </Badge>
-              <Badge v-if="!isClientExperience" variant="outline">
-                {{ selectedAssigneeName }}
-              </Badge>
-              <Badge v-if="customizeVariants" variant="secondary">
-                Variantes por rede
-              </Badge>
-            </div>
-          </div>
-
-          <div class="grid gap-4 md:grid-cols-3">
-            <div class="border rounded-xl bg-muted/10 p-4 transition-colors hover:bg-muted/20">
-              <p class="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                Canais
+          </CardHeader>
+          <CardContent class="space-y-6">
+            <div class="border rounded-xl bg-muted/20 p-5">
+              <p class="text-xs text-muted-foreground font-medium tracking-wider uppercase">
+                Título interno
               </p>
-              <div class="mt-2 flex flex-wrap gap-1">
-                <Badge v-for="variant in variants" :key="variant.accountId" variant="secondary">
-                  {{ platformLabel(variant.platform) }}
+              <p class="mt-1.5 text-lg font-semibold">
+                {{ title }}
+              </p>
+              <p class="mt-3 whitespace-pre-wrap text-sm text-muted-foreground leading-relaxed">
+                {{ composedCaptionPreview || 'Sem legenda' }}
+              </p>
+              <p v-if="artText" class="mt-2 text-sm">
+                <span class="text-muted-foreground">Arte:</span> {{ artText }}
+              </p>
+              <p v-if="cta" class="mt-1 text-sm">
+                <span class="text-muted-foreground">CTA:</span> {{ cta }}
+              </p>
+              <div class="mt-4 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                <Badge variant="outline">
+                  {{ selectedCampaignName }}
+                </Badge>
+                <Badge v-if="!isClientExperience" variant="outline">
+                  {{ selectedAssigneeName }}
+                </Badge>
+                <Badge v-if="customizeVariants" variant="secondary">
+                  Variantes por rede
                 </Badge>
               </div>
             </div>
-            <div class="border rounded-xl bg-muted/10 p-4 transition-colors hover:bg-muted/20">
-              <p class="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                Formato
-              </p>
-              <p class="mt-2 font-medium">
-                {{ formatLabel }}
-              </p>
-              <p class="text-xs text-muted-foreground">
-                {{ publicationAssetIds.length }} peça(s)
-              </p>
-            </div>
-            <div class="border rounded-xl bg-muted/10 p-4 transition-colors hover:bg-muted/20">
-              <p class="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                {{ isClientExperience ? 'Agenda' : 'Aprovação' }}
-              </p>
-              <p class="mt-2 font-medium">
-                {{ isClientExperience ? (formatScheduledDate() || 'Sem horário') : approvalLabel }}
-              </p>
-              <p v-if="!isClientExperience" class="text-xs text-muted-foreground">
-                {{ formatScheduledDate() }}
-              </p>
-              <p v-else class="text-xs text-muted-foreground">
-                Publique agora ou agende quando quiser
-              </p>
-            </div>
-          </div>
 
-          <div v-if="publicationAssetIds.length" class="grid grid-cols-2 gap-3 lg:grid-cols-6 sm:grid-cols-4">
-            <div
-              v-for="assetId in publicationAssetIds"
-              :key="assetId"
-              class="aspect-square overflow-hidden border rounded-xl bg-muted"
-            >
-              <img
-                v-if="publicationAssetById(assetId)?.mime_type?.startsWith('image/') || publicationAssetById(assetId)?.mimeType?.startsWith('image/')"
-                :src="publicationAssetById(assetId)?.preview_url || publicationAssetById(assetId)?.previewUrl"
-                alt="Prévia da peça"
-                class="h-full w-full object-cover"
-              >
-              <div v-else class="h-full flex items-center justify-center">
-                <Icon name="lucide:play-circle" class="h-8 w-8 text-muted-foreground" />
+            <div class="grid gap-4 md:grid-cols-3">
+              <div class="border rounded-xl bg-muted/10 p-4 transition-colors hover:bg-muted/20">
+                <p class="text-xs text-muted-foreground font-medium tracking-wider uppercase">
+                  Canais
+                </p>
+                <div class="mt-2 flex flex-wrap gap-1">
+                  <Badge v-for="variant in variants" :key="variant.accountId" variant="secondary">
+                    {{ platformLabel(variant.platform) }}
+                  </Badge>
+                </div>
+              </div>
+              <div class="border rounded-xl bg-muted/10 p-4 transition-colors hover:bg-muted/20">
+                <p class="text-xs text-muted-foreground font-medium tracking-wider uppercase">
+                  Formato
+                </p>
+                <p class="mt-2 font-medium">
+                  {{ formatLabel }}
+                </p>
+                <p class="text-xs text-muted-foreground">
+                  {{ publicationAssetIds.length }} peça(s)
+                </p>
+              </div>
+              <div class="border rounded-xl bg-muted/10 p-4 transition-colors hover:bg-muted/20">
+                <p class="text-xs text-muted-foreground font-medium tracking-wider uppercase">
+                  {{ isClientExperience ? 'Agenda' : 'Aprovação' }}
+                </p>
+                <p class="mt-2 font-medium">
+                  {{ isClientExperience ? (formatScheduledDate() || 'Sem horário') : approvalLabel }}
+                </p>
+                <p v-if="!isClientExperience" class="text-xs text-muted-foreground">
+                  {{ formatScheduledDate() }}
+                </p>
+                <p v-else class="text-xs text-muted-foreground">
+                  Publique agora ou agende quando quiser
+                </p>
               </div>
             </div>
-          </div>
-        </CardContent>
-      </Card>
+
+            <div v-if="publicationAssetIds.length" class="grid grid-cols-2 items-start gap-3 lg:grid-cols-6 sm:grid-cols-4">
+              <div
+                v-for="assetId in publicationAssetIds"
+                :key="assetId"
+                class="max-h-48 overflow-hidden border rounded-xl bg-muted"
+                :style="assetThumbStyle(publicationAssetById(assetId))"
+              >
+                <img
+                  v-if="publicationAssetById(assetId)?.mime_type?.startsWith('image/') || publicationAssetById(assetId)?.mimeType?.startsWith('image/')"
+                  :src="publicationAssetById(assetId)?.preview_url || publicationAssetById(assetId)?.previewUrl"
+                  alt="Prévia da peça"
+                  class="h-full w-full object-contain"
+                >
+                <div v-else class="h-full min-h-24 flex items-center justify-center">
+                  <Icon name="lucide:play-circle" class="h-8 w-8 text-muted-foreground" />
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <aside
+          v-if="hasLivePreview"
+          class="lg:sticky lg:top-6 lg:self-start"
+        >
+          <SocialPostPreviewPanel
+            :caption="content"
+            :hashtags="hashtags"
+            :platform="previewAccount.platform"
+            :account-name="previewAccount.name"
+            :media-url="previewMedia.url"
+            :media-type="previewMedia.type"
+            :media-width="previewMedia.width"
+            :media-height="previewMedia.height"
+            :format="publicationFormat"
+            :link-url="publicationLink || null"
+          />
+        </aside>
+      </div>
     </Transition>
 
     <!-- Error alert -->
@@ -1437,21 +1498,11 @@ function submit() {
       <AlertDescription>{{ formError }}</AlertDescription>
     </Alert>
 
-    <!-- Premium sticky bottom bar -->
+    <!-- Sticky navigation — single source of progress (stepper above); no duplicate dots -->
     <div class="sticky bottom-4 z-20 flex items-center justify-between gap-3 border rounded-2xl bg-background/95 p-3 shadow-lg ring-1 ring-border/50 backdrop-blur-md">
-      <div class="hidden items-center gap-3 sm:flex">
-        <div class="flex gap-1">
-          <div
-            v-for="item in steps"
-            :key="item.step"
-            class="h-1.5 w-6 rounded-full transition-all duration-300"
-            :class="currentStep >= item.step ? 'bg-primary' : 'bg-muted'"
-          />
-        </div>
-        <p class="text-xs text-muted-foreground">
-          Etapa {{ currentStep }} de {{ steps.length }}
-        </p>
-      </div>
+      <p class="hidden text-xs text-muted-foreground sm:block">
+        Etapa {{ currentStep }} de {{ steps.length }} · {{ steps[currentStep - 1]?.title }}
+      </p>
       <div class="ml-auto flex gap-2">
         <Button
           v-if="currentStep === 1"

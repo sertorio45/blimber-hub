@@ -285,14 +285,8 @@ function stageLabel(key: SocialSlaStageKey) {
             <Input v-model="form.name" placeholder="Pacote mensal" />
           </div>
           <div class="grid grid-cols-2 gap-3">
-            <div>
-              <Label>Início</Label>
-              <Input v-model="form.startsAt" type="date" />
-            </div>
-            <div>
-              <Label>Fim</Label>
-              <Input v-model="form.endsAt" type="date" />
-            </div>
+            <BaseDatePicker v-model="form.startsAt" label="Início" placeholder="Data de início" />
+            <BaseDatePicker v-model="form.endsAt" label="Fim" placeholder="Data de fim" />
           </div>
           <div class="grid grid-cols-2 gap-3">
             <div>

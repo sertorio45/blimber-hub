@@ -544,18 +544,18 @@ const showBulkBar = computed(() => pendingSelectable.value.length > 0)
           </SelectContent>
         </Select>
 
-        <div class="space-y-1">
-          <Label class="text-xs">
-            De
-          </Label>
-          <Input v-model="filters.from" type="date" />
-        </div>
-        <div class="space-y-1">
-          <Label class="text-xs">
-            Até
-          </Label>
-          <Input v-model="filters.to" type="date" />
-        </div>
+        <BaseDatePicker
+          v-model="filters.from"
+          label="De"
+          placeholder="Data inicial"
+          class="min-w-[180px]"
+        />
+        <BaseDatePicker
+          v-model="filters.to"
+          label="Até"
+          placeholder="Data final"
+          class="min-w-[180px]"
+        />
       </div>
 
       <div v-if="hasActiveSecondaryFilters" class="flex justify-end">

@@ -572,8 +572,12 @@ async function reloadServer() {
                   </p>
                 </div>
                 <div class="space-y-2">
-                  <Label for="cms-event-date">Data do fato</Label>
-                  <Input id="cms-event-date" v-model="form.eventDate" type="date" />
+                  <BaseDatePicker
+                    id="cms-event-date"
+                    v-model="form.eventDate"
+                    label="Data do fato"
+                    placeholder="Selecionar data"
+                  />
                   <p v-if="fieldError('eventDate', 'payload.eventDate')" class="text-xs text-destructive">
                     {{ fieldError('eventDate', 'payload.eventDate') }}
                   </p>

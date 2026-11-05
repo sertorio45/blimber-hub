@@ -990,10 +990,12 @@ function cancel() {
       <!-- Meeting Tab -->
       <div v-if="activeTab === 'meeting'" class="space-y-6">
         <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <div class="space-y-2">
-            <Label for="meeting-date">Data</Label>
-            <Input id="meeting-date" v-model="meetingForm.date" type="date" />
-          </div>
+          <BaseDatePicker
+            id="meeting-date"
+            v-model="meetingForm.date"
+            label="Data"
+            placeholder="Selecionar data"
+          />
 
           <div class="space-y-2">
             <Label for="meeting-time">Horário</Label>

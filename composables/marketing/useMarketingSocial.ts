@@ -257,6 +257,32 @@ export function useMarketingSocial() {
     })
   }
 
+  async function listBriefingLinks(filters: Record<string, unknown> = {}) {
+    return $fetch<{ data: any[] }>('/api/marketing/social/briefings/links', {
+      query: tenantQuery(filters),
+    })
+  }
+
+  async function createBriefingLink(body: {
+    title?: string
+    campaignId?: string | null
+    expiresInHours?: number
+    maxUses?: number | null
+    requireEmailConfirm?: boolean
+  } = {}) {
+    return $fetch<{ data: { id: string, url: string, briefingId: string } }>(
+      '/api/marketing/social/briefings/link',
+      { method: 'POST', body },
+    )
+  }
+
+  async function revokeBriefingLink(linkId: string, options?: { tenantId?: string | null }) {
+    return $fetch(`/api/marketing/social/briefings/links/${linkId}/revoke`, {
+      method: 'POST',
+      body: { tenant_id: options?.tenantId || tenantId.value || undefined },
+    })
+  }
+
   async function batchDecide(
     items: Array<{
       requestId: string
@@ -502,6 +528,9 @@ export function useMarketingSocial() {
     addComment,
     createReviewLink,
     revokeReviewLink,
+    listBriefingLinks,
+    createBriefingLink,
+    revokeBriefingLink,
     listAssets,
     uploadAsset,
     deleteAsset,

@@ -807,10 +807,12 @@ async function submitLead() {
             <template v-else>
               <!-- Meeting Details Form -->
               <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
-                <div class="space-y-2">
-                  <Label for="meeting-date">Data</Label>
-                  <Input id="meeting-date" v-model="meetingForm.date" type="date" />
-                </div>
+                <BaseDatePicker
+                  id="meeting-date"
+                  v-model="meetingForm.date"
+                  label="Data"
+                  placeholder="Selecionar data"
+                />
                 <div class="space-y-2">
                   <Label for="meeting-time">Horário</Label>
                   <Input id="meeting-time" v-model="meetingForm.time" type="time" />

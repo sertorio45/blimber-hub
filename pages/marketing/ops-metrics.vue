@@ -66,14 +66,8 @@ const cards = computed(() => {
     <template v-else>
       <Card>
         <CardContent class="flex flex-col gap-3 p-4 sm:flex-row sm:items-end">
-          <div class="flex-1">
-            <Label>De</Label>
-            <Input v-model="from" type="date" />
-          </div>
-          <div class="flex-1">
-            <Label>Até</Label>
-            <Input v-model="to" type="date" />
-          </div>
+          <BaseDatePicker v-model="from" label="De" placeholder="Data inicial" class="flex-1" />
+          <BaseDatePicker v-model="to" label="Até" placeholder="Data final" class="flex-1" />
           <Button variant="outline" @click="refresh()">
             Atualizar
           </Button>
@@ -83,73 +77,73 @@ const cards = computed(() => {
       <MarketingPageSkeleton v-if="showSkeleton" variant="reports" />
 
       <template v-else>
-      <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-        <Card v-for="card in cards" :key="card.label">
-          <CardContent class="p-4">
-            <p class="text-xs text-muted-foreground">
-              {{ card.label }}
-            </p>
-            <p class="mt-2 text-2xl font-semibold tracking-tight">
-              {{ card.value }}
-            </p>
-          </CardContent>
-        </Card>
-      </div>
+        <div class="grid gap-3 lg:grid-cols-5 sm:grid-cols-2">
+          <Card v-for="card in cards" :key="card.label">
+            <CardContent class="p-4">
+              <p class="text-xs text-muted-foreground">
+                {{ card.label }}
+              </p>
+              <p class="mt-2 text-2xl font-semibold tracking-tight">
+                {{ card.value }}
+              </p>
+            </CardContent>
+          </Card>
+        </div>
 
-      <div class="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle>Carga da equipe</CardTitle>
-            <CardDescription>Tarefas abertas por responsável</CardDescription>
-          </CardHeader>
-          <CardContent class="space-y-2">
-            <div
-              v-for="row in metrics?.teamLoad || []"
-              :key="row.userId"
-              class="flex items-center justify-between rounded-lg border px-3 py-2 text-sm"
-            >
-              <span class="font-mono text-xs text-muted-foreground">{{ row.userId.slice(0, 8) }}…</span>
-              <Badge variant="secondary">
-                {{ row.openTasks }} tarefa(s)
+        <div class="grid gap-4 lg:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <CardTitle>Carga da equipe</CardTitle>
+              <CardDescription>Tarefas abertas por responsável</CardDescription>
+            </CardHeader>
+            <CardContent class="space-y-2">
+              <div
+                v-for="row in metrics?.teamLoad || []"
+                :key="row.userId"
+                class="flex items-center justify-between border rounded-lg px-3 py-2 text-sm"
+              >
+                <span class="text-xs text-muted-foreground font-mono">{{ row.userId.slice(0, 8) }}…</span>
+                <Badge variant="secondary">
+                  {{ row.openTasks }} tarefa(s)
+                </Badge>
+              </div>
+              <p v-if="!(metrics?.teamLoad || []).length" class="text-sm text-muted-foreground">
+                Nenhuma tarefa aberta no período.
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Pacote ativo</CardTitle>
+              <CardDescription>Contratado versus entregue</CardDescription>
+            </CardHeader>
+            <CardContent v-if="metrics?.packageUsage" class="text-sm space-y-3">
+              <div class="flex justify-between border-b py-2">
+                <span>Posts</span>
+                <span>{{ metrics.packageUsage.posts.produced }}/{{ metrics.packageUsage.posts.contracted }}</span>
+              </div>
+              <div class="flex justify-between border-b py-2">
+                <span>Reels</span>
+                <span>{{ metrics.packageUsage.reels.produced }}/{{ metrics.packageUsage.reels.contracted }}</span>
+              </div>
+              <div class="flex justify-between border-b py-2">
+                <span>Stories</span>
+                <span>{{ metrics.packageUsage.stories.produced }}/{{ metrics.packageUsage.stories.contracted }}</span>
+              </div>
+              <div class="flex justify-between py-2">
+                <span>Campanhas</span>
+                <span>{{ metrics.packageUsage.campaigns.produced }}/{{ metrics.packageUsage.campaigns.contracted }}</span>
+              </div>
+              <Badge v-if="metrics.packageUsage.overQuota" variant="destructive">
+                Acima da cota
               </Badge>
-            </div>
-            <p v-if="!(metrics?.teamLoad || []).length" class="text-sm text-muted-foreground">
-              Nenhuma tarefa aberta no período.
-            </p>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Pacote ativo</CardTitle>
-            <CardDescription>Contratado versus entregue</CardDescription>
-          </CardHeader>
-          <CardContent v-if="metrics?.packageUsage" class="space-y-3 text-sm">
-            <div class="flex justify-between border-b py-2">
-              <span>Posts</span>
-              <span>{{ metrics.packageUsage.posts.produced }}/{{ metrics.packageUsage.posts.contracted }}</span>
-            </div>
-            <div class="flex justify-between border-b py-2">
-              <span>Reels</span>
-              <span>{{ metrics.packageUsage.reels.produced }}/{{ metrics.packageUsage.reels.contracted }}</span>
-            </div>
-            <div class="flex justify-between border-b py-2">
-              <span>Stories</span>
-              <span>{{ metrics.packageUsage.stories.produced }}/{{ metrics.packageUsage.stories.contracted }}</span>
-            </div>
-            <div class="flex justify-between py-2">
-              <span>Campanhas</span>
-              <span>{{ metrics.packageUsage.campaigns.produced }}/{{ metrics.packageUsage.campaigns.contracted }}</span>
-            </div>
-            <Badge v-if="metrics.packageUsage.overQuota" variant="destructive">
-              Acima da cota
-            </Badge>
-          </CardContent>
-          <CardContent v-else class="text-sm text-muted-foreground">
-            Nenhum pacote ativo neste cliente.
-          </CardContent>
-        </Card>
-      </div>
+            </CardContent>
+            <CardContent v-else class="text-sm text-muted-foreground">
+              Nenhum pacote ativo neste cliente.
+            </CardContent>
+          </Card>
+        </div>
       </template>
     </template>
   </div>

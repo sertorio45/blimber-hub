@@ -231,8 +231,8 @@ async function handleDelete(campaign: SocialCampaign) {
             </SelectContent>
           </Select>
           <div class="grid grid-cols-2 gap-3">
-            <Input v-model="createForm.startsAt" type="date" />
-            <Input v-model="createForm.endsAt" type="date" />
+            <BaseDatePicker v-model="createForm.startsAt" label="Início" placeholder="Data de início" />
+            <BaseDatePicker v-model="createForm.endsAt" label="Fim" placeholder="Data de fim" />
           </div>
         </div>
         <DialogFooter>
@@ -270,8 +270,8 @@ async function handleDelete(campaign: SocialCampaign) {
             </SelectContent>
           </Select>
           <div class="grid grid-cols-2 gap-3">
-            <Input v-model="editForm.startsAt" type="date" />
-            <Input v-model="editForm.endsAt" type="date" />
+            <BaseDatePicker v-model="editForm.startsAt" label="Início" placeholder="Data de início" />
+            <BaseDatePicker v-model="editForm.endsAt" label="Fim" placeholder="Data de fim" />
           </div>
         </div>
         <DialogFooter>

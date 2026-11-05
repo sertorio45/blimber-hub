@@ -264,8 +264,8 @@ async function createBriefingLink() {
             </SelectContent>
           </Select>
           <div class="grid grid-cols-2 gap-3">
-            <Input v-model="editForm.startsAt" type="date" />
-            <Input v-model="editForm.endsAt" type="date" />
+            <BaseDatePicker v-model="editForm.startsAt" label="Início" placeholder="Data de início" />
+            <BaseDatePicker v-model="editForm.endsAt" label="Fim" placeholder="Data de fim" />
           </div>
         </div>
         <DialogFooter>
