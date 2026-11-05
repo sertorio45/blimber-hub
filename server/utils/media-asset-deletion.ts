@@ -5,7 +5,7 @@ import { createError } from 'h3'
 import { recordSocialAudit } from '~/server/utils/social-audit'
 
 /** post_id FK only — social_post_assets also has a composite post_tenant FK to social_posts. */
-export const LINKED_POSTS_EMBED_SELECT = 'post_id, social_posts!social_post_assets_post_id_fkey(id, title)'
+export const LINKED_POSTS_EMBED_SELECT = 'post_id, social_posts!social_post_assets_post_id_fkey(id, title, deleted_at)'
 
 export interface MediaAssetRow {
   id: string
@@ -20,6 +20,7 @@ export interface MediaAssetRow {
 export interface LinkedPostSummary {
   id: string
   title: string | null
+  deletedAt?: string | null
 }
 
 export type CmsAssetUsageKind = 'draft' | 'revision' | 'global'
@@ -60,21 +61,36 @@ export interface DeleteMediaAssetResult {
   name: string
 }
 
+type LinkedPostEmbed = LinkedPostSummary & { deleted_at?: string | null }
+
+function isActiveLinkedPost(post: LinkedPostEmbed | null | undefined): post is LinkedPostEmbed {
+  return Boolean(post?.id) && !post?.deleted_at && !post?.deletedAt
+}
+
 async function fetchLinkedPostCount(
   client: SupabaseClient,
   tenantId: string,
   assetId: string,
 ): Promise<number> {
-  const { count, error } = await client
+  // Soft-deleted posts must not block library cleanup — rows may linger in social_post_assets.
+  const { data, error } = await client
     .from('social_post_assets')
-    .select('id', { count: 'exact', head: true })
+    .select(LINKED_POSTS_EMBED_SELECT)
     .eq('tenant_id', tenantId)
     .eq('asset_id', assetId)
 
   if (error)
     throw createError({ statusCode: 400, statusMessage: error.message })
 
-  return count || 0
+  const activePostIds = new Set<string>()
+  for (const row of data || []) {
+    const post = (row as { social_posts?: LinkedPostEmbed | LinkedPostEmbed[] }).social_posts
+    const resolved = Array.isArray(post) ? post[0] : post
+    if (isActiveLinkedPost(resolved))
+      activePostIds.add(resolved.id)
+  }
+
+  return activePostIds.size
 }
 
 async function fetchLinkedPosts(
@@ -87,17 +103,20 @@ async function fetchLinkedPosts(
     .select(LINKED_POSTS_EMBED_SELECT)
     .eq('tenant_id', tenantId)
     .eq('asset_id', assetId)
-    .limit(5)
+    .limit(20)
 
   if (error)
     throw createError({ statusCode: 400, statusMessage: error.message })
 
   const posts = new Map<string, LinkedPostSummary>()
   for (const row of data || []) {
-    const post = (row as { social_posts?: LinkedPostSummary | LinkedPostSummary[] }).social_posts
+    const post = (row as { social_posts?: LinkedPostEmbed | LinkedPostEmbed[] }).social_posts
     const resolved = Array.isArray(post) ? post[0] : post
-    if (resolved?.id)
-      posts.set(resolved.id, { id: resolved.id, title: resolved.title || null })
+    if (!isActiveLinkedPost(resolved))
+      continue
+    posts.set(resolved.id, { id: resolved.id, title: resolved.title || null })
+    if (posts.size >= 5)
+      break
   }
 
   return [...posts.values()]
@@ -185,6 +204,43 @@ export async function fetchMediaAssetUsages(
 
 function isBlocked(item: MediaAssetDeletePreviewItem): boolean {
   return item.linkedPostCount > 0 || item.cmsUsageCount > 0
+}
+
+async function detachSoftDeletedPostLinks(
+  client: SupabaseClient,
+  tenantId: string,
+  assetId: string,
+) {
+  const { data, error } = await client
+    .from('social_post_assets')
+    .select(`id, ${LINKED_POSTS_EMBED_SELECT}`)
+    .eq('tenant_id', tenantId)
+    .eq('asset_id', assetId)
+
+  if (error)
+    throw createError({ statusCode: 400, statusMessage: error.message })
+
+  const orphanIds = (data || [])
+    .filter((row) => {
+      const post = (row as { social_posts?: LinkedPostEmbed | LinkedPostEmbed[] }).social_posts
+      const resolved = Array.isArray(post) ? post[0] : post
+      return !isActiveLinkedPost(resolved)
+    })
+    .map(row => String((row as { id: string }).id))
+    .filter(Boolean)
+
+  if (!orphanIds.length)
+    return
+
+  const { error: deleteError } = await client
+    .from('social_post_assets')
+    .delete()
+    .eq('tenant_id', tenantId)
+    .eq('asset_id', assetId)
+    .in('id', orphanIds)
+
+  if (deleteError)
+    throw createError({ statusCode: 400, statusMessage: deleteError.message })
 }
 
 function blockedMessage(blocked: MediaAssetDeletePreviewItem[], single: boolean): string {
@@ -279,6 +335,10 @@ export async function deleteMediaAsset(
       },
     })
   }
+
+  // Soft-deleted posts leave social_post_assets rows (FK ON DELETE RESTRICT on
+  // media_assets). Drop those orphan links so library cleanup can proceed.
+  await detachSoftDeletedPostLinks(client, tenantId, assetId)
 
   const { data: derivatives } = await client
     .from('media_asset_derivatives')

@@ -28,18 +28,34 @@ function mediaAssetRow(overrides: Record<string, unknown> = {}) {
 
 function createDeletionClient(opts: {
   asset?: Record<string, unknown> | null
-  linkedPosts?: Array<{ id: string, title: string }>
-  linkedCount?: number
+  linkedPosts?: Array<{ id: string, title: string, deleted_at?: string | null }>
 }) {
   const asset = opts.asset === undefined ? mediaAssetRow() : opts.asset
   const linkedPosts = opts.linkedPosts ?? []
-  const linkedCount = opts.linkedCount ?? linkedPosts.length
   const postAssetSelects: string[] = []
   const remove = vi.fn(async () => ({ data: [], error: null }))
-  const deleteFn = vi.fn(() => ({
-    eq: () => ({
-      eq: async () => ({ error: null }),
-    }),
+  const deleteFn = vi.fn(() => {
+    const chain: any = {
+      eq: () => chain,
+      in: async () => ({ error: null }),
+    }
+    chain.eq = () => chain
+    // Final .eq('id', assetId) / .in(...) resolves as a thenable for media_assets delete.
+    const terminal = {
+      eq: () => Promise.resolve({ error: null }),
+      in: () => Promise.resolve({ error: null }),
+    }
+    return {
+      eq: () => ({
+        eq: () => terminal,
+        in: () => Promise.resolve({ error: null }),
+      }),
+    }
+  })
+
+  const linkedRows = linkedPosts.map(post => ({
+    post_id: post.id,
+    social_posts: { id: post.id, title: post.title, deleted_at: post.deleted_at ?? null },
   }))
 
   const client = {
@@ -57,27 +73,25 @@ function createDeletionClient(opts: {
       }
 
       if (table === 'social_post_assets') {
-        chain.select = (columns?: string, options?: { count?: string, head?: boolean }) => {
+        chain.select = (columns?: string) => {
           if (columns)
             postAssetSelects.push(columns)
-          if (options?.head) {
-            return {
-              eq: () => ({
-                eq: async () => ({ count: linkedCount, error: null }),
-              }),
-            }
-          }
           return {
             eq: () => ({
-              eq: () => ({
-                limit: async () => ({
-                  data: linkedPosts.map(post => ({
-                    post_id: post.id,
-                    social_posts: { id: post.id, title: post.title },
-                  })),
-                  error: null,
-                }),
-              }),
+              eq: (column: string) => {
+                if (column === 'asset_id') {
+                  const result = {
+                    limit: async () => ({ data: linkedRows, error: null }),
+                    then: undefined as unknown,
+                  }
+                  // Support both count path (await after .eq) and list path (.limit).
+                  const promise = Promise.resolve({ data: linkedRows, error: null })
+                  return Object.assign(promise, result)
+                }
+                return {
+                  limit: async () => ({ data: linkedRows, error: null }),
+                }
+              },
             }),
           }
         }
@@ -131,6 +145,18 @@ describe('previewMediaAssetDeletion', () => {
     expect(postAssetSelects).toContain(LINKED_POSTS_EMBED_SELECT)
     expect(preview.canDeleteAll).toBe(true)
     expect(preview.blocked).toHaveLength(0)
+  })
+
+  it('ignores soft-deleted posts when checking library links', async () => {
+    const { client } = createDeletionClient({
+      linkedPosts: [{ id: POST_ID, title: 'Case antigo', deleted_at: '2026-11-05T13:00:00.000Z' }],
+    })
+
+    const preview = await previewMediaAssetDeletion(client as any, TENANT_ID, [ASSET_ID])
+
+    expect(preview.canDeleteAll).toBe(true)
+    expect(preview.blocked).toHaveLength(0)
+    expect(preview.assets[0].linkedPostCount).toBe(0)
   })
 })
 
