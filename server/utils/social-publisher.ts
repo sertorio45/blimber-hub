@@ -14,7 +14,10 @@ export function mediaAssetsForVariant(
     .filter(Boolean)
 }
 
-function retryDelay(attempt: number) {
+function retryDelay(attempt: number, errorCode?: string) {
+  // Instagram video often needs another minute of Meta processing — retry sooner.
+  if (errorCode === '504')
+    return new Date(Date.now() + 60 * 1000).toISOString()
   const minutes = Math.min(6 * 60, 2 ** Math.max(0, attempt - 1))
   return new Date(Date.now() + minutes * 60 * 1000).toISOString()
 }
@@ -260,7 +263,7 @@ export async function processPublicationJob(
     const details = errorDetails(error)
     const shouldRetry = attemptNumber < Number(claimed.max_attempts)
     const status = shouldRetry ? 'retrying' : 'failed'
-    const nextAttemptAt = shouldRetry ? retryDelay(attemptNumber) : null
+    const nextAttemptAt = shouldRetry ? retryDelay(attemptNumber, details.code) : null
 
     await client.from('publication_attempts').insert({
       tenant_id: claimed.tenant_id,
@@ -351,8 +354,9 @@ export async function processDuePublicationJobs(
   workerId: string,
   limit = 10,
 ) {
-  // Stay under pg_net's 25s client timeout and Vercel maxDuration (60s).
-  const deadline = Date.now() + 20_000
+  // Coolify Node workers can wait for Meta video processing; keep under
+  // marketing_dispatch_publication_jobs pg_net timeout (120s).
+  const deadline = Date.now() + 110_000
   const now = new Date().toISOString()
   const { data: jobs, error } = await client
     .from('publication_jobs')

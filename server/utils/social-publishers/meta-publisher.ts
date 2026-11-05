@@ -31,9 +31,13 @@ async function waitForInstagramContainer(
   graphBase: string,
   containerId: string,
   accessToken: string,
+  options?: { isVideo?: boolean },
 ) {
-  // Cap ~15s so workers stay under Vercel maxDuration / pg_net timeout.
-  for (let attempt = 0; attempt < 8; attempt++) {
+  // Images finish quickly; Reels/video often need 1–2+ minutes on Meta.
+  // Coolify workers + raised pg_net timeout can wait; still bounded for safety.
+  const maxAttempts = options?.isVideo ? 40 : 10
+  const pollMs = options?.isVideo ? 3_000 : 1_500
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const response = await $fetch<any>(`${graphBase}/${containerId}`, {
       query: { fields: 'status_code,status', access_token: accessToken },
       timeout: 8_000,
@@ -42,7 +46,7 @@ async function waitForInstagramContainer(
       return
     if (response.status_code === 'ERROR' || response.status_code === 'EXPIRED')
       throw createError({ statusCode: 502, statusMessage: response.status || 'Falha ao preparar mídia no Instagram' })
-    await new Promise(resolve => setTimeout(resolve, 1_500))
+    await new Promise(resolve => setTimeout(resolve, pollMs))
   }
   throw createError({ statusCode: 504, statusMessage: 'Instagram não terminou de processar a mídia' })
 }
@@ -110,7 +114,7 @@ async function publishInstagramStory(input: MetaPublishInput, token: string, gra
     `${graphBase}/${input.account.external_account_id}/media`,
     { method: 'POST', body },
   )
-  await waitForInstagramContainer(graphBase, container.id, token)
+  await waitForInstagramContainer(graphBase, container.id, token, { isVideo })
   const published = await $fetch<any>(
     `${graphBase}/${input.account.external_account_id}/media_publish`,
     {
@@ -162,7 +166,7 @@ async function publishInstagram(input: MetaPublishInput, token: string, graphBas
       `${graphBase}/${input.account.external_account_id}/media`,
       { method: 'POST', body },
     )
-    await waitForInstagramContainer(graphBase, container.id, token)
+    await waitForInstagramContainer(graphBase, container.id, token, { isVideo })
     children.push(container.id)
   }
 
@@ -180,7 +184,7 @@ async function publishInstagram(input: MetaPublishInput, token: string, graphBas
         },
       },
     )
-    await waitForInstagramContainer(graphBase, carousel.id, token)
+    await waitForInstagramContainer(graphBase, carousel.id, token, { isVideo: media.some(asset => String(asset.mime_type).startsWith('video/')) })
     creationId = carousel.id
   }
 
