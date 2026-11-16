@@ -1,9 +1,11 @@
 import { getRouterParam, readBody } from 'h3'
 import { z } from 'zod'
+import { serverSupabaseServiceRole } from '#supabase/server'
 
 import { recordSocialAudit } from '~/server/utils/social-audit'
 import { requireSocialContext } from '~/server/utils/social-context'
 import { createContentVersion, enqueueApprovedPost } from '~/server/utils/social-approval-domain'
+import { processPublicationJob } from '~/server/utils/social-publisher'
 
 const schema = z.object({
   accountIds: z.array(z.string().uuid()).min(1).max(20).optional(),
@@ -167,12 +169,26 @@ export default defineEventHandler(async (event) => {
       })
       .eq('id', storyPost.id)
 
+    const publishNow = input.publishNow !== false
     const jobs = await enqueueApprovedPost(client, {
       tenantId,
       postId: storyPost.id,
       scheduledAt: input.scheduledAt,
-      publishNow: input.publishNow !== false,
+      publishNow,
     })
+
+    // Same as schedule.publishNow: do not wait for worker/cron on immediate share.
+    let processResults: Array<Record<string, unknown>> = []
+    if (publishNow && jobs.length) {
+      const service = await serverSupabaseServiceRole(event)
+      const workerId = `stories-share:${user.id}`
+      for (const job of jobs) {
+        processResults.push({
+          jobId: job.id,
+          ...(await processPublicationJob(service, job, workerId)),
+        })
+      }
+    }
 
     await recordSocialAudit(event, client, {
       tenantId,
@@ -185,6 +201,8 @@ export default defineEventHandler(async (event) => {
         storyPostId: storyPost.id,
         accountIds: accounts.map((account: any) => account.id),
         jobIds: jobs.map((job: any) => job.id),
+        publishNow,
+        processResults,
       },
     })
 
@@ -192,6 +210,7 @@ export default defineEventHandler(async (event) => {
       data: {
         storyPostId: storyPost.id,
         jobs,
+        processResults,
       },
     }
   }

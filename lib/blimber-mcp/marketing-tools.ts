@@ -235,18 +235,25 @@ function assertPublicationNeedsChannel(
   }
 }
 
-function assertPlannedPublicationCount(format: PostFormat, count: number) {
-  if (format === 'carousel' && count > 10) {
+function assertPlannedPublicationCount(
+  format: PostFormat,
+  count: number,
+  platform?: 'facebook' | 'instagram' | 'linkedin',
+) {
+  const carouselMax = platform === 'instagram' ? 20 : 10
+  if (format === 'carousel' && count > carouselMax) {
     throw new BlimberMcpError(
       'INVALID_ASSETS',
-      'Carrosséis aceitam no máximo 10 peças (biblioteca + upload inline).',
+      platform === 'instagram'
+        ? 'Carrosséis do Instagram aceitam no máximo 20 peças (biblioteca + upload inline).'
+        : 'Carrosséis aceitam no máximo 10 peças (biblioteca + upload inline).',
       400,
     )
   }
   if (format !== 'carousel' && count > 1) {
     throw new BlimberMcpError(
       'INVALID_ASSETS',
-      'Post estático, story ou vídeo aceita somente um arquivo. Use format=carousel para várias imagens.',
+      'Post estático, Stories ou vídeo aceita somente um arquivo. Use format=carousel para várias imagens.',
       400,
     )
   }
@@ -462,7 +469,7 @@ export const marketingCreatePostSchema = z.object({
   /** Library IDs (purpose=reference) on the post only — not published. */
   referenceAssetIds: z.array(uuid).max(20).default([]),
   /** HTTPS URLs uploaded in this call (publication). Same SSRF/size limits as marketing_upload_asset. */
-  sourceUrls: z.array(z.string().url().max(2048)).max(10).default([]),
+  sourceUrls: z.array(z.string().url().max(2048)).max(20).default([]),
   /** Base64 payloads uploaded in this call (publication). Max ~8MB decoded each. */
   sourceBase64: z.array(z.string().min(8).max(12_000_000)).max(5).default([]),
   /** Optional single-channel draft (requires accountId from listSocialAccounts). */
@@ -503,7 +510,7 @@ export const marketingUpdatePostSchema = z.object({
   /** Replaces post-level reference assets (variant_id null). Omit to leave unchanged. */
   referenceAssetIds: z.array(uuid).max(20).optional(),
   /** Inline HTTPS uploads; merged into variants[0].assetIds. Requires variants. */
-  sourceUrls: z.array(z.string().url().max(2048)).max(10).default([]),
+  sourceUrls: z.array(z.string().url().max(2048)).max(20).default([]),
   /** Inline base64 uploads; merged into variants[0].assetIds. Requires variants. */
   sourceBase64: z.array(z.string().min(8).max(12_000_000)).max(5).default([]),
   /** First-class editorial_status. Does not write the column directly — Hub domain (bypass / decision / cancel). */
@@ -913,7 +920,7 @@ export async function marketingCreatePost(
   const plannedPublicationCount = input.assetIds.length + inlineCount
   assertPublicationNeedsChannel(plannedPublicationCount, input.accountId, input.platform)
   if (plannedPublicationCount)
-    assertPlannedPublicationCount(input.format, plannedPublicationCount)
+    assertPlannedPublicationCount(input.format, plannedPublicationCount, input.platform)
 
   await assertMcpSocialPostAssets(
     ctx.client,
@@ -1453,7 +1460,11 @@ export async function marketingUpdatePost(
     }
 
     const first = input.variants[0]!
-    assertPlannedPublicationCount(first.format, first.assetIds.length + inlineCount)
+    assertPlannedPublicationCount(
+      first.format,
+      first.assetIds.length + inlineCount,
+      first.platform,
+    )
   }
 
   if (input.variants || input.referenceAssetIds) {

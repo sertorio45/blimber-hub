@@ -522,12 +522,21 @@ async function assertReadyForSubmission(client: any, tenantId: string, postId: s
       })
     }
     const minimumAssets = variant.format === 'carousel' ? 2 : 1
-    const maximumAssets = variant.format === 'story' ? 1 : 10
+    // Instagram Content Publishing allows up to 20 carousel items; other platforms stay at 10.
+    const maximumAssets = variant.format === 'story'
+      ? 1
+      : variant.format === 'carousel' && variant.platform === 'instagram'
+        ? 20
+        : variant.format === 'carousel'
+          ? 10
+          : 1
     if (assetCount < minimumAssets || assetCount > maximumAssets) {
       throw createError({
         statusCode: 400,
         statusMessage: variant.format === 'carousel'
-          ? 'Cada carrossel precisa de pelo menos duas peças'
+          ? (variant.platform === 'instagram'
+              ? 'Cada carrossel do Instagram precisa de 2 a 20 peças'
+              : 'Cada carrossel precisa de 2 a 10 peças')
           : variant.format === 'story'
             ? 'Stories precisa de exatamente uma peça'
             : 'Cada canal precisa de uma peça final',

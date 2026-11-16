@@ -238,7 +238,7 @@ const allAccountsSelected = computed(() =>
 const formatLabel = computed(() => ({
   static: 'Post estático',
   carousel: 'Carrossel',
-  video: 'Vídeo',
+  video: 'Vídeo / Reels',
   story: 'Stories',
 })[publicationFormat.value])
 const approvalLabel = computed(() => {
@@ -248,9 +248,18 @@ const approvalLabel = computed(() => {
     return `Mínimo de ${minimumApprovals.value} aprovações`
   return 'Uma aprovação'
 })
+/** Instagram allows 20 carousel items; Facebook/LinkedIn stay at 10. Cap to the strictest selected channel. */
+const carouselAssetLimit = computed(() => {
+  const platforms = variants.value.map(variant => variant.platform)
+  if (platforms.length && platforms.every(platform => platform === 'instagram'))
+    return 20
+  return 10
+})
 const mediaSelectionValid = computed(() => {
-  if (publicationFormat.value === 'carousel')
-    return publicationAssetIds.value.length >= 2 && publicationAssetIds.value.length <= 10
+  if (publicationFormat.value === 'carousel') {
+    return publicationAssetIds.value.length >= 2
+      && publicationAssetIds.value.length <= carouselAssetLimit.value
+  }
   return publicationAssetIds.value.length === 1
 })
 
@@ -394,7 +403,7 @@ function toggleAsset(assetId: string) {
   if (selected.has(assetId)) {
     selected.delete(assetId)
   }
-  else if (publicationFormat.value === 'carousel' && selected.size < 10) {
+  else if (publicationFormat.value === 'carousel' && selected.size < carouselAssetLimit.value) {
     selected.add(assetId)
   }
   else if (publicationFormat.value !== 'carousel') {
@@ -1014,7 +1023,7 @@ function submit() {
                     Carrossel
                   </SelectItem>
                   <SelectItem value="video">
-                    Vídeo
+                    Vídeo / Reels
                   </SelectItem>
                   <SelectItem value="story">
                     Stories
@@ -1041,7 +1050,8 @@ function submit() {
             <Icon name="lucide:smartphone" class="h-4 w-4" />
             <AlertTitle>Posicionamento: Stories</AlertTitle>
             <AlertDescription>
-              Use uma imagem ou vídeo vertical (9:16). No Facebook, a Meta exige um upload novo da peça — não reutiliza o mesmo arquivo já publicado no feed.
+              Use uma imagem ou vídeo vertical (9:16). Foto até 10&nbsp;MB; vídeo do Facebook entre 3 e 90&nbsp;s (máx. 60&nbsp;s se for reel como story).
+              A legenda não aparece nos Stories pela API. No Facebook, a Meta exige um upload novo — não reutiliza peça já publicada no feed.
             </AlertDescription>
           </Alert>
 
@@ -1129,7 +1139,15 @@ function submit() {
               <div>
                 <CardTitle>Peças finais</CardTitle>
                 <CardDescription>
-                  {{ publicationFormat === 'carousel' ? 'Selecione de 2 a 10 imagens na ordem desejada.' : publicationFormat === 'video' ? 'Selecione um vídeo.' : 'Selecione uma imagem.' }}
+                  {{
+                    publicationFormat === 'carousel'
+                      ? `Selecione de 2 a ${carouselAssetLimit} imagens na ordem desejada.`
+                      : publicationFormat === 'video'
+                        ? 'Selecione um vídeo (no Instagram publica como Reels).'
+                        : publicationFormat === 'story'
+                          ? 'Selecione uma imagem ou vídeo vertical.'
+                          : 'Selecione uma imagem.'
+                  }}
                 </CardDescription>
               </div>
             </div>
