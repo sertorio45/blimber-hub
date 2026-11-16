@@ -42,6 +42,27 @@ const inboxStore = useWhatsAppInboxStore()
           </SelectItem>
         </SelectContent>
       </Select>
+      <Select
+        :model-value="inboxStore.filters.chatType || 'all'"
+        @update:model-value="inboxStore.setFilters({ chatType: $event as any })"
+      >
+        <SelectTrigger class="h-8 w-[110px]">
+          <SelectValue placeholder="Tipo" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">
+            Todos
+          </SelectItem>
+          <SelectItem value="direct">
+            Diretas
+          </SelectItem>
+          <SelectItem value="group">
+            Grupos
+          </SelectItem>
+        </SelectContent>
+      </Select>
+    </div>
+    <div class="flex gap-2">
       <button
         type="button"
         class="flex h-8 items-center gap-1 rounded-md border px-2 text-xs transition-colors"

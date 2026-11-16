@@ -6,11 +6,32 @@ export interface EvolutionClientConfig {
   instanceName: string
 }
 
-const DEFAULT_WEBHOOK_EVENTS = [
+export interface EvolutionQuotedMessage {
+  key: {
+    id: string
+    remoteJid?: string
+    fromMe?: boolean
+  }
+  message?: {
+    conversation?: string
+  }
+}
+
+const CORE_WEBHOOK_EVENTS = [
   'MESSAGES_UPSERT',
   'MESSAGES_UPDATE',
   'CONNECTION_UPDATE',
 ] as const
+
+const EXTENDED_WEBHOOK_EVENTS = [
+  ...CORE_WEBHOOK_EVENTS,
+  'GROUPS_UPSERT',
+  'GROUP_UPDATE_PARTICIPANTS',
+  'PRESENCE_UPDATE',
+  'QRCODE_UPDATED',
+] as const
+
+export const DEFAULT_WEBHOOK_EVENTS = EXTENDED_WEBHOOK_EVENTS
 
 function normalizeBaseUrl(baseUrl: string): string {
   return baseUrl.replace(/\/$/, '')
@@ -19,9 +40,16 @@ function normalizeBaseUrl(baseUrl: string): string {
 async function evolutionFetch<T>(
   config: EvolutionClientConfig,
   path: string,
-  options: { method?: string, body?: unknown } = {},
+  options: { method?: string, body?: unknown, query?: Record<string, string | boolean | number | undefined> } = {},
 ): Promise<T> {
-  const url = `${normalizeBaseUrl(config.baseUrl)}${path}`
+  const query = options.query
+    ? `?${Object.entries(options.query)
+      .filter(([, value]) => value !== undefined && value !== null)
+      .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(String(value))}`)
+      .join('&')}`
+    : ''
+
+  const url = `${normalizeBaseUrl(config.baseUrl)}${path}${query}`
   return $fetch<T>(url, {
     method: options.method || 'GET',
     headers: {
@@ -32,7 +60,11 @@ async function evolutionFetch<T>(
   })
 }
 
-function buildEvolutionWebhookBody(webhookUrl: string, webhookSecret?: string | null) {
+function buildEvolutionWebhookBody(
+  webhookUrl: string,
+  webhookSecret?: string | null,
+  events: readonly string[] = DEFAULT_WEBHOOK_EVENTS,
+) {
   const webhook: Record<string, unknown> = {
     url: webhookUrl,
     enabled: true,
@@ -40,7 +72,7 @@ function buildEvolutionWebhookBody(webhookUrl: string, webhookSecret?: string | 
     byEvents: false,
     // Legacy Evolution builds
     webhookByEvents: false,
-    events: [...DEFAULT_WEBHOOK_EVENTS],
+    events: [...events],
   }
 
   if (webhookSecret) {
@@ -92,12 +124,13 @@ export async function evolutionFindWebhook(
 /**
  * Registers webhook only when missing or URL differs.
  * Avoids Evolution API P2002 duplicate webhook rows (set after create).
+ * Falls back to core events when extended events are rejected by older builds.
  */
 export async function evolutionEnsureWebhook(
   config: EvolutionClientConfig,
   webhookUrl: string,
   options?: { webhookSecret?: string | null, force?: boolean },
-): Promise<{ configured: boolean, skipped: boolean, reason?: string }> {
+): Promise<{ configured: boolean, skipped: boolean, reason?: string, events?: string[] }> {
   const targetUrl = webhookUrl.trim()
   if (!targetUrl)
     throw new Error('Webhook URL is required')
@@ -110,8 +143,20 @@ export async function evolutionEnsureWebhook(
     }
   }
 
-  await evolutionSetWebhook(config, targetUrl, options?.webhookSecret)
-  return { configured: true, skipped: false }
+  try {
+    await evolutionSetWebhook(config, targetUrl, options?.webhookSecret, DEFAULT_WEBHOOK_EVENTS)
+    return { configured: true, skipped: false, events: [...DEFAULT_WEBHOOK_EVENTS] }
+  }
+  catch (error: any) {
+    // Older Evolution builds may reject unknown webhook event names.
+    await evolutionSetWebhook(config, targetUrl, options?.webhookSecret, CORE_WEBHOOK_EVENTS)
+    return {
+      configured: true,
+      skipped: false,
+      reason: error?.message || 'fallback_core_events',
+      events: [...CORE_WEBHOOK_EVENTS],
+    }
+  }
 }
 
 export async function evolutionCreateInstance(
@@ -162,22 +207,34 @@ export async function evolutionSetWebhook(
   config: EvolutionClientConfig,
   webhookUrl: string,
   webhookSecret?: string | null,
+  events: readonly string[] = DEFAULT_WEBHOOK_EVENTS,
 ) {
   return evolutionFetch(config, `/webhook/set/${encodeURIComponent(config.instanceName)}`, {
     method: 'POST',
-    body: buildEvolutionWebhookBody(webhookUrl, webhookSecret),
+    body: buildEvolutionWebhookBody(webhookUrl, webhookSecret, events),
   })
 }
 
 export async function evolutionSendText(
   config: EvolutionClientConfig,
-  payload: { number: string, text: string },
+  payload: {
+    number: string
+    text: string
+    quoted?: EvolutionQuotedMessage
+    delay?: number
+    mentioned?: string[]
+    mentionsEveryOne?: boolean
+  },
 ) {
   return evolutionFetch(config, `/message/sendText/${encodeURIComponent(config.instanceName)}`, {
     method: 'POST',
     body: {
       number: payload.number,
       text: payload.text,
+      quoted: payload.quoted || undefined,
+      delay: payload.delay || undefined,
+      mentioned: payload.mentioned || undefined,
+      mentionsEveryOne: payload.mentionsEveryOne || undefined,
     },
   })
 }
@@ -190,6 +247,7 @@ export async function evolutionSendMedia(
     media: string
     caption?: string
     fileName?: string
+    quoted?: EvolutionQuotedMessage
   },
 ) {
   return evolutionFetch(config, `/message/sendMedia/${encodeURIComponent(config.instanceName)}`, {
@@ -200,8 +258,93 @@ export async function evolutionSendMedia(
       media: payload.media,
       caption: payload.caption || undefined,
       fileName: payload.fileName || undefined,
+      quoted: payload.quoted || undefined,
     },
   })
+}
+
+export async function evolutionSendReaction(
+  config: EvolutionClientConfig,
+  payload: {
+    key: { id: string, remoteJid: string, fromMe: boolean }
+    reaction: string
+  },
+) {
+  return evolutionFetch(config, `/message/sendReaction/${encodeURIComponent(config.instanceName)}`, {
+    method: 'POST',
+    body: {
+      key: payload.key,
+      reaction: payload.reaction,
+    },
+  })
+}
+
+export async function evolutionMarkMessageAsRead(
+  config: EvolutionClientConfig,
+  readMessages: Array<{ id: string, fromMe: boolean, remoteJid: string }>,
+) {
+  return evolutionFetch(config, `/chat/markMessageAsRead/${encodeURIComponent(config.instanceName)}`, {
+    method: 'POST',
+    body: { readMessages },
+  })
+}
+
+export async function evolutionSendPresence(
+  config: EvolutionClientConfig,
+  payload: {
+    number: string
+    presence: 'unavailable' | 'available' | 'composing' | 'recording' | 'paused'
+    delay?: number
+  },
+) {
+  return evolutionFetch(config, `/chat/sendPresence/${encodeURIComponent(config.instanceName)}`, {
+    method: 'POST',
+    body: {
+      number: payload.number,
+      presence: payload.presence,
+      delay: payload.delay ?? 5000,
+    },
+  })
+}
+
+export async function evolutionGetBase64FromMediaMessage(
+  config: EvolutionClientConfig,
+  message: Record<string, unknown>,
+  options?: { convertToMp4?: boolean },
+) {
+  return evolutionFetch<{ base64?: string, mimetype?: string, fileName?: string }>(
+    config,
+    `/chat/getBase64FromMediaMessage/${encodeURIComponent(config.instanceName)}`,
+    {
+      method: 'POST',
+      body: {
+        message,
+        convertToMp4: options?.convertToMp4 ?? false,
+      },
+    },
+  )
+}
+
+export async function evolutionFetchAllGroups(
+  config: EvolutionClientConfig,
+  getParticipants = true,
+) {
+  return evolutionFetch<Record<string, unknown>[]>(
+    config,
+    `/group/fetchAllGroups/${encodeURIComponent(config.instanceName)}`,
+    { query: { getParticipants } },
+  )
+}
+
+export async function evolutionFindGroupInfos(
+  config: EvolutionClientConfig,
+  groupJid: string,
+) {
+  return evolutionFetch<Record<string, unknown>>(
+    config,
+    `/group/findGroupInfos/${encodeURIComponent(config.instanceName)}`,
+    { query: { groupJid } },
+  )
 }
 
 export function getEvolutionConfigFromIntegration(

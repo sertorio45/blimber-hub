@@ -1,14 +1,48 @@
 <script setup lang="ts">
-import type { WhatsAppConversation, WhatsAppConversationLead } from '~/types/whatsapp'
+import type { WhatsAppConversation, WhatsAppConversationLead, WhatsAppGroupParticipant } from '~/types/whatsapp'
 
 import { formatLeadCurrency } from '~/composables/crm/useCrmLeadValue'
 import WhatsAppStatusBadge from '~/components/whatsapp/shared/WhatsAppStatusBadge.vue'
 import { Card, CardContent, CardHeader, CardTitle } from '~/components/ui/card'
 
-defineProps<{
+const props = defineProps<{
   conversation: WhatsAppConversation | null
   lead: WhatsAppConversationLead | null
 }>()
+
+const { tenantId } = useTenant()
+const participants = ref<WhatsAppGroupParticipant[]>([])
+const participantsLoading = ref(false)
+
+async function loadParticipants() {
+  if (!props.conversation?.isGroup || !props.conversation.id || !tenantId.value) {
+    participants.value = []
+    return
+  }
+
+  participantsLoading.value = true
+  try {
+    const response = await $fetch<{ data: WhatsAppGroupParticipant[] }>(
+      `/api/whatsapp/conversations/${props.conversation.id}/participants`,
+      { query: { tenant_id: tenantId.value } },
+    )
+    participants.value = response.data || []
+  }
+  catch {
+    participants.value = []
+  }
+  finally {
+    participantsLoading.value = false
+  }
+}
+
+watch(
+  () => [props.conversation?.id, props.conversation?.isGroup] as const,
+  () => {
+    loadParticipants()
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
@@ -22,15 +56,18 @@ defineProps<{
       <Card>
         <CardHeader class="pb-2">
           <CardTitle class="text-xs font-medium text-muted-foreground">
-            Contato
+            {{ conversation.isGroup ? 'Grupo' : 'Contato' }}
           </CardTitle>
         </CardHeader>
         <CardContent class="space-y-1.5 text-sm">
           <p class="font-medium">
-            {{ conversation.contactName }}
+            {{ conversation.isGroup ? (conversation.groupSubject || conversation.contactName) : conversation.contactName }}
           </p>
-          <p class="text-xs text-muted-foreground">
+          <p v-if="!conversation.isGroup" class="text-xs text-muted-foreground">
             {{ conversation.contactPhone }}
+          </p>
+          <p v-else class="text-xs text-muted-foreground">
+            {{ participants.length || '—' }} participantes
           </p>
           <WhatsAppStatusBadge :status="conversation.status" />
         </CardContent>
@@ -59,7 +96,40 @@ defineProps<{
         </CardContent>
       </Card>
 
-      <Card v-if="lead" class="mt-3">
+      <Card v-if="conversation.isGroup" class="mt-3">
+        <CardHeader class="pb-2">
+          <CardTitle class="text-xs font-medium text-muted-foreground">
+            Participantes
+          </CardTitle>
+        </CardHeader>
+        <CardContent class="space-y-2 text-sm">
+          <p v-if="participantsLoading" class="text-xs text-muted-foreground">
+            Carregando...
+          </p>
+          <p v-else-if="!participants.length" class="text-xs text-muted-foreground">
+            Nenhum participante sincronizado ainda
+          </p>
+          <div
+            v-for="participant in participants"
+            :key="participant.id"
+            class="flex items-start justify-between gap-2"
+          >
+            <div class="min-w-0">
+              <p class="truncate text-sm font-medium">
+                {{ participant.name || participant.phone || participant.participantJid }}
+              </p>
+              <p v-if="participant.phone" class="truncate text-[11px] text-muted-foreground">
+                {{ participant.phone }}
+              </p>
+            </div>
+            <span v-if="participant.adminRole" class="shrink-0 text-[10px] uppercase text-muted-foreground">
+              {{ participant.adminRole }}
+            </span>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card v-if="!conversation.isGroup && lead" class="mt-3">
         <CardHeader class="pb-2">
           <CardTitle class="text-xs font-medium text-muted-foreground">
             Lead
@@ -82,7 +152,10 @@ defineProps<{
         </CardContent>
       </Card>
 
-      <div v-if="conversation.crmContactId || conversation.activeAgentName" class="mt-3 space-y-1 px-1 text-xs text-muted-foreground">
+      <div
+        v-if="!conversation.isGroup && (conversation.crmContactId || conversation.activeAgentName)"
+        class="mt-3 space-y-1 px-1 text-xs text-muted-foreground"
+      >
         <p v-if="conversation.crmContactId">
           CRM vinculado
         </p>

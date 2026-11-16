@@ -4,14 +4,66 @@ import { serverSupabaseServiceRole } from '#supabase/server'
 
 import { mapMessageRow } from '~/composables/whatsapp/useWhatsAppMapper'
 import { resolveWhatsAppTenantContext } from '~/server/utils/whatsapp/context'
+import { isGroupJid } from '~/server/utils/whatsapp/conversation-utils'
 import { loadInstanceWithIntegration } from '~/server/utils/whatsapp/instance-loader'
-import { sendWhatsAppTextMessage } from '~/server/utils/whatsapp/message-sender'
+import {
+  sendWhatsAppMediaMessage,
+  sendWhatsAppReaction,
+  sendWhatsAppTextMessage,
+} from '~/server/utils/whatsapp/message-sender'
 import { broadcastWhatsAppEvent } from '~/server/utils/whatsapp/realtime-broadcast'
+
+import type { EvolutionQuotedMessage } from '~/server/utils/whatsapp/evolution-client'
 
 interface SendMessageBody {
   tenant_id?: string
   conversation_id: string
-  content: string
+  content?: string
+  reply_to_id?: string | null
+  type?: 'text' | 'media' | 'reaction'
+  media?: {
+    mediatype: 'image' | 'video' | 'audio' | 'document'
+    url: string
+    caption?: string
+    fileName?: string
+  }
+  reaction?: {
+    message_id: string
+    emoji: string
+  }
+}
+
+async function buildQuotedPayload(
+  client: ReturnType<typeof serverSupabaseServiceRole>,
+  tenantId: string,
+  replyToId?: string | null,
+): Promise<{ quoted: EvolutionQuotedMessage | null, replyToId: string | null }> {
+  if (!replyToId)
+    return { quoted: null, replyToId: null }
+
+  const { data: quotedMessage } = await client
+    .from('whatsapp_message')
+    .select('id, external_id, remote_jid, from_me, content')
+    .eq('id', replyToId)
+    .eq('tenant_id', tenantId)
+    .maybeSingle()
+
+  if (!quotedMessage?.external_id)
+    return { quoted: null, replyToId: quotedMessage?.id || replyToId }
+
+  return {
+    replyToId: quotedMessage.id,
+    quoted: {
+      key: {
+        id: quotedMessage.external_id,
+        remoteJid: quotedMessage.remote_jid,
+        fromMe: Boolean(quotedMessage.from_me),
+      },
+      message: {
+        conversation: quotedMessage.content || '',
+      },
+    },
+  }
 }
 
 export default defineEventHandler(async (event) => {
@@ -20,10 +72,6 @@ export default defineEventHandler(async (event) => {
 
   if (!body.conversation_id)
     throw createError({ statusCode: 400, statusMessage: 'conversation_id is required' })
-
-  const text = body.content?.trim()
-  if (!text)
-    throw createError({ statusCode: 400, statusMessage: 'content is required' })
 
   const client = serverSupabaseServiceRole(event)
 
@@ -71,21 +119,107 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Integration not configured' })
 
   const phone = conversation.contact_phone || conversation.remote_jid.replace(/@.*/, '')
+  const remoteJid = conversation.remote_jid
   const now = new Date().toISOString()
+  const sendType = body.type || (body.reaction ? 'reaction' : body.media ? 'media' : 'text')
 
+  if (sendType === 'reaction') {
+    if (!body.reaction?.message_id)
+      throw createError({ statusCode: 400, statusMessage: 'reaction.message_id is required' })
+
+    const { data: target } = await client
+      .from('whatsapp_message')
+      .select('*')
+      .eq('id', body.reaction.message_id)
+      .eq('tenant_id', tenantId)
+      .maybeSingle()
+
+    if (!target?.external_id)
+      throw createError({ statusCode: 404, statusMessage: 'Target message not found' })
+
+    try {
+      await sendWhatsAppReaction({
+        instance,
+        integration,
+        remoteJid: target.remote_jid || remoteJid,
+        messageId: target.external_id,
+        fromMe: Boolean(target.from_me),
+        reaction: body.reaction.emoji || '',
+      })
+    }
+    catch (error: any) {
+      throw createError({
+        statusCode: 400,
+        statusMessage: error?.data?.message || error?.message || 'Failed to send reaction',
+      })
+    }
+
+    const current = Array.isArray(target.reactions) ? [...target.reactions] : []
+    const withoutMine = current.filter((item: any) => !item?.fromMe)
+    if (body.reaction.emoji)
+      withoutMine.push({ emoji: body.reaction.emoji, fromMe: true, participantJid: null })
+
+    const { data: updated } = await client
+      .from('whatsapp_message')
+      .update({ reactions: withoutMine, updated_at: now })
+      .eq('id', target.id)
+      .select('*')
+      .single()
+
+    if (updated)
+      await broadcastWhatsAppEvent(tenantId, 'message', updated)
+
+    return { data: mapMessageRow(updated as any) }
+  }
+
+  const { quoted, replyToId } = await buildQuotedPayload(client, tenantId, body.reply_to_id)
   let externalId: string | null = null
-  try {
-    const providerResult = await sendWhatsAppTextMessage({
-      instance,
-      integration,
-      phone,
-      text,
-    }) as any
+  let messageType = 'text'
+  let content = body.content?.trim() || ''
+  let mediaUrl: string | null = null
+  let mediaMime: string | null = null
+  let fileName: string | null = null
 
-    externalId
-      = providerResult?.key?.id
-        || providerResult?.messages?.[0]?.id
-        || null
+  try {
+    if (sendType === 'media') {
+      if (!body.media?.url || !body.media?.mediatype) {
+        throw createError({ statusCode: 400, statusMessage: 'media.url and media.mediatype are required' })
+      }
+
+      messageType = body.media.mediatype
+      content = body.media.caption || content || ''
+      mediaUrl = body.media.url
+      fileName = body.media.fileName || null
+
+      const providerResult = await sendWhatsAppMediaMessage({
+        instance,
+        integration,
+        phone,
+        remoteJid,
+        mediatype: body.media.mediatype,
+        mediaUrl: body.media.url,
+        caption: content || undefined,
+        fileName: body.media.fileName,
+        quoted: quoted || undefined,
+      }) as any
+
+      externalId = providerResult?.key?.id || providerResult?.messages?.[0]?.id || null
+    }
+    else {
+      if (!content)
+        throw createError({ statusCode: 400, statusMessage: 'content is required' })
+
+      const providerResult = await sendWhatsAppTextMessage({
+        instance,
+        integration,
+        phone,
+        text: content,
+        remoteJid,
+        quoted: quoted || undefined,
+      }) as any
+
+      externalId = providerResult?.key?.id || providerResult?.messages?.[0]?.id || null
+    }
   }
   catch (error: any) {
     throw createError({
@@ -100,14 +234,20 @@ export default defineEventHandler(async (event) => {
       tenant_id: tenantId,
       conversation_id: conversation.id,
       instance_id: instance.id,
-      contact_id: conversation.contact_id,
+      contact_id: isGroupJid(remoteJid) ? null : conversation.contact_id,
       external_id: externalId,
-      remote_jid: conversation.remote_jid,
+      remote_jid: remoteJid,
       from_me: true,
-      message_type: 'text',
-      content: text,
+      message_type: messageType,
+      content,
+      media_url: mediaUrl,
+      media_mime: mediaMime,
+      file_name: fileName,
       status: 'sent',
       sent_at: now,
+      reply_to_id: replyToId,
+      quoted_external_id: quoted?.key.id || null,
+      reactions: [],
     })
     .select('*')
     .single()
@@ -115,10 +255,11 @@ export default defineEventHandler(async (event) => {
   if (msgError)
     throw createError({ statusCode: 400, statusMessage: msgError.message })
 
+  const preview = content || (messageType !== 'text' ? `[${messageType}]` : '')
   const { data: updatedConversation } = await client
     .from('whatsapp_conversation')
     .update({
-      last_message_preview: text,
+      last_message_preview: preview,
       last_message_at: now,
       updated_at: now,
     })

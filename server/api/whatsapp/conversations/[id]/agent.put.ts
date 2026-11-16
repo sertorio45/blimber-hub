@@ -25,13 +25,20 @@ export default defineEventHandler(async (event) => {
 
   const { data: conversation, error } = await client
     .from('whatsapp_conversation')
-    .select('id, contact_id')
+    .select('id, contact_id, is_group')
     .eq('id', id)
     .eq('tenant_id', tenantId)
     .maybeSingle()
 
   if (error || !conversation)
     throw createError({ statusCode: 404, statusMessage: 'Conversation not found' })
+
+  if (conversation.is_group) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Agentes IA não estão disponíveis em grupos',
+    })
+  }
 
   const enabled = body.enabled !== false && Boolean(body.agent_id)
 

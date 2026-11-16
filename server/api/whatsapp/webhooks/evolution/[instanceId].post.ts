@@ -1,6 +1,4 @@
-import { createError, readBody } from 'h3'
-
-import { serverSupabaseServiceRole } from '#supabase/server'
+import { createError, getHeader, readBody } from 'h3'
 
 import { processEvolutionWebhook } from '~/server/utils/whatsapp/webhook-processor'
 import { loadInstanceWithIntegration } from '~/server/utils/whatsapp/instance-loader'
@@ -25,12 +23,15 @@ export default defineEventHandler(async (event) => {
 
   const secret = integration?.webhook_secret
   const headerSecret = getHeader(event, 'x-webhook-secret') || getHeader(event, 'apikey')
-  if (secret && headerSecret && headerSecret !== secret) {
-    throw createError({ statusCode: 401, statusMessage: 'Invalid webhook secret' })
+  // When a secret is configured, require a matching header (Evolution sends x-webhook-secret).
+  if (secret) {
+    if (!headerSecret || headerSecret !== secret) {
+      throw createError({ statusCode: 401, statusMessage: 'Invalid webhook secret' })
+    }
   }
 
   try {
-    const result = await processEvolutionWebhook(client, instance, body)
+    const result = await processEvolutionWebhook(client, instance, body, integration)
     if (logRow?.id) {
       await client
         .from('whatsapp_webhook_log')

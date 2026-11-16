@@ -3,6 +3,11 @@ import { createError, readBody } from 'h3'
 import { mapConversationRow } from '~/composables/whatsapp/useWhatsAppMapper'
 import { loadActiveAgentsForConversations } from '~/server/utils/whatsapp/conversation-agent-meta'
 import { resolveWhatsAppTenantContext } from '~/server/utils/whatsapp/context'
+import {
+  evolutionMarkMessageAsRead,
+  getEvolutionConfigFromIntegration,
+} from '~/server/utils/whatsapp/evolution-client'
+import { getEvolutionInstanceName, loadInstanceWithIntegration } from '~/server/utils/whatsapp/instance-loader'
 import { serverSupabaseServiceRole } from '#supabase/server'
 
 interface UpdateConversationBody {
@@ -40,6 +45,40 @@ export default defineEventHandler(async (event) => {
 
   if (error)
     throw createError({ statusCode: 400, statusMessage: error.message })
+
+  if (body.mark_read && data?.instance_id) {
+    try {
+      const { instance, integration } = await loadInstanceWithIntegration(event, data.instance_id)
+      if (instance.provider === 'evolution' && integration) {
+        const evoConfig = getEvolutionConfigFromIntegration(integration, getEvolutionInstanceName(instance))
+        if (evoConfig) {
+          const { data: unreadMessages } = await client
+            .from('whatsapp_message')
+            .select('external_id, from_me, remote_jid')
+            .eq('conversation_id', id)
+            .eq('tenant_id', tenantId)
+            .eq('from_me', false)
+            .not('external_id', 'is', null)
+            .order('sent_at', { ascending: false })
+            .limit(20)
+
+          const readMessages = (unreadMessages || [])
+            .filter(row => row.external_id)
+            .map(row => ({
+              id: String(row.external_id),
+              fromMe: false,
+              remoteJid: String(row.remote_jid || data.remote_jid),
+            }))
+
+          if (readMessages.length)
+            await evolutionMarkMessageAsRead(evoConfig, readMessages)
+        }
+      }
+    }
+    catch (err: any) {
+      console.warn('[WhatsApp] markMessageAsRead failed:', err?.message || err)
+    }
+  }
 
   const activeAgents = await loadActiveAgentsForConversations(client, tenantId, [id])
 

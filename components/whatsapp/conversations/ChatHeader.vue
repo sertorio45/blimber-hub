@@ -160,10 +160,12 @@ const toolbarSelectClass = 'h-8 w-[120px] text-xs'
 
       <div class="min-w-0 flex-1 basis-32">
         <p class="truncate text-sm font-medium">
-          {{ conversation.contactName }}
+          <span v-if="conversation.isGroup" class="i-lucide-users mr-1 inline h-3.5 w-3.5 align-[-2px]" />
+          {{ conversation.isGroup ? (conversation.groupSubject || conversation.contactName) : conversation.contactName }}
         </p>
         <p class="truncate text-xs text-muted-foreground">
-          {{ formatPhone(conversation.contactPhone) }}
+          {{ conversation.isGroup ? 'Grupo do WhatsApp' : formatPhone(conversation.contactPhone) }}
+          <span v-if="conversation.isOnline && !conversation.isGroup"> · online</span>
         </p>
         <p
           v-if="conversation.instanceName"
@@ -177,6 +179,7 @@ const toolbarSelectClass = 'h-8 w-[120px] text-xs'
 
       <div class="flex flex-wrap items-center gap-2">
         <Button
+          v-if="!conversation.isGroup"
           variant="outline"
           size="sm"
           :class="toolbarButtonClass"
@@ -187,6 +190,7 @@ const toolbarSelectClass = 'h-8 w-[120px] text-xs'
         </Button>
 
         <Button
+          v-if="!conversation.isGroup"
           :variant="conversation.activeAgentId ? 'secondary' : 'outline'"
           size="sm"
           :class="toolbarButtonClass"

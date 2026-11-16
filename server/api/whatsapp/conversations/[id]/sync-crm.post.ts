@@ -34,6 +34,13 @@ export default defineEventHandler(async (event) => {
   if (convError || !conversation)
     throw createError({ statusCode: 404, statusMessage: 'Conversation not found' })
 
+  if (conversation.is_group) {
+    throw createError({
+      statusCode: 400,
+      statusMessage: 'Grupos não podem ser sincronizados automaticamente com o CRM',
+    })
+  }
+
   if (!conversation.contact_id) {
     throw createError({
       statusCode: 400,

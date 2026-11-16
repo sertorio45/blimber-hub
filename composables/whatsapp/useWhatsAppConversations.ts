@@ -1,8 +1,8 @@
 import type { WhatsAppConversation, WhatsAppConversationStatus } from '~/types/whatsapp'
 
-function conversationListKey(conversation: Pick<WhatsAppConversation, 'instanceId' | 'contactPhone'>) {
-  const phone = conversation.contactPhone.replace(/\D/g, '')
-  return `${conversation.instanceId || ''}:${phone}`
+function conversationListKey(conversation: Pick<WhatsAppConversation, 'instanceId' | 'contactPhone' | 'remoteJid'>) {
+  const remote = conversation.remoteJid || conversation.contactPhone.replace(/\D/g, '')
+  return `${conversation.instanceId || ''}:${remote}`
 }
 
 export function useWhatsAppConversations() {
@@ -13,13 +13,14 @@ export function useWhatsAppConversations() {
     tenant_id: tenantId.value || undefined,
     instance_id: inboxStore.activeInstanceId || undefined,
     status: inboxStore.filters.status === 'all' ? undefined : inboxStore.filters.status,
+    chat_type: inboxStore.filters.chatType === 'all' ? undefined : inboxStore.filters.chatType,
     search: inboxStore.filters.search || undefined,
     unread_only: inboxStore.filters.unreadOnly ? 'true' : undefined,
     assigned_to_me: inboxStore.filters.assignedToMe ? 'true' : undefined,
   }))
 
   const cacheKey = computed(
-    () => `whatsapp-conversations-${tenantId.value}-${inboxStore.activeInstanceId || 'all'}-${inboxStore.filters.status}-${inboxStore.filters.search}-${inboxStore.filters.unreadOnly}-${inboxStore.filters.assignedToMe}`,
+    () => `whatsapp-conversations-${tenantId.value}-${inboxStore.activeInstanceId || 'all'}-${inboxStore.filters.status}-${inboxStore.filters.chatType}-${inboxStore.filters.search}-${inboxStore.filters.unreadOnly}-${inboxStore.filters.assignedToMe}`,
   )
 
   const { data, pending, refresh, showSkeleton } = useCachedAsyncData(
@@ -59,7 +60,11 @@ export function useWhatsAppConversations() {
     }
 
     const activeInstanceId = inboxStore.activeInstanceId
+    const chatType = inboxStore.filters.chatType || 'all'
     const matchesInbox = !activeInstanceId || merged.instanceId === activeInstanceId
+    const matchesChatType = chatType === 'all'
+      || (chatType === 'group' && merged.isGroup)
+      || (chatType === 'direct' && !merged.isGroup)
 
     const filtered = list.filter((item) => {
       if (item.id === merged.id)
@@ -67,7 +72,7 @@ export function useWhatsAppConversations() {
       return conversationListKey(item) !== key
     })
 
-    if (matchesInbox)
+    if (matchesInbox && matchesChatType)
       filtered.unshift(merged)
 
     filtered.sort((a, b) => {

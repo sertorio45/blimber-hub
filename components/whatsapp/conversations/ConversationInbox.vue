@@ -121,6 +121,7 @@ const {
   sending,
   updateMessage,
   sendMessage,
+  notifyTyping,
 } = useWhatsAppMessages(messagesConversationId)
 
 async function fetchConversationById(id: string) {
@@ -330,13 +331,40 @@ async function handleSelect(id: string) {
   activeId.value = id
 }
 
-async function handleSend(content: string) {
+async function handleSend(payload: string | import('~/composables/whatsapp/useWhatsAppMessages').SendWhatsAppMessagePayload) {
   try {
-    await sendMessage(content)
+    await sendMessage(payload)
   }
   catch (error: any) {
     toast.error(error?.data?.statusMessage || error?.message || 'Erro ao enviar mensagem')
   }
+}
+
+async function handleReact(payload: { message: import('~/types/whatsapp').WhatsAppMessage, emoji: string }) {
+  try {
+    await sendMessage({
+      type: 'reaction',
+      reaction: {
+        messageId: payload.message.id,
+        emoji: payload.emoji,
+      },
+    })
+  }
+  catch (error: any) {
+    toast.error(error?.data?.statusMessage || error?.message || 'Erro ao reagir')
+  }
+}
+
+function handleReply(message: import('~/types/whatsapp').WhatsAppMessage) {
+  inboxStore.setReplyToMessage(message)
+}
+
+function handleClearReply() {
+  inboxStore.setReplyToMessage(null)
+}
+
+function handleTyping() {
+  notifyTyping()
 }
 
 async function handleStatusChange(status: import('~/types/whatsapp').WhatsAppConversationStatus) {
@@ -513,6 +541,10 @@ async function handleAgentChange(payload: { agentId: string | null, enabled: boo
         :loading="messagesLoading || isResolvingConversation"
         :sending="sending"
         @send="handleSend"
+        @typing="handleTyping"
+        @reply="handleReply"
+        @react="handleReact"
+        @clear-reply="handleClearReply"
         @status-change="handleStatusChange"
         @sync-crm="handleSyncCrm"
         @delete-conversation="handleDeleteConversation"

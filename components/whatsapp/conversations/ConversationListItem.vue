@@ -46,8 +46,12 @@ function formatRelative(value?: string | null) {
     <div class="min-w-0 flex-1">
       <div class="flex items-center justify-between gap-2">
         <div class="flex min-w-0 items-center gap-1.5">
+          <span
+            v-if="conversation.isGroup"
+            class="i-lucide-users h-3.5 w-3.5 shrink-0 text-muted-foreground"
+          />
           <p class="truncate font-medium">
-            {{ conversation.contactName }}
+            {{ conversation.isGroup ? (conversation.groupSubject || conversation.contactName) : conversation.contactName }}
           </p>
           <Badge
             v-if="showInstanceBadge && conversation.instanceName"

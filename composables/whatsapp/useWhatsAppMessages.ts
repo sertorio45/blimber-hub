@@ -2,6 +2,22 @@ import type { WhatsAppMessage } from '~/types/whatsapp'
 
 const POLL_INTERVAL_MS = 5000
 
+export interface SendWhatsAppMessagePayload {
+  content?: string
+  replyToId?: string | null
+  type?: 'text' | 'media' | 'reaction'
+  media?: {
+    mediatype: 'image' | 'video' | 'audio' | 'document'
+    url: string
+    caption?: string
+    fileName?: string
+  }
+  reaction?: {
+    messageId: string
+    emoji: string
+  }
+}
+
 function sortMessages(messages: WhatsAppMessage[]) {
   return [...messages].sort((a, b) => {
     const aTime = new Date(a.sentAt || a.createdAt).getTime()
@@ -25,6 +41,7 @@ function mergeMessages(current: WhatsAppMessage[], remote: WhatsAppMessage[]) {
 
 export function useWhatsAppMessages(conversationId: Ref<string | null>) {
   const { tenantId } = useTenant()
+  const inboxStore = useWhatsAppInboxStore()
 
   const cacheKey = computed(
     () => `whatsapp-messages-${tenantId.value}-${conversationId.value}`,
@@ -54,6 +71,7 @@ export function useWhatsAppMessages(conversationId: Ref<string | null>) {
 
   const sending = ref(false)
   let pollTimer: ReturnType<typeof setInterval> | null = null
+  let presenceTimer: ReturnType<typeof setTimeout> | null = null
 
   async function fetchMessages() {
     if (!tenantId.value || !conversationId.value)
@@ -100,6 +118,8 @@ export function useWhatsAppMessages(conversationId: Ref<string | null>) {
     if (id === previousId)
       return
 
+    inboxStore.setReplyToMessage(null)
+
     if (id) {
       startPolling()
       return
@@ -109,7 +129,11 @@ export function useWhatsAppMessages(conversationId: Ref<string | null>) {
     data.value = null
   }, { immediate: true })
 
-  onUnmounted(stopPolling)
+  onUnmounted(() => {
+    stopPolling()
+    if (presenceTimer)
+      clearTimeout(presenceTimer)
+  })
 
   function appendMessage(message: WhatsAppMessage) {
     if (message.conversationId !== conversationId.value)
@@ -126,8 +150,15 @@ export function useWhatsAppMessages(conversationId: Ref<string | null>) {
     data.value = mergeMessages(data.value ?? [], [message])
   }
 
-  async function sendMessage(content: string) {
-    if (!conversationId.value || !content.trim())
+  async function sendMessage(payload: string | SendWhatsAppMessagePayload) {
+    if (!conversationId.value)
+      return null
+
+    const body = typeof payload === 'string'
+      ? { content: payload.trim(), type: 'text' as const }
+      : payload
+
+    if (body.type !== 'reaction' && !body.content?.trim() && !body.media)
       return null
 
     sending.value = true
@@ -137,15 +168,50 @@ export function useWhatsAppMessages(conversationId: Ref<string | null>) {
         body: {
           tenant_id: tenantId.value,
           conversation_id: conversationId.value,
-          content: content.trim(),
+          content: body.content?.trim() || undefined,
+          reply_to_id: body.replyToId ?? inboxStore.replyToMessage?.id ?? undefined,
+          type: body.type || (body.media ? 'media' : body.reaction ? 'reaction' : 'text'),
+          media: body.media,
+          reaction: body.reaction
+            ? { message_id: body.reaction.messageId, emoji: body.reaction.emoji }
+            : undefined,
         },
       })
       updateMessage(response.data)
+      if (body.type !== 'reaction')
+        inboxStore.setReplyToMessage(null)
       return response.data
     }
     finally {
       sending.value = false
     }
+  }
+
+  async function sendPresence(presence: 'composing' | 'paused' | 'recording') {
+    if (!conversationId.value || !tenantId.value)
+      return
+
+    try {
+      await $fetch(`/api/whatsapp/conversations/${conversationId.value}/presence`, {
+        method: 'POST',
+        body: {
+          tenant_id: tenantId.value,
+          presence,
+        },
+      })
+    }
+    catch {
+      /* non-blocking */
+    }
+  }
+
+  function notifyTyping() {
+    if (presenceTimer)
+      clearTimeout(presenceTimer)
+    sendPresence('composing')
+    presenceTimer = setTimeout(() => {
+      sendPresence('paused')
+    }, 4000)
   }
 
   return {
@@ -158,6 +224,8 @@ export function useWhatsAppMessages(conversationId: Ref<string | null>) {
     appendMessage,
     updateMessage,
     sendMessage,
+    sendPresence,
+    notifyTyping,
     syncMessages,
   }
 }

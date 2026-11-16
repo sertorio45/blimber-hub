@@ -1,5 +1,5 @@
 <script setup lang="ts">
-defineProps<{
+const props = defineProps<{
   status: string
 }>()
 
@@ -11,7 +11,7 @@ const icon = computed(() => {
     read: 'i-lucide-check-check text-blue-400',
     failed: 'i-lucide-alert-circle text-destructive',
   }
-  return map[status] || 'i-lucide-check'
+  return map[props.status] || 'i-lucide-check'
 })
 </script>
 

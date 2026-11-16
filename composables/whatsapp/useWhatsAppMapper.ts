@@ -14,7 +14,10 @@ import type {
   WhatsAppContactRow,
   WhatsAppConversation,
   WhatsAppConversationRow,
+  WhatsAppGroupParticipant,
+  WhatsAppGroupParticipantRow,
   WhatsAppMessage,
+  WhatsAppMessageReaction,
   WhatsAppMessageRow,
 } from '~/types/whatsapp'
 
@@ -181,6 +184,9 @@ export function mapConversationRow(
     remoteJid: row.remote_jid,
     contactName: row.contact_name,
     contactPhone: row.contact_phone,
+    isGroup: Boolean(row.is_group),
+    groupSubject: row.group_subject ?? null,
+    groupMetadata: row.group_metadata ?? {},
     status: row.status ?? 'open',
     assignedTo: row.assigned_to ?? null,
     lastMessagePreview: row.last_message_preview ?? '',
@@ -196,6 +202,18 @@ export function mapConversationRow(
     createdAt: row.created_at ?? new Date().toISOString(),
     updatedAt: row.updated_at ?? new Date().toISOString(),
   }
+}
+
+function mapReactions(raw: WhatsAppMessageReaction[] | null | undefined): WhatsAppMessageReaction[] {
+  if (!Array.isArray(raw))
+    return []
+  return raw
+    .filter(item => item && typeof item.emoji === 'string' && item.emoji)
+    .map(item => ({
+      emoji: item.emoji,
+      participantJid: item.participantJid ?? null,
+      fromMe: Boolean(item.fromMe),
+    }))
 }
 
 export function mapMessageRow(row: WhatsAppMessageRow): WhatsAppMessage {
@@ -220,7 +238,26 @@ export function mapMessageRow(row: WhatsAppMessageRow): WhatsAppMessage {
     leadId: row.lead_id ?? null,
     crmContactId: row.crm_contact_id ?? null,
     replyToId: row.reply_to_id ?? null,
+    quotedExternalId: row.quoted_external_id ?? null,
+    participantJid: row.participant_jid ?? null,
+    participantName: row.participant_name ?? null,
+    reactions: mapReactions(row.reactions),
     metadata: row.metadata ?? {},
+    createdAt: row.created_at ?? new Date().toISOString(),
+    updatedAt: row.updated_at ?? new Date().toISOString(),
+  }
+}
+
+export function mapGroupParticipantRow(row: WhatsAppGroupParticipantRow): WhatsAppGroupParticipant {
+  return {
+    id: row.id,
+    tenantId: row.tenant_id,
+    conversationId: row.conversation_id,
+    participantJid: row.participant_jid,
+    phone: row.phone ?? null,
+    name: row.name ?? null,
+    adminRole: row.admin_role ?? null,
+    contactId: row.contact_id ?? null,
     createdAt: row.created_at ?? new Date().toISOString(),
     updatedAt: row.updated_at ?? new Date().toISOString(),
   }
@@ -231,6 +268,7 @@ export function useWhatsAppMapper() {
     mapContactRow,
     mapConversationRow,
     mapMessageRow,
+    mapGroupParticipantRow,
     mapCampaignRow,
     mapCampaignRecipientRow,
     mapFlowRow,

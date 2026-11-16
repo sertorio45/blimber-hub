@@ -113,6 +113,25 @@ export interface UpdateWhatsAppContactPayload {
   custom_fields?: Record<string, unknown>
 }
 
+export interface WhatsAppMessageReaction {
+  emoji: string
+  participantJid?: string | null
+  fromMe?: boolean
+}
+
+export interface WhatsAppGroupParticipant {
+  id: string
+  tenantId: string
+  conversationId: string
+  participantJid: string
+  phone?: string | null
+  name?: string | null
+  adminRole?: string | null
+  contactId?: string | null
+  createdAt: string
+  updatedAt: string
+}
+
 export interface WhatsAppConversation {
   id: string
   tenantId: string
@@ -124,6 +143,9 @@ export interface WhatsAppConversation {
   remoteJid: string
   contactName: string
   contactPhone: string
+  isGroup: boolean
+  groupSubject?: string | null
+  groupMetadata?: Record<string, unknown>
   status: WhatsAppConversationStatus
   assignedTo?: string | null
   lastMessagePreview: string
@@ -173,6 +195,10 @@ export interface WhatsAppMessage {
   leadId?: string | null
   crmContactId?: string | null
   replyToId?: string | null
+  quotedExternalId?: string | null
+  participantJid?: string | null
+  participantName?: string | null
+  reactions: WhatsAppMessageReaction[]
   metadata: Record<string, unknown>
   createdAt: string
   updatedAt: string
@@ -627,6 +653,9 @@ export interface WhatsAppConversationRow {
   remote_jid: string
   contact_name: string
   contact_phone: string
+  is_group?: boolean
+  group_subject?: string | null
+  group_metadata?: Record<string, unknown> | null
   status?: WhatsAppConversationStatus
   assigned_to?: string | null
   last_message_preview?: string
@@ -669,7 +698,24 @@ export interface WhatsAppMessageRow {
   lead_id?: string | null
   crm_contact_id?: string | null
   reply_to_id?: string | null
+  quoted_external_id?: string | null
+  participant_jid?: string | null
+  participant_name?: string | null
+  reactions?: WhatsAppMessageReaction[] | null
   metadata?: Record<string, unknown>
+  created_at?: string
+  updated_at?: string
+}
+
+export interface WhatsAppGroupParticipantRow {
+  id: string
+  tenant_id: string
+  conversation_id: string
+  participant_jid: string
+  phone?: string | null
+  name?: string | null
+  admin_role?: string | null
+  contact_id?: string | null
   created_at?: string
   updated_at?: string
 }

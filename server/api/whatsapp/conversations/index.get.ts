@@ -14,6 +14,7 @@ export default defineEventHandler(async (event) => {
   const search = (query.search as string | undefined)?.trim()
   const unreadOnly = query.unread_only === 'true'
   const assignedToMe = query.assigned_to_me === 'true'
+  const chatType = (query.chat_type as string | undefined)?.trim() || 'all'
   const instanceId = (query.instance_id as string | undefined)?.trim() || undefined
   const limit = Math.min(Number(query.limit) || 50, 100)
 
@@ -37,6 +38,11 @@ export default defineEventHandler(async (event) => {
 
   if (status && status !== 'all')
     req = req.eq('status', status)
+
+  if (chatType === 'group')
+    req = req.eq('is_group', true)
+  else if (chatType === 'direct')
+    req = req.eq('is_group', false)
 
   if (unreadOnly)
     req = req.gt('unread_count', 0)

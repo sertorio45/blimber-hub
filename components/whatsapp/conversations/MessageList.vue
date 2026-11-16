@@ -7,9 +7,28 @@ import { Skeleton } from '~/components/ui/skeleton'
 const props = defineProps<{
   messages: WhatsAppMessage[]
   loading?: boolean
+  isGroup?: boolean
+}>()
+
+const emit = defineEmits<{
+  reply: [message: WhatsAppMessage]
+  react: [payload: { message: WhatsAppMessage, emoji: string }]
 }>()
 
 const listRef = ref<HTMLElement | null>(null)
+
+const messagesById = computed(() => {
+  const map = new Map<string, WhatsAppMessage>()
+  for (const message of props.messages)
+    map.set(message.id, message)
+  return map
+})
+
+function quotedFor(message: WhatsAppMessage) {
+  if (!message.replyToId)
+    return null
+  return messagesById.value.get(message.replyToId) || null
+}
 
 function scrollToBottom() {
   nextTick(() => {
@@ -38,7 +57,15 @@ onMounted(scrollToBottom)
       Nenhuma mensagem ainda
     </div>
     <div v-else class="flex flex-col gap-3">
-      <MessageBubble v-for="message in messages" :key="message.id" :message="message" />
+      <MessageBubble
+        v-for="message in messages"
+        :key="message.id"
+        :message="message"
+        :quoted-message="quotedFor(message)"
+        :show-participant="isGroup"
+        @reply="emit('reply', $event)"
+        @react="emit('react', $event)"
+      />
     </div>
 
     <div

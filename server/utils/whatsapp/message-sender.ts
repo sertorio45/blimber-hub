@@ -6,13 +6,27 @@ import {
   getCloudApiConfigFromIntegration,
 } from '~/server/utils/whatsapp/cloud-api-client'
 import {
+  isGroupJid,
+  normalizeWhatsAppJid,
+} from '~/server/utils/whatsapp/conversation-utils'
+import {
   evolutionSendMedia,
+  evolutionSendPresence,
+  evolutionSendReaction,
   evolutionSendText,
   getEvolutionConfigFromIntegration,
+  type EvolutionQuotedMessage,
 } from '~/server/utils/whatsapp/evolution-client'
 import { getEvolutionInstanceName } from '~/server/utils/whatsapp/instance-loader'
 
 function resolveEvolutionNumber(phone: string, remoteJid?: string): string {
+  const jid = normalizeWhatsAppJid(remoteJid || '')
+  if (isGroupJid(jid))
+    return jid
+
+  if (jid.endsWith('@s.whatsapp.net'))
+    return jid.replace(/@.*/, '')
+
   const fromPhone = phone.replace(/\D/g, '')
   if (fromPhone.length >= 10)
     return fromPhone
@@ -27,14 +41,25 @@ function resolveEvolutionNumber(phone: string, remoteJid?: string): string {
   })
 }
 
+function requireEvolutionConfig(instance: Record<string, any>, integration: Record<string, any>) {
+  const evoConfig = getEvolutionConfigFromIntegration(
+    integration,
+    getEvolutionInstanceName(instance),
+  )
+  if (!evoConfig)
+    throw createError({ statusCode: 400, statusMessage: 'Evolution API not configured' })
+  return evoConfig
+}
+
 export async function sendWhatsAppTextMessage(params: {
   instance: Record<string, any>
   integration: Record<string, any>
   phone: string
   text: string
   remoteJid?: string
+  quoted?: EvolutionQuotedMessage
 }) {
-  const { instance, integration, phone, remoteJid } = params
+  const { instance, integration, phone, remoteJid, quoted } = params
   const normalizedPhone = phone.replace(/\D/g, '')
 
   if (!integration) {
@@ -45,15 +70,13 @@ export async function sendWhatsAppTextMessage(params: {
   }
 
   if (instance.provider === 'evolution') {
-    const evoConfig = getEvolutionConfigFromIntegration(
-      integration,
-      getEvolutionInstanceName(instance),
-    )
-    if (!evoConfig)
-      throw createError({ statusCode: 400, statusMessage: 'Evolution API not configured' })
-
+    const evoConfig = requireEvolutionConfig(instance, integration)
     const recipient = resolveEvolutionNumber(phone, remoteJid)
-    return evolutionSendText(evoConfig, { number: recipient, text: params.text })
+    return evolutionSendText(evoConfig, {
+      number: recipient,
+      text: params.text,
+      quoted,
+    })
   }
 
   if (instance.provider === 'cloud_api') {
@@ -83,8 +106,9 @@ export async function sendWhatsAppMediaMessage(params: {
   mediaUrl: string
   caption?: string
   fileName?: string
+  quoted?: EvolutionQuotedMessage
 }) {
-  const { instance, integration, phone, remoteJid } = params
+  const { instance, integration, phone, remoteJid, quoted } = params
 
   if (!integration) {
     throw createError({
@@ -97,13 +121,7 @@ export async function sendWhatsAppMediaMessage(params: {
     throw createError({ statusCode: 400, statusMessage: 'Media messages require Evolution provider' })
   }
 
-  const evoConfig = getEvolutionConfigFromIntegration(
-    integration,
-    getEvolutionInstanceName(instance),
-  )
-  if (!evoConfig)
-    throw createError({ statusCode: 400, statusMessage: 'Evolution API not configured' })
-
+  const evoConfig = requireEvolutionConfig(instance, integration)
   const recipient = resolveEvolutionNumber(phone, remoteJid)
   return evolutionSendMedia(evoConfig, {
     number: recipient,
@@ -111,5 +129,50 @@ export async function sendWhatsAppMediaMessage(params: {
     media: params.mediaUrl,
     caption: params.caption,
     fileName: params.fileName,
+    quoted,
+  })
+}
+
+export async function sendWhatsAppReaction(params: {
+  instance: Record<string, any>
+  integration: Record<string, any>
+  remoteJid: string
+  messageId: string
+  fromMe: boolean
+  reaction: string
+}) {
+  if (params.instance.provider !== 'evolution') {
+    throw createError({ statusCode: 400, statusMessage: 'Reactions require Evolution provider' })
+  }
+
+  const evoConfig = requireEvolutionConfig(params.instance, params.integration)
+  return evolutionSendReaction(evoConfig, {
+    key: {
+      id: params.messageId,
+      remoteJid: normalizeWhatsAppJid(params.remoteJid),
+      fromMe: params.fromMe,
+    },
+    reaction: params.reaction,
+  })
+}
+
+export async function sendWhatsAppPresence(params: {
+  instance: Record<string, any>
+  integration: Record<string, any>
+  phone: string
+  remoteJid?: string
+  presence: 'unavailable' | 'available' | 'composing' | 'recording' | 'paused'
+  delay?: number
+}) {
+  if (params.instance.provider !== 'evolution') {
+    throw createError({ statusCode: 400, statusMessage: 'Presence requires Evolution provider' })
+  }
+
+  const evoConfig = requireEvolutionConfig(params.instance, params.integration)
+  const recipient = resolveEvolutionNumber(params.phone, params.remoteJid)
+  return evolutionSendPresence(evoConfig, {
+    number: recipient,
+    presence: params.presence,
+    delay: params.delay,
   })
 }
