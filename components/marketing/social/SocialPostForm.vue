@@ -167,9 +167,34 @@ const previewAccount = computed(() => {
   }
 })
 
+const previewMediaItems = computed(() => {
+  return publicationAssetIds.value
+    .map((assetId) => {
+      const asset = publicationAssetById(assetId)
+      if (!asset)
+        return null
+      const mime = String(asset.mimeType || (asset as any).mime_type || '')
+      const url = asset.previewUrl || (asset as any).preview_url || null
+      if (!url)
+        return null
+      return {
+        url: String(url),
+        type: (mime.startsWith('video/') ? 'video' : 'image') as 'image' | 'video',
+        width: Number((asset as any).width) || null,
+        height: Number((asset as any).height) || null,
+      }
+    })
+    .filter(Boolean) as Array<{
+    url: string
+    type: 'image' | 'video'
+    width: number | null
+    height: number | null
+  }>
+})
+
 const previewMedia = computed(() => {
-  const assetId = publicationAssetIds.value[0]
-  if (!assetId) {
+  const first = previewMediaItems.value[0]
+  if (!first) {
     return {
       url: null,
       type: null as 'image' | 'video' | null,
@@ -177,19 +202,16 @@ const previewMedia = computed(() => {
       height: null as number | null,
     }
   }
-  const asset = publicationAssetById(assetId)
-  const mime = asset?.mimeType || asset?.mime_type || ''
-  const url = asset?.previewUrl || asset?.preview_url || null
-  return {
-    url,
-    type: mime.startsWith('video/') ? 'video' as const : mime.startsWith('image/') ? 'image' as const : null,
-    width: Number((asset as any)?.width) || null,
-    height: Number((asset as any)?.height) || null,
-  }
+  return first
 })
 
 const hasLivePreview = computed(() =>
-  Boolean(content.value.trim() || hashtags.value.length || publicationLink.value || previewMedia.value.url),
+  Boolean(
+    content.value.trim()
+    || hashtags.value.length
+    || publicationLink.value
+    || previewMediaItems.value.length,
+  ),
 )
 
 function assetThumbStyle(asset: MediaAsset | Record<string, unknown> | undefined | null) {
@@ -912,6 +934,7 @@ function submit() {
             :hashtags="hashtags"
             :platform="previewAccount.platform"
             :account-name="previewAccount.name"
+            :media-items="previewMediaItems"
             :media-url="previewMedia.url"
             :media-type="previewMedia.type"
             :media-width="previewMedia.width"
@@ -1498,6 +1521,7 @@ function submit() {
             :hashtags="hashtags"
             :platform="previewAccount.platform"
             :account-name="previewAccount.name"
+            :media-items="previewMediaItems"
             :media-url="previewMedia.url"
             :media-type="previewMedia.type"
             :media-width="previewMedia.width"

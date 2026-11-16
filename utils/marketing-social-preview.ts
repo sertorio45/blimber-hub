@@ -103,3 +103,178 @@ export function platformIcon(platform: string) {
     return 'lucide:instagram'
   return 'lucide:facebook'
 }
+
+export interface PreviewMediaItem {
+  url: string
+  type: 'image' | 'video'
+  width?: number | null
+  height?: number | null
+}
+
+/** Common social ratios used for preview chrome and labels. */
+const COMMON_RATIOS: Array<{ label: string, value: number }> = [
+  { label: '9:16', value: 9 / 16 },
+  { label: '4:5', value: 4 / 5 },
+  { label: '1:1', value: 1 },
+  { label: '1.91:1', value: 1.91 },
+  { label: '16:9', value: 16 / 9 },
+]
+
+export function aspectRatioLabel(ratio: number): string {
+  if (!Number.isFinite(ratio) || ratio <= 0)
+    return '—'
+  let best = COMMON_RATIOS[0]!
+  let bestDelta = Math.abs(ratio - best.value)
+  for (const candidate of COMMON_RATIOS) {
+    const delta = Math.abs(ratio - candidate.value)
+    if (delta < bestDelta) {
+      best = candidate
+      bestDelta = delta
+    }
+  }
+  if (bestDelta <= 0.08)
+    return best.label
+  return `${ratio.toFixed(2).replace(/\.?0+$/, '')}:1`
+}
+
+/**
+ * Frame aspect for the live post preview.
+ * Prefer intrinsic media size when known. Stories / IG Reels keep a 9:16 phone chrome
+ * only as fallback when dimensions were not probed yet.
+ */
+export function resolveDisplayAspectRatio(input: {
+  format?: string | null
+  platform?: string | null
+  width?: number | null
+  height?: number | null
+}): number {
+  const format = String(input.format || '')
+  const platform = String(input.platform || '')
+  const width = Number(input.width)
+  const height = Number(input.height)
+
+  if (Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0) {
+    const ratio = width / height
+    // Clamp extreme ratios so the mockup stays readable in the sidebar.
+    return Math.min(2.4, Math.max(0.4, ratio))
+  }
+
+  if (format === 'story' || (format === 'video' && platform === 'instagram'))
+    return 9 / 16
+  if (platform === 'instagram')
+    return 1
+  return 1.91
+}
+
+export function previewFormatBadge(input: {
+  format?: string | null
+  platform?: string | null
+  mediaCount?: number
+  aspectLabel?: string
+}): string {
+  const format = String(input.format || 'static')
+  if (format === 'story')
+    return `Stories · ${input.aspectLabel || '9:16'}`
+  if (format === 'video' && input.platform === 'instagram')
+    return `Reels · ${input.aspectLabel || '9:16'}`
+  if (format === 'video')
+    return `Vídeo · ${input.aspectLabel || '16:9'}`
+  if (format === 'carousel' || (input.mediaCount || 0) > 1)
+    return `Carrossel · ${input.aspectLabel || '1:1'}`
+  return input.aspectLabel || '1:1'
+}
+
+export type ProbedMediaSize = {
+  width: number
+  height: number
+}
+
+const mediaSizeCache = new Map<string, ProbedMediaSize>()
+const mediaSizeInflight = new Map<string, Promise<ProbedMediaSize | null>>()
+
+function probeImageSize(url: string): Promise<ProbedMediaSize | null> {
+  if (typeof Image === 'undefined')
+    return Promise.resolve(null)
+
+  return new Promise((resolve) => {
+    const image = new Image()
+    image.onload = () => {
+      const width = image.naturalWidth || image.width
+      const height = image.naturalHeight || image.height
+      if (width > 0 && height > 0)
+        resolve({ width, height })
+      else
+        resolve(null)
+    }
+    image.onerror = () => resolve(null)
+    image.src = url
+  })
+}
+
+function probeVideoSize(url: string): Promise<ProbedMediaSize | null> {
+  if (typeof document === 'undefined')
+    return Promise.resolve(null)
+
+  return new Promise((resolve) => {
+    const video = document.createElement('video')
+    video.preload = 'metadata'
+    video.muted = true
+    video.playsInline = true
+
+    const cleanup = () => {
+      video.removeAttribute('src')
+      video.load()
+    }
+
+    video.onloadedmetadata = () => {
+      const width = video.videoWidth
+      const height = video.videoHeight
+      cleanup()
+      if (width > 0 && height > 0)
+        resolve({ width, height })
+      else
+        resolve(null)
+    }
+    video.onerror = () => {
+      cleanup()
+      resolve(null)
+    }
+    video.src = url
+  })
+}
+
+/** Read intrinsic width/height from a public media URL (cached). */
+export async function probeMediaSize(
+  url: string,
+  type: 'image' | 'video' = 'image',
+): Promise<ProbedMediaSize | null> {
+  const key = `${type}:${url}`
+  const cached = mediaSizeCache.get(key)
+  if (cached)
+    return cached
+
+  const inflight = mediaSizeInflight.get(key)
+  if (inflight)
+    return inflight
+
+  const task = (type === 'video' ? probeVideoSize(url) : probeImageSize(url))
+    .then((size) => {
+      if (size)
+        mediaSizeCache.set(key, size)
+      mediaSizeInflight.delete(key)
+      return size
+    })
+    .catch(() => {
+      mediaSizeInflight.delete(key)
+      return null
+    })
+
+  mediaSizeInflight.set(key, task)
+  return task
+}
+
+/** Test helper — clears probe cache between cases. */
+export function clearMediaSizeProbeCache() {
+  mediaSizeCache.clear()
+  mediaSizeInflight.clear()
+}
